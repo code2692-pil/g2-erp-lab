@@ -17,6 +17,8 @@ export interface SalesOrderLine {
   NO_LINE: number;
   CD_ITEM: string;
   NM_ITEM: string;
+  STND_ITEM: string;
+  UNIT_ITEM: string;
   QT_SO: number;
   UM_SO: number;
   AM_SUPPLY: number;

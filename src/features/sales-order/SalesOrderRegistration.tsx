@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useState } from "react";
 import {
   Building2,
   ChevronRight,
@@ -8,11 +8,49 @@ import {
   Search,
   Trash2
 } from "lucide-react";
+import { ErpLookupDialog } from "../../components/common/ErpLookupDialog";
+import type { ErpDataGridColumn } from "../../components/common/ErpDataGrid";
+import { mockItems } from "../common-code/item/mockData";
+import type { Item } from "../common-code/item/types";
+import { mockPartners } from "../common-code/partner/mockData";
+import type { Partner } from "../common-code/partner/types";
 import { mockSalesOrderHeaders, mockSalesOrderLines } from "./mockData";
 import type { SalesOrderHeader, SalesOrderLine, SalesOrderStatus } from "./types";
 
 const statusOptions: SalesOrderStatus[] = ["신규", "진행", "확정", "마감"];
 const money = new Intl.NumberFormat("ko-KR");
+
+const partnerLookupColumns: readonly ErpDataGridColumn<Partner>[] = [
+  { field: "CD_FIRM", header: "회사코드", width: 90, align: "center" },
+  { field: "CD_PARTNER", header: "거래처코드", width: 120 },
+  { field: "NM_PARTNER", header: "거래처명", width: 180 },
+  { field: "NO_COMPANY", header: "사업자번호", width: 130 },
+  { field: "YN_USE", header: "사용", width: 64, align: "center" }
+];
+
+const itemLookupColumns: readonly ErpDataGridColumn<Item>[] = [
+  { field: "CD_FIRM", header: "회사코드", width: 90, align: "center" },
+  { field: "CD_ITEM", header: "품목코드", width: 120 },
+  { field: "NM_ITEM", header: "품목명", width: 190 },
+  { field: "STND_ITEM", header: "규격", width: 150 },
+  { field: "UNIT_ITEM", header: "단위", width: 70, align: "center" },
+  { field: "YN_USE", header: "사용", width: 64, align: "center" }
+];
+
+const partnerSearchFields: readonly (keyof Partner)[] = [
+  "CD_PARTNER",
+  "NM_PARTNER",
+  "NO_COMPANY"
+];
+const itemSearchFields: readonly (keyof Item)[] = ["CD_ITEM", "NM_ITEM", "STND_ITEM"];
+
+function getPartnerRowKey(partner: Partner) {
+  return `${partner.CD_FIRM}::${partner.CD_PARTNER}`;
+}
+
+function getItemRowKey(item: Item) {
+  return `${item.CD_FIRM}::${item.CD_ITEM}`;
+}
 
 function today() {
   const now = new Date();
@@ -67,6 +105,8 @@ function createEmptyLine(header: SalesOrderHeader, noLine: number): SalesOrderLi
     NO_LINE: noLine,
     CD_ITEM: "",
     NM_ITEM: "",
+    STND_ITEM: "",
+    UNIT_ITEM: "",
     QT_SO: 0,
     UM_SO: 0,
     AM_SUPPLY: 0,
@@ -98,28 +138,52 @@ export function SalesOrderRegistration() {
   const [selectedLine, setSelectedLine] = useState<number | null>(null);
   const [message, setMessage] = useState("");
   const [tempSeq, setTempSeq] = useState(1);
+  const [partnerLookupOpen, setPartnerLookupOpen] = useState(false);
+  const [itemLookupOpen, setItemLookupOpen] = useState(false);
+  const [selectedPartnerRowKey, setSelectedPartnerRowKey] = useState<string | null>(null);
   const [filters, setFilters] = useState({
     cdFirm: "1000",
     dateFrom: "2026-07-01",
     dateTo: "2026-07-31",
-    partner: ""
+    cdPartner: "",
+    nmPartner: ""
   });
 
   const selectedHeader = headers.find((header) => header.NO_SO === selectedNoSo);
+  const selectedLineData = lines.find(
+    (line) => line.NO_SO === selectedNoSo && line.NO_LINE === selectedLine
+  );
+  const partnerLookupRows = mockPartners.filter(
+    (partner) => !filters.cdFirm || partner.CD_FIRM === filters.cdFirm
+  );
+  const itemLookupRows = mockItems.filter(
+    (item) => !selectedLineData?.CD_FIRM || item.CD_FIRM === selectedLineData.CD_FIRM
+  );
 
   const visibleHeaders = useMemo(() => {
     return headers.filter((header) => {
+      if (header.NO_SO.startsWith("TEMP_SO_")) return true;
+
       const firmMatched = !filters.cdFirm || header.CD_FIRM.includes(filters.cdFirm);
       const partnerMatched =
-        !filters.partner ||
-        header.CD_PARTNER.includes(filters.partner) ||
-        header.NM_PARTNER.includes(filters.partner);
+        (!filters.cdPartner || header.CD_PARTNER.includes(filters.cdPartner)) &&
+        (!filters.nmPartner || header.NM_PARTNER.includes(filters.nmPartner));
       const dateMatched =
         (!filters.dateFrom || header.DT_SO >= filters.dateFrom) &&
         (!filters.dateTo || header.DT_SO <= filters.dateTo);
       return firmMatched && partnerMatched && dateMatched;
     });
   }, [filters, headers]);
+
+  useLayoutEffect(() => {
+    if (visibleHeaders.some((header) => header.NO_SO === selectedNoSo)) return;
+
+    const nextSelectedNoSo = visibleHeaders[0]?.NO_SO ?? "";
+    if (nextSelectedNoSo === selectedNoSo) return;
+
+    setSelectedNoSo(nextSelectedNoSo);
+    setSelectedLine(null);
+  }, [selectedNoSo, visibleHeaders]);
 
   const selectedLines = lines
     .filter((line) => line.NO_SO === selectedNoSo)
@@ -181,6 +245,47 @@ export function SalesOrderRegistration() {
     setSelectedNoSo(nextHeaders[0]?.NO_SO ?? "");
     setSelectedLine(null);
     setMessage("조회되었습니다");
+  };
+
+  const handleSelectPartner = (partner: Partner) => {
+    setSelectedPartnerRowKey(getPartnerRowKey(partner));
+    setFilters((current) => ({
+      ...current,
+      cdPartner: partner.CD_PARTNER,
+      nmPartner: partner.NM_PARTNER
+    }));
+    setMessage(`${partner.NM_PARTNER} 거래처가 조회조건에 반영되었습니다`);
+  };
+
+  const handleOpenItemLookup = () => {
+    if (!selectedNoSo || selectedLine === null || !selectedLineData) {
+      setMessage("품목을 적용할 수주상세 행을 먼저 선택하세요");
+      return;
+    }
+
+    setItemLookupOpen(true);
+  };
+
+  const handleSelectItem = (item: Item) => {
+    if (!selectedNoSo || selectedLine === null) {
+      setMessage("품목을 적용할 수주상세 행을 찾을 수 없습니다");
+      return;
+    }
+
+    setLines((current) =>
+      current.map((line) =>
+        line.NO_SO === selectedNoSo && line.NO_LINE === selectedLine
+          ? {
+              ...line,
+              CD_ITEM: item.CD_ITEM,
+              NM_ITEM: item.NM_ITEM,
+              STND_ITEM: item.STND_ITEM,
+              UNIT_ITEM: item.UNIT_ITEM
+            }
+          : line
+      )
+    );
+    setMessage(`${item.NM_ITEM} 품목이 ${selectedLine}번 행에 반영되었습니다`);
   };
 
   const handleNew = () => {
@@ -285,7 +390,8 @@ export function SalesOrderRegistration() {
   };
 
   return (
-    <div className="erp-shell">
+    <>
+      <div className="erp-shell">
       <aside className="side-nav">
         <div className="brand">
           <Building2 size={20} />
@@ -340,7 +446,15 @@ export function SalesOrderRegistration() {
             회사코드
             <input
               value={filters.cdFirm}
-              onChange={(event) => setFilters({ ...filters, cdFirm: event.target.value })}
+              onChange={(event) => {
+                setFilters({
+                  ...filters,
+                  cdFirm: event.target.value,
+                  cdPartner: "",
+                  nmPartner: ""
+                });
+                setSelectedPartnerRowKey(null);
+              }}
             />
           </label>
           <label>
@@ -359,14 +473,39 @@ export function SalesOrderRegistration() {
               onChange={(event) => setFilters({ ...filters, dateTo: event.target.value })}
             />
           </label>
-          <label>
-            거래처
-            <input
-              placeholder="코드 또는 명칭"
-              value={filters.partner}
-              onChange={(event) => setFilters({ ...filters, partner: event.target.value })}
-            />
-          </label>
+          <div className="search-field partner-filter">
+            <span className="field-label">거래처</span>
+            <div className="lookup-input-group">
+              <input
+                aria-label="거래처코드"
+                className="mono"
+                data-testid="filter-partner-code"
+                placeholder="거래처코드"
+                value={filters.cdPartner}
+                onChange={(event) => {
+                  setFilters({ ...filters, cdPartner: event.target.value, nmPartner: "" });
+                  setSelectedPartnerRowKey(null);
+                }}
+              />
+              <input
+                aria-label="거래처명"
+                data-testid="filter-partner-name"
+                placeholder="거래처명"
+                readOnly
+                value={filters.nmPartner}
+              />
+              <button
+                aria-label="거래처 도움창 열기"
+                className="lookup-open-button"
+                data-testid="btn-partner-lookup"
+                onClick={() => setPartnerLookupOpen(true)}
+                title="거래처 도움창"
+                type="button"
+              >
+                <Search size={14} />
+              </button>
+            </div>
+          </div>
           <span className="status-message">{message}</span>
         </section>
 
@@ -481,7 +620,18 @@ export function SalesOrderRegistration() {
         <section className="grid-section bottom-grid">
           <div className="section-title">
             <h2>수주상세</h2>
-            <span>SAL_SOL · PK CD_FIRM + NO_SO + NO_LINE</span>
+            <div className="section-title-actions">
+              <span>SAL_SOL · PK CD_FIRM + NO_SO + NO_LINE</span>
+              <button
+                className="section-lookup-button"
+                data-testid="btn-item-lookup"
+                onClick={handleOpenItemLookup}
+                type="button"
+              >
+                <Search size={14} />
+                품목 도움
+              </button>
+            </div>
           </div>
           <div className="table-wrap">
             <table className="line-table">
@@ -492,6 +642,8 @@ export function SalesOrderRegistration() {
                   <th>라인</th>
                   <th>품목코드</th>
                   <th>품목명</th>
+                  <th>규격</th>
+                  <th>단위</th>
                   <th className="num">수주수량</th>
                   <th className="num">단가</th>
                   <th className="num">공급가액</th>
@@ -528,6 +680,24 @@ export function SalesOrderRegistration() {
                         value={line.NM_ITEM}
                         onChange={(event) =>
                           updateLine(line.NO_SO, line.NO_LINE, "NM_ITEM", event.target.value)
+                        }
+                      />
+                    </td>
+                    <td>
+                      <input
+                        className="grid-input"
+                        value={line.STND_ITEM}
+                        onChange={(event) =>
+                          updateLine(line.NO_SO, line.NO_LINE, "STND_ITEM", event.target.value)
+                        }
+                      />
+                    </td>
+                    <td>
+                      <input
+                        className="grid-input"
+                        value={line.UNIT_ITEM}
+                        onChange={(event) =>
+                          updateLine(line.NO_SO, line.NO_LINE, "UNIT_ITEM", event.target.value)
                         }
                       />
                     </td>
@@ -581,7 +751,7 @@ export function SalesOrderRegistration() {
                 ))}
                 {selectedLines.length === 0 && (
                   <tr>
-                    <td colSpan={12} className="empty">
+                    <td colSpan={14} className="empty">
                       수주정보 행을 선택하면 상세 목록이 표시됩니다.
                     </td>
                   </tr>
@@ -589,7 +759,7 @@ export function SalesOrderRegistration() {
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={7}>합계</td>
+                  <td colSpan={9}>합계</td>
                   <td className="num">{money.format(totals.supply)}</td>
                   <td className="num">{money.format(totals.vat)}</td>
                   <td className="num strong">{money.format(totals.total)}</td>
@@ -600,6 +770,41 @@ export function SalesOrderRegistration() {
           </div>
         </section>
       </main>
-    </div>
+      </div>
+
+      <ErpLookupDialog<Partner>
+        columns={partnerLookupColumns}
+        emptyMessage="조회된 거래처가 없습니다."
+        height={500}
+        onClose={() => setPartnerLookupOpen(false)}
+        onSelect={handleSelectPartner}
+        open={partnerLookupOpen}
+        rowKey={getPartnerRowKey}
+        rows={partnerLookupRows}
+        searchFields={partnerSearchFields}
+        selectedRowKey={selectedPartnerRowKey}
+        title="거래처 도움창"
+        width={760}
+      />
+
+      <ErpLookupDialog<Item>
+        columns={itemLookupColumns}
+        emptyMessage="조회된 품목이 없습니다."
+        height={520}
+        onClose={() => setItemLookupOpen(false)}
+        onSelect={handleSelectItem}
+        open={itemLookupOpen}
+        rowKey={getItemRowKey}
+        rows={itemLookupRows}
+        searchFields={itemSearchFields}
+        selectedRowKey={
+          selectedLineData?.CD_ITEM
+            ? `${selectedLineData.CD_FIRM}::${selectedLineData.CD_ITEM}`
+            : undefined
+        }
+        title="품목 도움창"
+        width={820}
+      />
+    </>
   );
 }

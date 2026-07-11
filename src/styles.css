@@ -158,18 +158,69 @@ select {
 
 .search-panel {
   display: grid;
-  grid-template-columns: repeat(4, minmax(150px, 220px)) minmax(180px, 1fr);
+  grid-template-columns:
+    minmax(130px, 180px)
+    repeat(2, minmax(150px, 220px))
+    minmax(340px, 1fr)
+    minmax(180px, 0.6fr);
   align-items: end;
   gap: 10px;
   padding: 10px 12px;
 }
 
-label {
+label,
+.search-field {
   display: grid;
   gap: 4px;
   color: #46586b;
   font-size: 12px;
   font-weight: 700;
+}
+
+.field-label {
+  min-height: 15px;
+}
+
+.lookup-input-group {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.75fr) minmax(150px, 1fr) 32px;
+  gap: 4px;
+}
+
+.lookup-input-group input[readonly] {
+  color: #405062;
+  background: #f4f7fa;
+}
+
+.lookup-open-button,
+.section-lookup-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #9eacba;
+  border-radius: 4px;
+  color: #2d4156;
+  background: #f6f8fa;
+  cursor: pointer;
+}
+
+.lookup-open-button {
+  width: 32px;
+  height: 30px;
+  padding: 0;
+}
+
+.lookup-open-button:hover,
+.section-lookup-button:hover {
+  border-color: #1d75d8;
+  color: #1766bd;
+  background: #edf5ff;
+}
+
+.lookup-open-button:focus-visible,
+.section-lookup-button:focus-visible {
+  border-color: #1d75d8;
+  outline: 2px solid #d7e9ff;
 }
 
 input,
@@ -223,6 +274,20 @@ select:focus {
   font-size: 12px;
 }
 
+.section-title-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.section-lookup-button {
+  gap: 4px;
+  height: 28px;
+  padding: 0 9px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .table-wrap {
   min-height: 0;
   overflow: auto;
@@ -240,7 +305,7 @@ table {
 }
 
 .line-table {
-  min-width: 1420px;
+  min-width: 1620px;
 }
 
 th {
@@ -364,6 +429,227 @@ tr.selected .grid-select,
   background: #e8edf2;
 }
 
+.erp-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgb(22 33 45 / 48%);
+}
+
+.erp-dialog {
+  display: grid;
+  grid-template-rows: 40px minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid #7d8d9d;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 16px 40px rgb(13 27 42 / 28%);
+}
+
+.erp-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #c5d0dc;
+  padding: 0 8px 0 12px;
+  color: #ffffff;
+  background: #34495e;
+}
+
+.erp-dialog__title {
+  margin: 0;
+  font-size: 14px;
+}
+
+.erp-dialog__close-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 3px;
+  padding: 0 0 2px;
+  color: #ffffff;
+  background: transparent;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.erp-dialog__close-button:hover,
+.erp-dialog__close-button:focus-visible {
+  background: rgb(255 255 255 / 16%);
+  outline: none;
+}
+
+.erp-dialog__body {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.erp-dialog__footer {
+  display: flex;
+  justify-content: flex-end;
+  min-height: 46px;
+  border-top: 1px solid #d5dde6;
+  padding: 8px 12px;
+  background: #f6f8fa;
+}
+
+.erp-lookup-dialog {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) 20px;
+  gap: 8px;
+  height: 100%;
+  min-height: 0;
+  padding: 10px 12px 6px;
+}
+
+.erp-lookup-dialog__search-panel {
+  display: grid;
+  grid-template-columns: auto minmax(180px, 360px) 62px minmax(80px, 1fr);
+  align-items: center;
+  gap: 7px;
+  min-height: 42px;
+  border: 1px solid #d4dde7;
+  padding: 6px 8px;
+  background: #f4f7fa;
+}
+
+.erp-lookup-dialog__search-label {
+  display: flex;
+  align-items: center;
+  color: #34495e;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.erp-lookup-dialog__search-input {
+  height: 28px;
+}
+
+.erp-lookup-dialog__search-button,
+.erp-lookup-dialog__button {
+  height: 28px;
+  border: 1px solid #aebac6;
+  border-radius: 4px;
+  padding: 0 12px;
+  color: #263442;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.erp-lookup-dialog__search-button:hover,
+.erp-lookup-dialog__button:hover {
+  border-color: #6485a7;
+  background: #eef4fb;
+}
+
+.erp-lookup-dialog__search-button:focus-visible,
+.erp-lookup-dialog__button:focus-visible {
+  border-color: #1d75d8;
+  outline: 2px solid #d7e9ff;
+}
+
+.erp-lookup-dialog__result-count {
+  justify-self: end;
+  color: #647386;
+  font-size: 12px;
+}
+
+.erp-lookup-dialog__grid,
+.erp-data-grid,
+.erp-data-grid__viewport {
+  height: 100%;
+  min-height: 0;
+}
+
+.erp-data-grid__viewport {
+  overflow: auto;
+  border: 1px solid #bfcbd7;
+}
+
+.erp-data-grid__table {
+  width: max-content;
+  min-width: 100%;
+  table-layout: fixed;
+}
+
+.erp-data-grid__header {
+  height: 30px;
+  padding: 0 7px;
+  background: #e3eaf2;
+  font-size: 12px;
+}
+
+.erp-data-grid__header--center,
+.erp-data-grid__cell--center {
+  text-align: center;
+}
+
+.erp-data-grid__header--right,
+.erp-data-grid__cell--right {
+  text-align: right;
+}
+
+.erp-data-grid__cell {
+  height: 30px;
+  overflow: hidden;
+  padding: 0 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.erp-data-grid__row:focus-visible {
+  outline: 2px solid #1d75d8;
+  outline-offset: -2px;
+}
+
+.erp-data-grid__row--selected .erp-data-grid__cell {
+  color: #143e68;
+  background: #cfe5ff;
+}
+
+.erp-data-grid__empty-cell {
+  height: 96px;
+}
+
+.erp-lookup-dialog__notice {
+  min-height: 20px;
+  margin: 0;
+  color: #bd3333;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.erp-lookup-dialog__actions {
+  display: flex;
+  gap: 6px;
+}
+
+.erp-lookup-dialog__button {
+  min-width: 64px;
+}
+
+.erp-lookup-dialog__button--confirm {
+  border-color: #1766bd;
+  color: #ffffff;
+  background: #1d75d8;
+}
+
+.erp-lookup-dialog__button--confirm:hover {
+  border-color: #13589f;
+  color: #ffffff;
+  background: #1766bd;
+}
+
 @media (max-width: 980px) {
   .erp-shell {
     grid-template-columns: 1fr;
@@ -391,7 +677,39 @@ tr.selected .grid-select,
     grid-template-columns: repeat(2, minmax(140px, 1fr));
   }
 
+  .partner-filter,
+  .status-message {
+    grid-column: 1 / -1;
+  }
+
   .status-message {
     justify-self: start;
+  }
+}
+
+@media (max-width: 620px) {
+  .lookup-input-group {
+    grid-template-columns: minmax(0, 1fr) 32px;
+  }
+
+  .lookup-input-group input[readonly] {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .section-title-actions > span {
+    display: none;
+  }
+
+  .erp-dialog-backdrop {
+    padding: 8px;
+  }
+
+  .erp-lookup-dialog__search-panel {
+    grid-template-columns: auto minmax(0, 1fr) 58px;
+  }
+
+  .erp-lookup-dialog__result-count {
+    display: none;
   }
 }

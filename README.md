@@ -17,7 +17,10 @@ React + TypeScript + Vite로 만든 웹 ERP 수주등록 화면 샘플입니다.
 - 상단 그리드: `SAL_SOH` 수주정보
 - 하단 그리드: `SAL_SOL` 수주상세
 - `조회`: mock 수주정보와 상세 데이터를 표시
+- 거래처 도움창: 거래처코드·거래처명·사업자번호 검색 후 조회조건 반영
 - 수주정보 행 클릭: 선택한 `NO_SO`의 상세 라인 표시
+- 품목 도움창: 선택한 상세 행에 품목코드·품목명·규격·단위 반영
+- 공통 Lookup: 행 클릭/더블클릭, 확인/취소, Enter 확정, 단일 선택 지원
 - `신규`: `TEMP_SO_001` 형식의 임시 수주번호 생성
 - `행추가`: 선택 수주의 상세 라인 추가
 - `행삭제`: 선택 상세 라인 삭제 후 `NO_LINE` 재정렬
@@ -31,6 +34,7 @@ React + TypeScript + Vite로 만든 웹 ERP 수주등록 화면 샘플입니다.
 - `.env` 파일 없음
 - 사내 접속정보, 계정, 키, URL 포함 없음
 - mock 데이터 위치: `src/features/sales-order/mockData.ts`
+- 거래처/품목 기준정보도 feature별 mock 데이터만 사용
 
 ## 파일 구조
 
@@ -47,7 +51,19 @@ React + TypeScript + Vite로 만든 웹 ERP 수주등록 화면 샘플입니다.
    ├─ main.tsx
    ├─ styles.css
    ├─ vite-env.d.ts
+   ├─ components/
+   │  └─ common/
+   │     ├─ ErpDialog.tsx
+   │     ├─ ErpDataGrid.tsx
+   │     └─ ErpLookupDialog.tsx
    └─ features/
+      ├─ common-code/
+      │  ├─ partner/
+      │  │  ├─ mockData.ts
+      │  │  └─ types.ts
+      │  └─ item/
+      │     ├─ mockData.ts
+      │     └─ types.ts
       └─ sales-order/
          ├─ SalesOrderRegistration.tsx
          ├─ mockData.ts
@@ -76,6 +92,16 @@ pnpm run build
 ```
 
 빌드 결과물은 `dist/`에 생성됩니다. `dist/`는 Git 커밋 대상이 아닙니다.
+
+## Lookup 수동 확인
+
+1. 거래처 입력 영역의 도움 버튼을 열고 코드, 명칭 또는 사업자번호로 조회합니다.
+2. 거래처 행을 선택하고 `확인` 또는 Enter를 누르면 코드와 명칭이 조회조건에 반영됩니다.
+3. `조회` 후 수주정보와 수주상세 행을 차례로 선택합니다.
+4. 수주상세의 `품목 도움`을 열어 품목을 선택하면 해당 행의 코드, 명칭, 규격, 단위가 반영됩니다.
+5. 행을 더블클릭하면 즉시 선택되며, 행을 선택하지 않고 `확인`하면 안내 메시지가 표시됩니다.
+6. 상세 행을 선택하지 않은 상태에서 `품목 도움`을 누르면 먼저 행을 선택하라는 메시지가 표시됩니다.
+7. 기존 기능 회귀 확인은 `조회`로 mock 로드 → `신규`로 TEMP 수주 생성 → `행추가`/`행삭제` → `저장` 자동채번 → 선택 수주 `삭제` 순으로 진행합니다.
 
 ## 로컬 프리뷰
 
@@ -145,6 +171,10 @@ git status
 [data-testid="btn-delete-line"]   행삭제
 [data-testid="btn-save"]          저장
 [data-testid="btn-delete-order"]  삭제
+[data-testid="btn-partner-lookup"] 거래처 도움창
+[data-testid="btn-item-lookup"]    품목 도움창
+[data-testid="filter-partner-code"] 거래처코드 조회조건
+[data-testid="filter-partner-name"] 거래처명 조회조건
 
 .header-table tbody tr[data-no-so="SO2026070001"]
 .line-table tbody tr[data-no-so="SO2026070001"][data-no-line="1"]

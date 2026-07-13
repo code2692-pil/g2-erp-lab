@@ -2,6 +2,7 @@ import { useLayoutEffect, useMemo, useState } from "react";
 import {
   Building2,
   ChevronRight,
+  MailPlus,
   Plus,
   Rows3,
   Save,
@@ -18,6 +19,9 @@ import type { Item } from "../common-code/item/types";
 import { mockPartners } from "../common-code/partner/mockData";
 import type { Partner } from "../common-code/partner/types";
 import { mockSalesOrderHeaders, mockSalesOrderLines } from "./mockData";
+import { MailOrderImportDialog } from "../mail-order/MailOrderImportDialog";
+import { mapParsedOrderToSalesOrder } from "../mail-order/mailMapping";
+import type { MailParseResult } from "../mail-order/types";
 import type { SalesOrderHeader, SalesOrderLine, SalesOrderStatus } from "./types";
 import {
   calculateSalesOrderLineAmounts,
@@ -167,6 +171,8 @@ export function SalesOrderRegistration() {
   const [itemLookupOpen, setItemLookupOpen] = useState(false);
   const [deleteLineDialogOpen, setDeleteLineDialogOpen] = useState(false);
   const [validationDialogOpen, setValidationDialogOpen] = useState(false);
+  const [mailImportOpen, setMailImportOpen] = useState(false);
+  const [appliedMailIds, setAppliedMailIds] = useState<string[]>([]);
   const [selectedPartnerRowKey, setSelectedPartnerRowKey] = useState<string | null>(null);
   const [filters, setFilters] = useState({
     cdFirm: "1000",
@@ -339,6 +345,33 @@ export function SalesOrderRegistration() {
     setCheckedLineKeys([]);
     setTempSeq((seq) => seq + 1);
     setMessage("신규 수주 행이 추가되었습니다");
+  };
+
+  const handleApplyMailOrder = (result: MailParseResult) => {
+    const mailId = result.header.MAIL_ID.value;
+    if (!mailId) return { success: false, message: "메일 ID를 확인할 수 없어 반영할 수 없습니다." };
+    if (appliedMailIds.includes(mailId)) {
+      return { success: false, message: "동일 MAIL_ID가 이미 반영되었습니다. 중복 반영할 수 없습니다." };
+    }
+
+    const temporaryOrderNo = createTempOrderNo(tempSeq);
+    const mappedOrder = mapParsedOrderToSalesOrder(result, temporaryOrderNo);
+    if (!mappedOrder) return { success: false, message: "파싱 결과가 완전하지 않아 수주등록에 반영할 수 없습니다." };
+
+    const issues = validateSalesOrders([mappedOrder.header], mappedOrder.lines);
+    if (issues.length > 0) {
+      return { success: false, message: `기존 수주 검증 오류 ${issues.length}건으로 반영을 중단했습니다.` };
+    }
+
+    setHeaders((current) => [mappedOrder.header, ...current]);
+    setLines((current) => [...current, ...mappedOrder.lines]);
+    setSelectedNoSo(temporaryOrderNo);
+    setSelectedLine(mappedOrder.lines[0]?.NO_LINE ?? null);
+    setCheckedLineKeys([]);
+    setTempSeq((sequence) => sequence + 1);
+    setAppliedMailIds((current) => [...current, mailId]);
+    setMessage(`메일 ${mailId}의 수주를 신규 임시번호로 반영했습니다. 담당자 검토 후 저장하세요.`);
+    return { success: true, message: "수주등록 화면에 반영했습니다." };
   };
 
   const handleAddLine = () => {
@@ -609,6 +642,10 @@ export function SalesOrderRegistration() {
                 <Plus size={15} />
                 신규
               </button>
+              <button data-testid="btn-mail-import" onClick={() => setMailImportOpen(true)}>
+                <MailPlus size={15} />
+                메일 수주 불러오기
+              </button>
               <button data-testid="btn-add-line" onClick={handleAddLine}>
                 <Rows3 size={15} />
                 행추가
@@ -804,6 +841,13 @@ export function SalesOrderRegistration() {
         selectedRowKey={selectedPartnerRowKey}
         title="거래처 도움창"
         width={760}
+      />
+
+      <MailOrderImportDialog
+        appliedMailIds={appliedMailIds}
+        onApply={handleApplyMailOrder}
+        onClose={() => setMailImportOpen(false)}
+        open={mailImportOpen}
       />
 
       <ErpLookupDialog<Item>

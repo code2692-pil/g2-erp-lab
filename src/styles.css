@@ -870,6 +870,189 @@ tr.selected .grid-select,
   background: #d45858;
 }
 
+.mail-order-import {
+  display: grid;
+  grid-template-columns: 290px minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  color: #35485b;
+  font-size: 12px;
+}
+
+.mail-order-import__mail-list {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  overflow: auto;
+  border-right: 1px solid #d5dde6;
+  padding: 10px;
+  background: #f6f8fa;
+}
+
+.mail-order-import h3 {
+  margin: 0;
+  color: #263442;
+  font-size: 13px;
+}
+
+.mail-order-import__mail {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #cbd5df;
+  border-radius: 4px;
+  padding: 8px;
+  color: #35485b;
+  background: #ffffff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mail-order-import__mail:hover,
+.mail-order-import__mail.is-selected {
+  border-color: #1d75d8;
+  background: #edf5ff;
+}
+
+.mail-order-import__mail strong {
+  overflow: hidden;
+  color: #263442;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mail-order-import__mail span,
+.mail-order-import__mail em {
+  color: #657689;
+  font-size: 11px;
+  font-style: normal;
+}
+
+.mail-order-import__mail em {
+  color: #1766bd;
+  font-weight: 700;
+}
+
+.mail-order-import__detail {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.mail-order-import__mail-body {
+  display: grid;
+  gap: 5px;
+}
+
+.mail-order-import__mail-body p,
+.mail-order-import__mail-body pre {
+  margin: 0;
+}
+
+.mail-order-import__mail-body p {
+  color: #677789;
+}
+
+.mail-order-import__mail-body pre {
+  max-height: 130px;
+  overflow: auto;
+  border: 1px solid #d5dde6;
+  padding: 8px;
+  color: #35485b;
+  background: #fafbfd;
+  font: inherit;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.mail-order-import__preview {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  overflow: auto;
+  border-top: 1px solid #d8e0e8;
+  padding-top: 10px;
+}
+
+.mail-order-import__result-heading,
+.mail-order-import__fields,
+.mail-order-import__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mail-order-import__result-heading strong {
+  color: #1766bd;
+}
+
+.mail-order-import__result-heading span {
+  color: #17613c;
+  font-weight: 700;
+}
+
+.mail-order-import__fields {
+  gap: 6px 14px;
+  border: 1px solid #d7e0e8;
+  padding: 7px;
+}
+
+.mail-order-import [data-status="오류"],
+.mail-order-import [data-status="누락"],
+.mail-order-import__messages .is-error {
+  color: #bd3333;
+  font-weight: 700;
+}
+
+.mail-order-import [data-status="추정됨"] {
+  color: #95651a;
+}
+
+.mail-order-import__line-table {
+  width: 100%;
+  table-layout: fixed;
+  font-size: 12px;
+}
+
+.mail-order-import__line-table th,
+.mail-order-import__line-table td {
+  height: 28px;
+  padding: 0 6px;
+}
+
+.mail-order-import__messages p,
+.mail-order-import__notice {
+  margin: 0;
+  color: #95651a;
+}
+
+.mail-order-import__actions button {
+  min-width: 88px;
+  height: 28px;
+  border: 1px solid #aebac6;
+  border-radius: 4px;
+  color: #263442;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.mail-order-import__actions .mail-order-import__apply {
+  border-color: #1766bd;
+  color: #ffffff;
+  background: #1d75d8;
+}
+
+.mail-order-import__actions button:disabled {
+  border-color: #cbd5df;
+  color: #8a97a4;
+  background: #edf1f5;
+  cursor: not-allowed;
+}
+
 .validation-summary {
   display: grid;
   gap: 10px;
@@ -958,5 +1141,17 @@ tr.selected .grid-select,
 
   .erp-lookup-dialog__result-count {
     display: none;
+  }
+}
+
+@media (max-width: 800px) {
+  .mail-order-import {
+    grid-template-columns: 1fr;
+  }
+
+  .mail-order-import__mail-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    border-right: 0;
+    border-bottom: 1px solid #d5dde6;
   }
 }

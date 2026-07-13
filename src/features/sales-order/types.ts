@@ -9,6 +9,7 @@ export interface SalesOrderHeader {
   CD_EMP: string;
   ST_SO: SalesOrderStatus;
   DC_RMK: string;
+  MAIL_ID?: string;
 }
 
 export interface SalesOrderLine {

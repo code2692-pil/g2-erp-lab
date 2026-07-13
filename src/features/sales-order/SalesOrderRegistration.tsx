@@ -8,33 +8,47 @@ import {
   Search,
   Trash2
 } from "lucide-react";
+import { ErpDataGrid } from "../../components/common/ErpDataGrid";
+import type { ErpDataGridColumn, ErpDataGridCellValue } from "../../components/common/ErpDataGrid";
+import { ErpDialog } from "../../components/common/ErpDialog";
 import { ErpLookupDialog } from "../../components/common/ErpLookupDialog";
-import type { ErpDataGridColumn } from "../../components/common/ErpDataGrid";
 import { mockItems } from "../common-code/item/mockData";
 import type { Item } from "../common-code/item/types";
 import { mockPartners } from "../common-code/partner/mockData";
 import type { Partner } from "../common-code/partner/types";
 import { mockSalesOrderHeaders, mockSalesOrderLines } from "./mockData";
 import type { SalesOrderHeader, SalesOrderLine, SalesOrderStatus } from "./types";
+import {
+  calculateSalesOrderLineAmounts,
+  calculateSalesOrderLineTotals,
+  createSalesOrderHeaderKey,
+  createSalesOrderLineKey
+} from "./utils";
+
+type HeaderEditableField = Exclude<keyof SalesOrderHeader, "NO_SO">;
+type LineEditableField = Exclude<
+  keyof SalesOrderLine,
+  "CD_FIRM" | "NO_SO" | "NO_LINE" | "AM_SUPPLY" | "AM_VAT" | "AM_TOTAL"
+>;
 
 const statusOptions: SalesOrderStatus[] = ["신규", "진행", "확정", "마감"];
 const money = new Intl.NumberFormat("ko-KR");
 
 const partnerLookupColumns: readonly ErpDataGridColumn<Partner>[] = [
-  { field: "CD_FIRM", header: "회사코드", width: 90, align: "center" },
-  { field: "CD_PARTNER", header: "거래처코드", width: 120 },
-  { field: "NM_PARTNER", header: "거래처명", width: 180 },
-  { field: "NO_COMPANY", header: "사업자번호", width: 130 },
-  { field: "YN_USE", header: "사용", width: 64, align: "center" }
+  { field: "CD_FIRM", headerName: "회사코드", width: 90, align: "center" },
+  { field: "CD_PARTNER", headerName: "거래처코드", width: 120, dataType: "code" },
+  { field: "NM_PARTNER", headerName: "거래처명", width: 180 },
+  { field: "NO_COMPANY", headerName: "사업자번호", width: 130, dataType: "code" },
+  { field: "YN_USE", headerName: "사용", width: 64, align: "center" }
 ];
 
 const itemLookupColumns: readonly ErpDataGridColumn<Item>[] = [
-  { field: "CD_FIRM", header: "회사코드", width: 90, align: "center" },
-  { field: "CD_ITEM", header: "품목코드", width: 120 },
-  { field: "NM_ITEM", header: "품목명", width: 190 },
-  { field: "STND_ITEM", header: "규격", width: 150 },
-  { field: "UNIT_ITEM", header: "단위", width: 70, align: "center" },
-  { field: "YN_USE", header: "사용", width: 64, align: "center" }
+  { field: "CD_FIRM", headerName: "회사코드", width: 90, align: "center" },
+  { field: "CD_ITEM", headerName: "품목코드", width: 120, dataType: "code" },
+  { field: "NM_ITEM", headerName: "품목명", width: 190 },
+  { field: "STND_ITEM", headerName: "규격", width: 150 },
+  { field: "UNIT_ITEM", headerName: "단위", width: 70, align: "center" },
+  { field: "YN_USE", headerName: "사용", width: 64, align: "center" }
 ];
 
 const partnerSearchFields: readonly (keyof Partner)[] = [
@@ -43,14 +57,6 @@ const partnerSearchFields: readonly (keyof Partner)[] = [
   "NO_COMPANY"
 ];
 const itemSearchFields: readonly (keyof Item)[] = ["CD_ITEM", "NM_ITEM", "STND_ITEM"];
-
-function getPartnerRowKey(partner: Partner) {
-  return `${partner.CD_FIRM}::${partner.CD_PARTNER}`;
-}
-
-function getItemRowKey(item: Item) {
-  return `${item.CD_FIRM}::${item.CD_ITEM}`;
-}
 
 function today() {
   const now = new Date();
@@ -88,16 +94,6 @@ function createEmptyHeader(noSo: string): SalesOrderHeader {
   };
 }
 
-function calculateAmounts(quantity: number, unitPrice: number) {
-  const supply = Math.round(quantity * unitPrice);
-  const vat = Math.round(supply * 0.1);
-  return {
-    AM_SUPPLY: supply,
-    AM_VAT: vat,
-    AM_TOTAL: supply + vat
-  };
-}
-
 function createEmptyLine(header: SalesOrderHeader, noLine: number): SalesOrderLine {
   return {
     CD_FIRM: header.CD_FIRM,
@@ -127,8 +123,34 @@ function statusClass(status: SalesOrderStatus) {
   return classMap[status];
 }
 
-function toNumber(value: string) {
-  return Number.isFinite(Number(value)) ? Number(value) : 0;
+function toNumber(value: ErpDataGridCellValue) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getPartnerRowKey(partner: Partner) {
+  return `${partner.CD_FIRM}::${partner.CD_PARTNER}`;
+}
+
+function getItemRowKey(item: Pick<Item, "CD_FIRM" | "CD_ITEM">) {
+  return `${item.CD_FIRM}::${item.CD_ITEM}`;
+}
+
+function isHeaderEditableField(field: keyof SalesOrderHeader): field is HeaderEditableField {
+  return field !== "NO_SO";
+}
+
+function isLineEditableField(field: keyof SalesOrderLine): field is LineEditableField {
+  return (
+    field === "CD_ITEM" ||
+    field === "NM_ITEM" ||
+    field === "STND_ITEM" ||
+    field === "UNIT_ITEM" ||
+    field === "QT_SO" ||
+    field === "UM_SO" ||
+    field === "DT_DLV" ||
+    field === "DC_RMK"
+  );
 }
 
 export function SalesOrderRegistration() {
@@ -136,10 +158,12 @@ export function SalesOrderRegistration() {
   const [lines, setLines] = useState<SalesOrderLine[]>([]);
   const [selectedNoSo, setSelectedNoSo] = useState("");
   const [selectedLine, setSelectedLine] = useState<number | null>(null);
+  const [checkedLineKeys, setCheckedLineKeys] = useState<string[]>([]);
   const [message, setMessage] = useState("");
   const [tempSeq, setTempSeq] = useState(1);
   const [partnerLookupOpen, setPartnerLookupOpen] = useState(false);
   const [itemLookupOpen, setItemLookupOpen] = useState(false);
+  const [deleteLineDialogOpen, setDeleteLineDialogOpen] = useState(false);
   const [selectedPartnerRowKey, setSelectedPartnerRowKey] = useState<string | null>(null);
   const [filters, setFilters] = useState({
     cdFirm: "1000",
@@ -183,26 +207,25 @@ export function SalesOrderRegistration() {
 
     setSelectedNoSo(nextSelectedNoSo);
     setSelectedLine(null);
+    setCheckedLineKeys([]);
   }, [selectedNoSo, visibleHeaders]);
 
   const selectedLines = lines
     .filter((line) => line.NO_SO === selectedNoSo)
     .sort((a, b) => a.NO_LINE - b.NO_LINE);
-
-  const totals = selectedLines.reduce(
-    (acc, line) => ({
-      supply: acc.supply + line.AM_SUPPLY,
-      vat: acc.vat + line.AM_VAT,
-      total: acc.total + line.AM_TOTAL
-    }),
-    { supply: 0, vat: 0, total: 0 }
+  const selectedLineTotals = calculateSalesOrderLineTotals(selectedLines);
+  const checkedLines = selectedLines.filter((line) =>
+    checkedLineKeys.includes(createSalesOrderLineKey(line.CD_FIRM, line.NO_SO, line.NO_LINE))
   );
+  const deleteTargetLines = checkedLines.length > 0 ? checkedLines : selectedLineData ? [selectedLineData] : [];
 
-  const updateHeader = (
-    noSo: string,
-    field: keyof Omit<SalesOrderHeader, "NO_SO">,
-    value: string
-  ) => {
+  const selectHeader = (header: SalesOrderHeader) => {
+    setSelectedNoSo(header.NO_SO);
+    setSelectedLine(null);
+    setCheckedLineKeys([]);
+  };
+
+  const updateHeader = (noSo: string, field: HeaderEditableField, value: string) => {
     setHeaders((current) =>
       current.map((header) => (header.NO_SO === noSo ? { ...header, [field]: value } : header))
     );
@@ -211,15 +234,11 @@ export function SalesOrderRegistration() {
       setLines((current) =>
         current.map((line) => (line.NO_SO === noSo ? { ...line, CD_FIRM: value } : line))
       );
+      setCheckedLineKeys([]);
     }
   };
 
-  const updateLine = (
-    noSo: string,
-    noLine: number,
-    field: keyof Omit<SalesOrderLine, "CD_FIRM" | "NO_SO" | "NO_LINE" | "AM_SUPPLY" | "AM_VAT" | "AM_TOTAL">,
-    value: string
-  ) => {
+  const updateLine = (noSo: string, noLine: number, field: LineEditableField, value: ErpDataGridCellValue) => {
     setLines((current) =>
       current.map((line) => {
         if (line.NO_SO !== noSo || line.NO_LINE !== noLine) return line;
@@ -228,11 +247,11 @@ export function SalesOrderRegistration() {
           const nextLine = { ...line, [field]: toNumber(value) };
           return {
             ...nextLine,
-            ...calculateAmounts(nextLine.QT_SO, nextLine.UM_SO)
+            ...calculateSalesOrderLineAmounts(nextLine.QT_SO, nextLine.UM_SO)
           };
         }
 
-        return { ...line, [field]: value };
+        return { ...line, [field]: String(value ?? "") };
       })
     );
   };
@@ -244,6 +263,7 @@ export function SalesOrderRegistration() {
     setLines(nextLines);
     setSelectedNoSo(nextHeaders[0]?.NO_SO ?? "");
     setSelectedLine(null);
+    setCheckedLineKeys([]);
     setMessage("조회되었습니다");
   };
 
@@ -294,6 +314,7 @@ export function SalesOrderRegistration() {
     setHeaders((current) => [nextHeader, ...current]);
     setSelectedNoSo(tempNo);
     setSelectedLine(null);
+    setCheckedLineKeys([]);
     setTempSeq((seq) => seq + 1);
     setMessage("신규 수주 행이 추가되었습니다");
   };
@@ -310,30 +331,56 @@ export function SalesOrderRegistration() {
     const nextLine = createEmptyLine(selectedHeader, nextNoLine);
     setLines((current) => [...current, nextLine]);
     setSelectedLine(nextNoLine);
+    setCheckedLineKeys([]);
     setMessage("수주상세 행이 추가되었습니다");
   };
 
   const handleDeleteLine = () => {
-    if (!selectedNoSo || selectedLine === null) {
-      setMessage("삭제할 수주상세 행을 선택하세요");
+    if (deleteTargetLines.length === 0) {
+      setMessage("삭제할 수주상세 행을 선택하거나 체크하세요");
       return;
     }
 
+    setDeleteLineDialogOpen(true);
+  };
+
+  const confirmDeleteLine = () => {
+    if (!selectedNoSo || deleteTargetLines.length === 0) {
+      setDeleteLineDialogOpen(false);
+      setMessage("삭제할 수주상세 행을 선택하거나 체크하세요");
+      return;
+    }
+
+    const targetKeys = new Set(
+      deleteTargetLines.map((line) => createSalesOrderLineKey(line.CD_FIRM, line.NO_SO, line.NO_LINE))
+    );
+
     setLines((current) => {
       const retained = current.filter(
-        (line) => !(line.NO_SO === selectedNoSo && line.NO_LINE === selectedLine)
+        (line) => !targetKeys.has(createSalesOrderLineKey(line.CD_FIRM, line.NO_SO, line.NO_LINE))
       );
-      const resequenced = retained
+      const currentOrderLines = retained
         .filter((line) => line.NO_SO === selectedNoSo)
         .sort((a, b) => a.NO_LINE - b.NO_LINE);
-      const lineNoMap = new Map(resequenced.map((line, index) => [line, index + 1]));
-
-      return retained.map((line) =>
-        line.NO_SO === selectedNoSo ? { ...line, NO_LINE: lineNoMap.get(line) ?? line.NO_LINE } : line
+      const resequencedLineNumbers = new Map(
+        currentOrderLines.map((line, index) => [
+          createSalesOrderLineKey(line.CD_FIRM, line.NO_SO, line.NO_LINE),
+          index + 1
+        ])
       );
+
+      return retained.map((line) => {
+        if (line.NO_SO !== selectedNoSo) return line;
+        const nextLineNo = resequencedLineNumbers.get(
+          createSalesOrderLineKey(line.CD_FIRM, line.NO_SO, line.NO_LINE)
+        );
+        return nextLineNo === undefined ? line : { ...line, NO_LINE: nextLineNo };
+      });
     });
+    setDeleteLineDialogOpen(false);
     setSelectedLine(null);
-    setMessage("수주상세 행이 삭제되었습니다");
+    setCheckedLineKeys([]);
+    setMessage(`${deleteTargetLines.length}건의 수주상세 행이 삭제되었습니다`);
   };
 
   const handleSave = () => {
@@ -371,6 +418,7 @@ export function SalesOrderRegistration() {
     setLines(savedLines);
     setSelectedNoSo(noMap.get(selectedNoSo) ?? selectedNoSo);
     setSelectedLine(null);
+    setCheckedLineKeys([]);
     console.log("SAL_SOH", savedHeaders);
     console.log("SAL_SOL", savedLines);
     setMessage("저장되었습니다");
@@ -386,390 +434,319 @@ export function SalesOrderRegistration() {
     setLines((current) => current.filter((line) => line.NO_SO !== selectedNoSo));
     setSelectedNoSo("");
     setSelectedLine(null);
+    setCheckedLineKeys([]);
     setMessage("선택된 수주정보가 삭제되었습니다");
   };
+
+  const headerGridColumns: readonly ErpDataGridColumn<SalesOrderHeader>[] = [
+    { field: "CD_FIRM", headerName: "회사코드", width: 90, dataType: "code", editable: true },
+    { field: "NO_SO", headerName: "수주번호", width: 142, dataType: "code", readOnly: true },
+    { field: "DT_SO", headerName: "수주일자", width: 128, dataType: "date", align: "center", editable: true },
+    { field: "CD_PARTNER", headerName: "거래처코드", width: 120, dataType: "code", editable: true },
+    { field: "NM_PARTNER", headerName: "거래처명", width: 150, editable: true },
+    { field: "CD_EMP", headerName: "담당자코드", width: 110, dataType: "code", editable: true },
+    {
+      field: "ST_SO",
+      headerName: "수주상태",
+      width: 155,
+      editor: ({ value, onChange }) => (
+        <div className="erp-data-grid__status-editor">
+          <select
+            className="erp-data-grid__editor"
+            onChange={(event) => onChange(event.target.value)}
+            value={String(value)}
+          >
+            {statusOptions.map((status) => (
+              <option key={status} value={status}>
+                {status}
+              </option>
+            ))}
+          </select>
+          <span className={`badge ${statusClass(value as SalesOrderStatus)}`}>{String(value)}</span>
+        </div>
+      ),
+      editable: true
+    },
+    { field: "DC_RMK", headerName: "비고", width: 210, editable: true }
+  ];
+
+  const lineGridColumns: readonly ErpDataGridColumn<SalesOrderLine>[] = [
+    { field: "CD_FIRM", headerName: "회사코드", width: 82, dataType: "code", readOnly: true },
+    { field: "NO_SO", headerName: "수주번호", width: 130, dataType: "code", readOnly: true },
+    { field: "NO_LINE", headerName: "라인", width: 58, dataType: "number", readOnly: true },
+    {
+      field: "CD_ITEM",
+      headerName: "품목코드",
+      width: 116,
+      dataType: "code",
+      editable: true,
+      required: true
+    },
+    { field: "NM_ITEM", headerName: "품목명", width: 170, editable: true },
+    { field: "STND_ITEM", headerName: "규격", width: 140, editable: true },
+    { field: "UNIT_ITEM", headerName: "단위", width: 68, editable: true },
+    {
+      field: "QT_SO",
+      headerName: "수주수량",
+      width: 98,
+      align: "right",
+      dataType: "number",
+      editable: true,
+      required: true,
+      sum: true,
+      validator: (value) => (Number(value) <= 0 ? "수주수량은 0보다 커야 합니다." : undefined)
+    },
+    {
+      field: "UM_SO",
+      headerName: "단가",
+      width: 112,
+      align: "right",
+      dataType: "number",
+      editable: true,
+      required: true,
+      validator: (value) => (Number(value) < 0 ? "단가는 0 이상이어야 합니다." : undefined)
+    },
+    {
+      field: "AM_SUPPLY",
+      headerName: "공급가액",
+      width: 126,
+      align: "right",
+      dataType: "number",
+      readOnly: true,
+      sum: true,
+      formatter: (value) => money.format(Number(value))
+    },
+    {
+      field: "AM_VAT",
+      headerName: "부가세",
+      width: 112,
+      align: "right",
+      dataType: "number",
+      readOnly: true,
+      sum: true,
+      formatter: (value) => money.format(Number(value))
+    },
+    {
+      field: "AM_TOTAL",
+      headerName: "합계금액",
+      width: 132,
+      align: "right",
+      dataType: "number",
+      readOnly: true,
+      sum: true,
+      formatter: (value) => money.format(Number(value))
+    },
+    {
+      field: "DT_DLV",
+      headerName: "납기일자",
+      width: 126,
+      align: "center",
+      dataType: "date",
+      editable: true,
+      required: true
+    },
+    { field: "DC_RMK", headerName: "비고", width: 190, editable: true }
+  ];
 
   return (
     <>
       <div className="erp-shell">
-      <aside className="side-nav">
-        <div className="brand">
-          <Building2 size={20} />
-          <strong>SMART ERP</strong>
-        </div>
-        <nav>
-          <div className="menu-title">영업관리</div>
-          <div className="menu-group">
-            <ChevronRight size={14} />
-            <span>수주관리</span>
+        <aside className="side-nav">
+          <div className="brand">
+            <Building2 size={20} />
+            <strong>SMART ERP</strong>
           </div>
-          <button className="menu-item active">수주등록</button>
-        </nav>
-      </aside>
+          <nav>
+            <div className="menu-title">영업관리</div>
+            <div className="menu-group">
+              <ChevronRight size={14} />
+              <span>수주관리</span>
+            </div>
+            <button className="menu-item active">수주등록</button>
+          </nav>
+        </aside>
 
-      <main className="workbench">
-        <header className="page-header">
-          <div>
-            <h1>수주등록</h1>
-            <p>SAL_SOH / SAL_SOL mock 데이터 입력 샘플</p>
-          </div>
-          <div className="button-bar">
-            <button data-testid="btn-search" onClick={handleSearch}>
-              <Search size={15} />
-              조회
-            </button>
-            <button data-testid="btn-new" onClick={handleNew}>
-              <Plus size={15} />
-              신규
-            </button>
-            <button data-testid="btn-add-line" onClick={handleAddLine}>
-              <Rows3 size={15} />
-              행추가
-            </button>
-            <button data-testid="btn-delete-line" onClick={handleDeleteLine}>
-              <Trash2 size={15} />
-              행삭제
-            </button>
-            <button className="primary" data-testid="btn-save" onClick={handleSave}>
-              <Save size={15} />
-              저장
-            </button>
-            <button className="danger" data-testid="btn-delete-order" onClick={handleDeleteOrder}>
-              <Trash2 size={15} />
-              삭제
-            </button>
-          </div>
-        </header>
+        <main className="workbench">
+          <header className="page-header">
+            <div>
+              <h1>수주등록</h1>
+              <p>SAL_SOH / SAL_SOL mock 데이터 입력 샘플</p>
+            </div>
+            <div className="button-bar">
+              <button data-testid="btn-search" onClick={handleSearch}>
+                <Search size={15} />
+                조회
+              </button>
+              <button data-testid="btn-new" onClick={handleNew}>
+                <Plus size={15} />
+                신규
+              </button>
+              <button data-testid="btn-add-line" onClick={handleAddLine}>
+                <Rows3 size={15} />
+                행추가
+              </button>
+              <button data-testid="btn-delete-line" onClick={handleDeleteLine}>
+                <Trash2 size={15} />
+                행삭제
+              </button>
+              <button className="primary" data-testid="btn-save" onClick={handleSave}>
+                <Save size={15} />
+                저장
+              </button>
+              <button className="danger" data-testid="btn-delete-order" onClick={handleDeleteOrder}>
+                <Trash2 size={15} />
+                삭제
+              </button>
+            </div>
+          </header>
 
-        <section className="search-panel" aria-label="조회조건">
-          <label>
-            회사코드
-            <input
-              value={filters.cdFirm}
-              onChange={(event) => {
-                setFilters({
-                  ...filters,
-                  cdFirm: event.target.value,
-                  cdPartner: "",
-                  nmPartner: ""
-                });
-                setSelectedPartnerRowKey(null);
-              }}
-            />
-          </label>
-          <label>
-            수주일자 From
-            <input
-              type="date"
-              value={filters.dateFrom}
-              onChange={(event) => setFilters({ ...filters, dateFrom: event.target.value })}
-            />
-          </label>
-          <label>
-            수주일자 To
-            <input
-              type="date"
-              value={filters.dateTo}
-              onChange={(event) => setFilters({ ...filters, dateTo: event.target.value })}
-            />
-          </label>
-          <div className="search-field partner-filter">
-            <span className="field-label">거래처</span>
-            <div className="lookup-input-group">
+          <section className="search-panel" aria-label="조회조건">
+            <label>
+              회사코드
               <input
-                aria-label="거래처코드"
-                className="mono"
-                data-testid="filter-partner-code"
-                placeholder="거래처코드"
-                value={filters.cdPartner}
+                value={filters.cdFirm}
                 onChange={(event) => {
-                  setFilters({ ...filters, cdPartner: event.target.value, nmPartner: "" });
+                  setFilters({
+                    ...filters,
+                    cdFirm: event.target.value,
+                    cdPartner: "",
+                    nmPartner: ""
+                  });
                   setSelectedPartnerRowKey(null);
                 }}
               />
+            </label>
+            <label>
+              수주일자 From
               <input
-                aria-label="거래처명"
-                data-testid="filter-partner-name"
-                placeholder="거래처명"
-                readOnly
-                value={filters.nmPartner}
+                type="date"
+                value={filters.dateFrom}
+                onChange={(event) => setFilters({ ...filters, dateFrom: event.target.value })}
               />
-              <button
-                aria-label="거래처 도움창 열기"
-                className="lookup-open-button"
-                data-testid="btn-partner-lookup"
-                onClick={() => setPartnerLookupOpen(true)}
-                title="거래처 도움창"
-                type="button"
-              >
-                <Search size={14} />
-              </button>
+            </label>
+            <label>
+              수주일자 To
+              <input
+                type="date"
+                value={filters.dateTo}
+                onChange={(event) => setFilters({ ...filters, dateTo: event.target.value })}
+              />
+            </label>
+            <div className="search-field partner-filter">
+              <span className="field-label">거래처</span>
+              <div className="lookup-input-group">
+                <input
+                  aria-label="거래처코드"
+                  className="mono"
+                  data-testid="filter-partner-code"
+                  placeholder="거래처코드"
+                  value={filters.cdPartner}
+                  onChange={(event) => {
+                    setFilters({ ...filters, cdPartner: event.target.value, nmPartner: "" });
+                    setSelectedPartnerRowKey(null);
+                  }}
+                />
+                <input
+                  aria-label="거래처명"
+                  data-testid="filter-partner-name"
+                  placeholder="거래처명"
+                  readOnly
+                  value={filters.nmPartner}
+                />
+                <button
+                  aria-label="거래처 도움창 열기"
+                  className="lookup-open-button"
+                  data-testid="btn-partner-lookup"
+                  onClick={() => setPartnerLookupOpen(true)}
+                  title="거래처 도움창"
+                  type="button"
+                >
+                  <Search size={14} />
+                </button>
+              </div>
             </div>
-          </div>
-          <span className="status-message">{message}</span>
-        </section>
+            <span className="status-message">{message}</span>
+          </section>
 
-        <section className="grid-section top-grid">
-          <div className="section-title">
-            <h2>수주정보</h2>
-            <span>SAL_SOH · PK CD_FIRM + NO_SO</span>
-          </div>
-          <div className="table-wrap">
-            <table className="header-table">
-              <thead>
-                <tr>
-                  <th>회사코드</th>
-                  <th>수주번호</th>
-                  <th>수주일자</th>
-                  <th>거래처코드</th>
-                  <th>거래처명</th>
-                  <th>담당자코드</th>
-                  <th>수주상태</th>
-                  <th>비고</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleHeaders.map((header) => (
-                  <tr
-                    data-no-so={header.NO_SO}
-                    key={`${header.CD_FIRM}-${header.NO_SO}`}
-                    className={header.NO_SO === selectedNoSo ? "selected" : ""}
-                    onClick={() => {
-                      setSelectedNoSo(header.NO_SO);
-                      setSelectedLine(null);
-                    }}
-                  >
-                    <td>
-                      <input
-                        className="grid-input mono"
-                        value={header.CD_FIRM}
-                        onChange={(event) => updateHeader(header.NO_SO, "CD_FIRM", event.target.value)}
-                      />
-                    </td>
-                    <td className="readonly-cell mono">{header.NO_SO}</td>
-                    <td>
-                      <input
-                        className="grid-input"
-                        type="date"
-                        value={header.DT_SO}
-                        onChange={(event) => updateHeader(header.NO_SO, "DT_SO", event.target.value)}
-                      />
-                    </td>
-                    <td>
-                      <input
-                        className="grid-input mono"
-                        value={header.CD_PARTNER}
-                        onChange={(event) =>
-                          updateHeader(header.NO_SO, "CD_PARTNER", event.target.value)
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        className="grid-input"
-                        value={header.NM_PARTNER}
-                        onChange={(event) =>
-                          updateHeader(header.NO_SO, "NM_PARTNER", event.target.value)
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        className="grid-input mono"
-                        value={header.CD_EMP}
-                        onChange={(event) => updateHeader(header.NO_SO, "CD_EMP", event.target.value)}
-                      />
-                    </td>
-                    <td>
-                      <select
-                        className="grid-select"
-                        value={header.ST_SO}
-                        onChange={(event) =>
-                          updateHeader(header.NO_SO, "ST_SO", event.target.value as SalesOrderStatus)
-                        }
-                      >
-                        {statusOptions.map((status) => (
-                          <option key={status} value={status}>
-                            {status}
-                          </option>
-                        ))}
-                      </select>
-                      <span className={`badge ${statusClass(header.ST_SO)}`}>{header.ST_SO}</span>
-                    </td>
-                    <td>
-                      <input
-                        className="grid-input"
-                        value={header.DC_RMK}
-                        onChange={(event) => updateHeader(header.NO_SO, "DC_RMK", event.target.value)}
-                      />
-                    </td>
-                  </tr>
-                ))}
-                {visibleHeaders.length === 0 && (
-                  <tr>
-                    <td colSpan={8} className="empty">
-                      조회 버튼을 눌러 mock 수주정보를 불러오세요.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section className="grid-section bottom-grid">
-          <div className="section-title">
-            <h2>수주상세</h2>
-            <div className="section-title-actions">
-              <span>SAL_SOL · PK CD_FIRM + NO_SO + NO_LINE</span>
-              <button
-                className="section-lookup-button"
-                data-testid="btn-item-lookup"
-                onClick={handleOpenItemLookup}
-                type="button"
-              >
-                <Search size={14} />
-                품목 도움
-              </button>
+          <section className="grid-section top-grid">
+            <div className="section-title">
+              <h2>수주정보</h2>
+              <span>SAL_SOH · PK CD_FIRM + NO_SO</span>
             </div>
+            <ErpDataGrid<SalesOrderHeader>
+              ariaLabel="수주정보"
+              className="sales-order-header-grid"
+              columns={headerGridColumns}
+              emptyMessage="조회 버튼을 눌러 mock 수주정보를 불러오세요."
+              onCellValueChange={(row, field, value) => {
+                if (isHeaderEditableField(field)) updateHeader(row.NO_SO, field, String(value ?? ""));
+              }}
+              onRowClick={selectHeader}
+              rowKey={(header) => createSalesOrderHeaderKey(header.CD_FIRM, header.NO_SO)}
+              rows={visibleHeaders}
+              selectedRowKey={
+                selectedHeader
+                  ? createSalesOrderHeaderKey(selectedHeader.CD_FIRM, selectedHeader.NO_SO)
+                  : undefined
+              }
+              selectionMode="single"
+              showFooter
+              showRowNumbers
+            />
+          </section>
+
+          <section className="grid-section bottom-grid">
+            <div className="section-title">
+              <h2>수주상세</h2>
+              <div className="section-title-actions">
+                <span>SAL_SOL · PK CD_FIRM + NO_SO + NO_LINE</span>
+                <button
+                  className="section-lookup-button"
+                  data-testid="btn-item-lookup"
+                  onClick={handleOpenItemLookup}
+                  type="button"
+                >
+                  <Search size={14} />
+                  품목 도움
+                </button>
+              </div>
+            </div>
+            <ErpDataGrid<SalesOrderLine>
+              ariaLabel="수주상세"
+              checkedRowKeys={checkedLineKeys}
+              className="sales-order-line-grid"
+              columns={lineGridColumns}
+              emptyMessage="수주정보 행을 선택하면 상세 목록이 표시됩니다."
+              onCellValueChange={(row, field, value) => {
+                if (isLineEditableField(field)) updateLine(row.NO_SO, row.NO_LINE, field, value);
+              }}
+              onCheckedRowKeysChange={setCheckedLineKeys}
+              onRowClick={(line) => setSelectedLine(line.NO_LINE)}
+              rowKey={(line) => createSalesOrderLineKey(line.CD_FIRM, line.NO_SO, line.NO_LINE)}
+              rows={selectedLines}
+              selectedRowKey={
+                selectedLineData
+                  ? createSalesOrderLineKey(
+                      selectedLineData.CD_FIRM,
+                      selectedLineData.NO_SO,
+                      selectedLineData.NO_LINE
+                    )
+                  : undefined
+              }
+              selectionMode="multiple"
+              showCheckboxes
+              showFooter
+              showRowNumbers
+            />
+          </section>
+
+          <div className="sales-order-total-summary" aria-label="수주상세 합계">
+            <span>수량 {money.format(selectedLineTotals.QT_SO)}</span>
+            <span>공급가액 {money.format(selectedLineTotals.AM_SUPPLY)}</span>
+            <span>부가세 {money.format(selectedLineTotals.AM_VAT)}</span>
+            <strong>합계금액 {money.format(selectedLineTotals.AM_TOTAL)}</strong>
           </div>
-          <div className="table-wrap">
-            <table className="line-table">
-              <thead>
-                <tr>
-                  <th>회사코드</th>
-                  <th>수주번호</th>
-                  <th>라인</th>
-                  <th>품목코드</th>
-                  <th>품목명</th>
-                  <th>규격</th>
-                  <th>단위</th>
-                  <th className="num">수주수량</th>
-                  <th className="num">단가</th>
-                  <th className="num">공급가액</th>
-                  <th className="num">부가세</th>
-                  <th className="num">합계금액</th>
-                  <th>납기일자</th>
-                  <th>비고</th>
-                </tr>
-              </thead>
-              <tbody>
-                {selectedLines.map((line) => (
-                  <tr
-                    data-no-so={line.NO_SO}
-                    data-no-line={line.NO_LINE}
-                    key={`${line.NO_SO}-${line.NO_LINE}`}
-                    className={line.NO_LINE === selectedLine ? "selected" : ""}
-                    onClick={() => setSelectedLine(line.NO_LINE)}
-                  >
-                    <td className="readonly-cell mono">{line.CD_FIRM}</td>
-                    <td className="readonly-cell mono">{line.NO_SO}</td>
-                    <td className="readonly-cell mono">{line.NO_LINE}</td>
-                    <td>
-                      <input
-                        className="grid-input mono"
-                        value={line.CD_ITEM}
-                        onChange={(event) =>
-                          updateLine(line.NO_SO, line.NO_LINE, "CD_ITEM", event.target.value)
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        className="grid-input"
-                        value={line.NM_ITEM}
-                        onChange={(event) =>
-                          updateLine(line.NO_SO, line.NO_LINE, "NM_ITEM", event.target.value)
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        className="grid-input"
-                        value={line.STND_ITEM}
-                        onChange={(event) =>
-                          updateLine(line.NO_SO, line.NO_LINE, "STND_ITEM", event.target.value)
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        className="grid-input"
-                        value={line.UNIT_ITEM}
-                        onChange={(event) =>
-                          updateLine(line.NO_SO, line.NO_LINE, "UNIT_ITEM", event.target.value)
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        className="grid-input num"
-                        min="0"
-                        type="number"
-                        value={line.QT_SO}
-                        onFocus={(event) => event.currentTarget.select()}
-                        onChange={(event) =>
-                          updateLine(line.NO_SO, line.NO_LINE, "QT_SO", event.target.value)
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        className="grid-input num"
-                        min="0"
-                        type="number"
-                        value={line.UM_SO}
-                        onFocus={(event) => event.currentTarget.select()}
-                        onChange={(event) =>
-                          updateLine(line.NO_SO, line.NO_LINE, "UM_SO", event.target.value)
-                        }
-                      />
-                    </td>
-                    <td className="num readonly-cell">{money.format(line.AM_SUPPLY)}</td>
-                    <td className="num readonly-cell">{money.format(line.AM_VAT)}</td>
-                    <td className="num strong readonly-cell">{money.format(line.AM_TOTAL)}</td>
-                    <td>
-                      <input
-                        className="grid-input"
-                        type="date"
-                        value={line.DT_DLV}
-                        onChange={(event) =>
-                          updateLine(line.NO_SO, line.NO_LINE, "DT_DLV", event.target.value)
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        className="grid-input"
-                        value={line.DC_RMK}
-                        onChange={(event) =>
-                          updateLine(line.NO_SO, line.NO_LINE, "DC_RMK", event.target.value)
-                        }
-                      />
-                    </td>
-                  </tr>
-                ))}
-                {selectedLines.length === 0 && (
-                  <tr>
-                    <td colSpan={14} className="empty">
-                      수주정보 행을 선택하면 상세 목록이 표시됩니다.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td colSpan={9}>합계</td>
-                  <td className="num">{money.format(totals.supply)}</td>
-                  <td className="num">{money.format(totals.vat)}</td>
-                  <td className="num strong">{money.format(totals.total)}</td>
-                  <td colSpan={2}></td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </section>
-      </main>
+        </main>
       </div>
 
       <ErpLookupDialog<Partner>
@@ -799,12 +776,39 @@ export function SalesOrderRegistration() {
         searchFields={itemSearchFields}
         selectedRowKey={
           selectedLineData?.CD_ITEM
-            ? `${selectedLineData.CD_FIRM}::${selectedLineData.CD_ITEM}`
+            ? getItemRowKey(selectedLineData)
             : undefined
         }
         title="품목 도움창"
         width={820}
       />
+
+      <ErpDialog
+        footer={
+          <div className="erp-confirm-dialog__actions">
+            <button
+              className="erp-confirm-dialog__button erp-confirm-dialog__button--danger"
+              onClick={confirmDeleteLine}
+              type="button"
+            >
+              삭제
+            </button>
+            <button className="erp-confirm-dialog__button" onClick={() => setDeleteLineDialogOpen(false)} type="button">
+              취소
+            </button>
+          </div>
+        }
+        height={210}
+        onClose={() => setDeleteLineDialogOpen(false)}
+        open={deleteLineDialogOpen}
+        title="수주상세 삭제 확인"
+        width={420}
+      >
+        <div className="erp-confirm-dialog__content">
+          <p>선택한 수주상세 {deleteTargetLines.length}건을 삭제하시겠습니까?</p>
+          <span>이 작업은 mock 화면 데이터에만 반영됩니다.</span>
+        </div>
+      </ErpDialog>
     </>
   );
 }

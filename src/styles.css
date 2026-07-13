@@ -732,6 +732,15 @@ tr.selected .grid-select,
   background: #fff7f7;
 }
 
+.erp-data-grid__error-message {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 .erp-data-grid__required-mark {
   margin-left: 3px;
   color: #c73535;
@@ -859,6 +868,33 @@ tr.selected .grid-select,
   border-color: #c24d4d;
   color: #ffffff;
   background: #d45858;
+}
+
+.validation-summary {
+  display: grid;
+  gap: 10px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 14px 16px;
+  color: #35485b;
+  font-size: 13px;
+}
+
+.validation-summary p {
+  margin: 0;
+  color: #bd3333;
+  font-weight: 700;
+}
+
+.validation-summary ul {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.validation-summary li {
+  line-height: 1.4;
 }
 
 @media (max-width: 980px) {

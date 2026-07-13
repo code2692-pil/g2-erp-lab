@@ -5,6 +5,7 @@ export type ErpDataGridAlign = "left" | "center" | "right";
 export type ErpDataGridDataType = "text" | "number" | "date" | "code" | "boolean";
 export type ErpDataGridSelectionMode = "none" | "single" | "multiple";
 export type ErpDataGridCellValue = string | number | boolean | null;
+export type ErpDataGridCellErrors = Readonly<Record<string, Readonly<Record<string, string>>>>;
 
 export interface ErpDataGridEditorContext<T extends object> {
   row: T;
@@ -54,6 +55,7 @@ export interface ErpDataGridProps<T extends object> {
   ariaLabel?: string;
   className?: string;
   dataTestId?: string;
+  cellErrors?: ErpDataGridCellErrors;
 }
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
@@ -92,7 +94,8 @@ export function ErpDataGrid<T extends object>({
   emptyMessage = "조회된 데이터가 없습니다.",
   ariaLabel = "조회 결과",
   className = "",
-  dataTestId
+  dataTestId,
+  cellErrors
 }: ErpDataGridProps<T>) {
   const [uncontrolledCheckedRowKeys, setUncontrolledCheckedRowKeys] = useState<string[]>([]);
   const rowRefs = useRef<Array<HTMLTableRowElement | null>>([]);
@@ -188,7 +191,8 @@ export function ErpDataGrid<T extends object>({
     focusEditableCell(currentCell, event.key === "Tab" && event.shiftKey);
   };
 
-  const getCellError = (row: T, column: ErpDataGridColumn<T>) => {
+  const getCellError = (row: T, column: ErpDataGridColumn<T>, rowIdentifier: string) => {
+    if (cellErrors) return cellErrors[rowIdentifier]?.[String(column.field)];
     const value = row[column.field];
     if (column.required && isEmptyRequiredValue(value)) return "필수 입력 항목입니다.";
     return column.validator?.(value, row);
@@ -356,10 +360,14 @@ export function ErpDataGrid<T extends object>({
                   {visibleColumns.map((column) => {
                     const align = column.align ?? (column.dataType === "number" ? "right" : "left");
                     const editable = Boolean(column.editable) && !column.readOnly;
-                    const error = getCellError(row, column);
+                    const error = getCellError(row, column, key);
+                    const errorId = dataTestId
+                      ? `${dataTestId}-error-${key}-${String(column.field)}`
+                      : undefined;
 
                     return (
                       <td
+                        aria-describedby={error ? errorId : undefined}
                         aria-invalid={Boolean(error)}
                         className={`erp-data-grid__cell erp-data-grid__cell--${align}${
                           column.readOnly ? " erp-data-grid__cell--readonly" : ""
@@ -367,7 +375,13 @@ export function ErpDataGrid<T extends object>({
                           error ? " erp-data-grid__cell--invalid" : ""
                         }`}
                         data-erp-grid-editable={editable ? "true" : undefined}
+                        data-testid={
+                          dataTestId
+                            ? `${dataTestId}-cell-container-${key}-${String(column.field)}`
+                            : undefined
+                        }
                         key={String(column.field)}
+                        tabIndex={error && !editable ? 0 : undefined}
                         title={error}
                       >
                         {column.render
@@ -377,6 +391,11 @@ export function ErpDataGrid<T extends object>({
                             : column.formatter
                               ? column.formatter(row[column.field], row)
                               : renderDefaultValue(row[column.field], column.dataType ?? "text")}
+                        {error && errorId && (
+                          <span className="erp-data-grid__error-message" id={errorId} role="alert">
+                            {error}
+                          </span>
+                        )}
                       </td>
                     );
                   })}

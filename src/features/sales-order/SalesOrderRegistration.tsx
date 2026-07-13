@@ -12,6 +12,7 @@ import { ErpDataGrid } from "../../components/common/ErpDataGrid";
 import type { ErpDataGridColumn, ErpDataGridCellValue } from "../../components/common/ErpDataGrid";
 import { ErpDialog } from "../../components/common/ErpDialog";
 import { ErpLookupDialog } from "../../components/common/ErpLookupDialog";
+import { toValidationCellErrors, type ValidationIssue } from "../../components/common/validation/validation";
 import { mockItems } from "../common-code/item/mockData";
 import type { Item } from "../common-code/item/types";
 import { mockPartners } from "../common-code/partner/mockData";
@@ -24,6 +25,7 @@ import {
   createSalesOrderHeaderKey,
   createSalesOrderLineKey
 } from "./utils";
+import { validateSalesOrders } from "./validation";
 
 type HeaderEditableField = Exclude<keyof SalesOrderHeader, "NO_SO">;
 type LineEditableField = Exclude<
@@ -164,6 +166,7 @@ export function SalesOrderRegistration() {
   const [partnerLookupOpen, setPartnerLookupOpen] = useState(false);
   const [itemLookupOpen, setItemLookupOpen] = useState(false);
   const [deleteLineDialogOpen, setDeleteLineDialogOpen] = useState(false);
+  const [validationDialogOpen, setValidationDialogOpen] = useState(false);
   const [selectedPartnerRowKey, setSelectedPartnerRowKey] = useState<string | null>(null);
   const [filters, setFilters] = useState({
     cdFirm: "1000",
@@ -174,6 +177,11 @@ export function SalesOrderRegistration() {
   });
 
   const selectedHeader = headers.find((header) => header.NO_SO === selectedNoSo);
+  const validationIssues = useMemo(() => validateSalesOrders(headers, lines), [headers, lines]);
+  const validationCellErrors = useMemo(
+    () => toValidationCellErrors(validationIssues),
+    [validationIssues]
+  );
   const selectedLineData = lines.find(
     (line) => line.NO_SO === selectedNoSo && line.NO_LINE === selectedLine
   );
@@ -218,6 +226,20 @@ export function SalesOrderRegistration() {
     checkedLineKeys.includes(createSalesOrderLineKey(line.CD_FIRM, line.NO_SO, line.NO_LINE))
   );
   const deleteTargetLines = checkedLines.length > 0 ? checkedLines : selectedLineData ? [selectedLineData] : [];
+
+  const focusValidationIssue = (issue: ValidationIssue) => {
+    if (!issue.rowKey || !issue.field) return;
+    const gridTestId = issue.scope === "header" ? "sales-order-header-grid" : "sales-order-line-grid";
+    const editorTestId = `${gridTestId}-cell-${issue.rowKey}-${issue.field}`;
+    const containerTestId = `${gridTestId}-cell-container-${issue.rowKey}-${issue.field}`;
+
+    window.requestAnimationFrame(() => {
+      const target = document.querySelector<HTMLElement>(
+        `[data-testid="${editorTestId}"], [data-testid="${containerTestId}"]`
+      );
+      target?.focus();
+    });
+  };
 
   const selectHeader = (header: SalesOrderHeader) => {
     setSelectedNoSo(header.NO_SO);
@@ -384,6 +406,14 @@ export function SalesOrderRegistration() {
   };
 
   const handleSave = () => {
+    const issues = validateSalesOrders(headers, lines);
+    if (issues.length > 0) {
+      setValidationDialogOpen(true);
+      setMessage(`저장 전 검증 오류 ${issues.length}건을 확인하세요.`);
+      focusValidationIssue(issues[0]);
+      return;
+    }
+
     const yearMonth = today().slice(0, 7).replace("-", "");
     let nextIndex = getNextSavedOrderIndex(headers, yearMonth);
     const noMap = new Map<string, string>();
@@ -439,10 +469,10 @@ export function SalesOrderRegistration() {
   };
 
   const headerGridColumns: readonly ErpDataGridColumn<SalesOrderHeader>[] = [
-    { field: "CD_FIRM", headerName: "회사코드", width: 90, dataType: "code", editable: true },
+    { field: "CD_FIRM", headerName: "회사코드", width: 90, dataType: "code", editable: true, required: true },
     { field: "NO_SO", headerName: "수주번호", width: 142, dataType: "code", readOnly: true },
-    { field: "DT_SO", headerName: "수주일자", width: 128, dataType: "date", align: "center", editable: true },
-    { field: "CD_PARTNER", headerName: "거래처코드", width: 120, dataType: "code", editable: true },
+    { field: "DT_SO", headerName: "수주일자", width: 128, dataType: "date", align: "center", editable: true, required: true },
+    { field: "CD_PARTNER", headerName: "거래처코드", width: 120, dataType: "code", editable: true, required: true },
     { field: "NM_PARTNER", headerName: "거래처명", width: 150, editable: true },
     { field: "CD_EMP", headerName: "담당자코드", width: 110, dataType: "code", editable: true },
     {
@@ -493,8 +523,7 @@ export function SalesOrderRegistration() {
       dataType: "number",
       editable: true,
       required: true,
-      sum: true,
-      validator: (value) => (Number(value) <= 0 ? "수주수량은 0보다 커야 합니다." : undefined)
+      sum: true
     },
     {
       field: "UM_SO",
@@ -503,8 +532,7 @@ export function SalesOrderRegistration() {
       align: "right",
       dataType: "number",
       editable: true,
-      required: true,
-      validator: (value) => (Number(value) < 0 ? "단가는 0 이상이어야 합니다." : undefined)
+      required: true
     },
     {
       field: "AM_SUPPLY",
@@ -665,7 +693,12 @@ export function SalesOrderRegistration() {
                 </button>
               </div>
             </div>
-            <span className="status-message" data-testid="status-message">{message}</span>
+            <div className="status-message">
+              <span data-testid="status-message">{message}</span>
+              {validationIssues.length > 0 && (
+                <span data-testid="validation-error-count">오류 {validationIssues.length}건</span>
+              )}
+            </div>
           </section>
 
           <section className="grid-section top-grid">
@@ -675,6 +708,7 @@ export function SalesOrderRegistration() {
             </div>
             <ErpDataGrid<SalesOrderHeader>
               ariaLabel="수주정보"
+              cellErrors={validationCellErrors}
               className="sales-order-header-grid"
               columns={headerGridColumns}
               dataTestId="sales-order-header-grid"
@@ -714,6 +748,7 @@ export function SalesOrderRegistration() {
             </div>
             <ErpDataGrid<SalesOrderLine>
               ariaLabel="수주상세"
+              cellErrors={validationCellErrors}
               checkedRowKeys={checkedLineKeys}
               className="sales-order-line-grid"
               columns={lineGridColumns}
@@ -790,6 +825,38 @@ export function SalesOrderRegistration() {
         title="품목 도움창"
         width={820}
       />
+
+      <ErpDialog
+        dataTestId="dialog-validation-summary"
+        footer={
+          <div className="erp-confirm-dialog__actions">
+            <button
+              className="erp-confirm-dialog__button"
+              data-testid="dialog-validation-close"
+              onClick={() => setValidationDialogOpen(false)}
+              type="button"
+            >
+              확인
+            </button>
+          </div>
+        }
+        height={420}
+        onClose={() => setValidationDialogOpen(false)}
+        open={validationDialogOpen}
+        title="저장 전 입력값 검증"
+        width={560}
+      >
+        <div className="validation-summary">
+          <p data-testid="validation-summary-count">검증 오류 {validationIssues.length}건으로 저장이 중단되었습니다.</p>
+          <ul data-testid="validation-summary-list">
+            {validationIssues.map((issue, index) => (
+              <li key={`${issue.scope}-${issue.rowKey ?? "screen"}-${issue.field ?? "message"}-${index}`}>
+                {issue.message}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </ErpDialog>
 
       <ErpDialog
         footer={

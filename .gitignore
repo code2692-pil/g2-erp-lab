@@ -20,6 +20,10 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Playwright test artifacts
+test-results/
+playwright-report/
+
 # OS / editor
 .DS_Store
 Thumbs.db

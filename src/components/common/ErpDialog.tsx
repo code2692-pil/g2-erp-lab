@@ -10,6 +10,7 @@ export interface ErpDialogProps {
   onClose: () => void;
   width?: number | string;
   height?: number | string;
+  dataTestId?: string;
 }
 
 export function ErpDialog({
@@ -19,7 +20,8 @@ export function ErpDialog({
   footer,
   onClose,
   width,
-  height
+  height,
+  dataTestId
 }: ErpDialogProps) {
   const titleId = useId();
   const dialogRef = useRef<HTMLElement>(null);
@@ -96,6 +98,7 @@ export function ErpDialog({
         aria-labelledby={titleId}
         aria-modal="true"
         className="erp-dialog"
+        data-testid={dataTestId}
         ref={dialogRef}
         role="dialog"
         style={dialogStyle}

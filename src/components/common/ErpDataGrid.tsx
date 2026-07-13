@@ -53,6 +53,7 @@ export interface ErpDataGridProps<T extends object> {
   emptyMessage?: string;
   ariaLabel?: string;
   className?: string;
+  dataTestId?: string;
 }
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
@@ -90,7 +91,8 @@ export function ErpDataGrid<T extends object>({
   onCellValueChange,
   emptyMessage = "조회된 데이터가 없습니다.",
   ariaLabel = "조회 결과",
-  className = ""
+  className = "",
+  dataTestId
 }: ErpDataGridProps<T>) {
   const [uncontrolledCheckedRowKeys, setUncontrolledCheckedRowKeys] = useState<string[]>([]);
   const rowRefs = useRef<Array<HTMLTableRowElement | null>>([]);
@@ -192,7 +194,12 @@ export function ErpDataGrid<T extends object>({
     return column.validator?.(value, row);
   };
 
-  const renderEditor = (row: T, column: ErpDataGridColumn<T>, error?: string) => {
+  const renderEditor = (
+    row: T,
+    column: ErpDataGridColumn<T>,
+    error: string | undefined,
+    rowIdentifier: string
+  ) => {
     const value = row[column.field];
     const onChange = (nextValue: ErpDataGridCellValue) =>
       onCellValueChange?.(row, column.field, nextValue);
@@ -206,6 +213,7 @@ export function ErpDataGrid<T extends object>({
           checked={Boolean(value)}
           className="erp-data-grid__editor erp-data-grid__editor--boolean"
           data-erp-grid-editor="true"
+          data-testid={dataTestId ? `${dataTestId}-cell-${rowIdentifier}-${String(column.field)}` : undefined}
           onChange={(event) => onChange(event.currentTarget.checked)}
           type="checkbox"
         />
@@ -219,6 +227,7 @@ export function ErpDataGrid<T extends object>({
           column.dataType === "code" ? " mono" : ""
         }`}
         data-erp-grid-editor="true"
+        data-testid={dataTestId ? `${dataTestId}-cell-${rowIdentifier}-${String(column.field)}` : undefined}
         min={column.dataType === "number" ? "0" : undefined}
         onChange={(event) => onChange(event.currentTarget.value)}
         onFocus={(event) => {
@@ -231,7 +240,7 @@ export function ErpDataGrid<T extends object>({
   };
 
   return (
-    <div className={`erp-data-grid ${className}`.trim()}>
+    <div className={`erp-data-grid ${className}`.trim()} data-testid={dataTestId}>
       <div className="erp-data-grid__viewport">
         <table
           aria-label={ariaLabel}
@@ -263,6 +272,7 @@ export function ErpDataGrid<T extends object>({
                     <input
                       aria-label="전체 행 선택 또는 해제"
                       checked={allRowsChecked}
+                      data-testid={dataTestId ? `${dataTestId}-select-all` : undefined}
                       onChange={toggleAllRowsChecked}
                       ref={headerCheckboxRef}
                       type="checkbox"
@@ -296,6 +306,7 @@ export function ErpDataGrid<T extends object>({
                     checked ? " erp-data-grid__row--checked" : ""
                   }`}
                   data-row-key={key}
+                  data-testid={dataTestId ? `${dataTestId}-row-${key}` : undefined}
                   key={key}
                   onClick={() => onRowClick?.(row)}
                   onDoubleClick={() => onRowDoubleClick?.(row)}
@@ -335,6 +346,7 @@ export function ErpDataGrid<T extends object>({
                       <input
                         aria-label={`${index + 1}번 행 선택`}
                         checked={checked}
+                        data-testid={dataTestId ? `${dataTestId}-checkbox-${key}` : undefined}
                         onChange={() => toggleRowChecked(row)}
                         onClick={(event) => event.stopPropagation()}
                         type="checkbox"
@@ -361,7 +373,7 @@ export function ErpDataGrid<T extends object>({
                         {column.render
                           ? column.render(row)
                           : editable
-                            ? renderEditor(row, column, error)
+                            ? renderEditor(row, column, error, key)
                             : column.formatter
                               ? column.formatter(row[column.field], row)
                               : renderDefaultValue(row[column.field], column.dataType ?? "text")}
@@ -396,6 +408,7 @@ export function ErpDataGrid<T extends object>({
                   return (
                     <td
                       className={`erp-data-grid__summary-cell erp-data-grid__cell--${align}`}
+                      data-testid={dataTestId ? `${dataTestId}-summary-${String(column.field)}` : undefined}
                       key={String(column.field)}
                     >
                       {sum === undefined
@@ -415,8 +428,12 @@ export function ErpDataGrid<T extends object>({
       </div>
       {showFooter && (
         <footer className="erp-data-grid__status-bar">
-          <span>전체 {numberFormatter.format(rows.length)}건</span>
-          <span>선택 {numberFormatter.format(selectionCount)}건</span>
+          <span data-testid={dataTestId ? `${dataTestId}-footer-total` : undefined}>
+            전체 {numberFormatter.format(rows.length)}건
+          </span>
+          <span data-testid={dataTestId ? `${dataTestId}-footer-selected` : undefined}>
+            선택 {numberFormatter.format(selectionCount)}건
+          </span>
         </footer>
       )}
     </div>

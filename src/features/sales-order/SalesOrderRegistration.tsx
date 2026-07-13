@@ -569,7 +569,7 @@ export function SalesOrderRegistration() {
         <main className="workbench">
           <header className="page-header">
             <div>
-              <h1>수주등록</h1>
+              <h1 data-testid="page-title">수주등록</h1>
               <p>SAL_SOH / SAL_SOL mock 데이터 입력 샘플</p>
             </div>
             <div className="button-bar">
@@ -665,7 +665,7 @@ export function SalesOrderRegistration() {
                 </button>
               </div>
             </div>
-            <span className="status-message">{message}</span>
+            <span className="status-message" data-testid="status-message">{message}</span>
           </section>
 
           <section className="grid-section top-grid">
@@ -677,6 +677,7 @@ export function SalesOrderRegistration() {
               ariaLabel="수주정보"
               className="sales-order-header-grid"
               columns={headerGridColumns}
+              dataTestId="sales-order-header-grid"
               emptyMessage="조회 버튼을 눌러 mock 수주정보를 불러오세요."
               onCellValueChange={(row, field, value) => {
                 if (isHeaderEditableField(field)) updateHeader(row.NO_SO, field, String(value ?? ""));
@@ -716,6 +717,7 @@ export function SalesOrderRegistration() {
               checkedRowKeys={checkedLineKeys}
               className="sales-order-line-grid"
               columns={lineGridColumns}
+              dataTestId="sales-order-line-grid"
               emptyMessage="수주정보 행을 선택하면 상세 목록이 표시됩니다."
               onCellValueChange={(row, field, value) => {
                 if (isLineEditableField(field)) updateLine(row.NO_SO, row.NO_LINE, field, value);
@@ -740,7 +742,11 @@ export function SalesOrderRegistration() {
             />
           </section>
 
-          <div className="sales-order-total-summary" aria-label="수주상세 합계">
+          <div
+            className="sales-order-total-summary"
+            aria-label="수주상세 합계"
+            data-testid="sales-order-total-summary"
+          >
             <span>수량 {money.format(selectedLineTotals.QT_SO)}</span>
             <span>공급가액 {money.format(selectedLineTotals.AM_SUPPLY)}</span>
             <span>부가세 {money.format(selectedLineTotals.AM_VAT)}</span>
@@ -751,6 +757,7 @@ export function SalesOrderRegistration() {
 
       <ErpLookupDialog<Partner>
         columns={partnerLookupColumns}
+        dataTestId="partner-lookup"
         emptyMessage="조회된 거래처가 없습니다."
         height={500}
         onClose={() => setPartnerLookupOpen(false)}
@@ -766,6 +773,7 @@ export function SalesOrderRegistration() {
 
       <ErpLookupDialog<Item>
         columns={itemLookupColumns}
+        dataTestId="item-lookup"
         emptyMessage="조회된 품목이 없습니다."
         height={520}
         onClose={() => setItemLookupOpen(false)}
@@ -788,17 +796,24 @@ export function SalesOrderRegistration() {
           <div className="erp-confirm-dialog__actions">
             <button
               className="erp-confirm-dialog__button erp-confirm-dialog__button--danger"
+              data-testid="dialog-delete-line-confirm"
               onClick={confirmDeleteLine}
               type="button"
             >
               삭제
             </button>
-            <button className="erp-confirm-dialog__button" onClick={() => setDeleteLineDialogOpen(false)} type="button">
+            <button
+              className="erp-confirm-dialog__button"
+              data-testid="dialog-delete-line-cancel"
+              onClick={() => setDeleteLineDialogOpen(false)}
+              type="button"
+            >
               취소
             </button>
           </div>
         }
         height={210}
+        dataTestId="dialog-delete-line"
         onClose={() => setDeleteLineDialogOpen(false)}
         open={deleteLineDialogOpen}
         title="수주상세 삭제 확인"

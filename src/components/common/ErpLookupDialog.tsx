@@ -17,6 +17,7 @@ export interface ErpLookupDialogProps<T extends object> {
   emptyMessage?: string;
   width?: number | string;
   height?: number | string;
+  dataTestId?: string;
 }
 
 function normalizeSearchValue(value: unknown) {
@@ -48,7 +49,8 @@ export function ErpLookupDialog<T extends object>({
   onClose,
   emptyMessage = "조회된 데이터가 없습니다.",
   width = 760,
-  height = 520
+  height = 520,
+  dataTestId
 }: ErpLookupDialogProps<T>) {
   const [searchText, setSearchText] = useState("");
   const [appliedSearchText, setAppliedSearchText] = useState("");
@@ -126,6 +128,7 @@ export function ErpLookupDialog<T extends object>({
         <div className="erp-lookup-dialog__actions">
           <button
             className="erp-lookup-dialog__button erp-lookup-dialog__button--confirm"
+            data-testid={dataTestId ? `${dataTestId}-confirm` : undefined}
             onClick={handleConfirm}
             type="button"
           >
@@ -133,6 +136,7 @@ export function ErpLookupDialog<T extends object>({
           </button>
           <button
             className="erp-lookup-dialog__button erp-lookup-dialog__button--cancel"
+            data-testid={dataTestId ? `${dataTestId}-cancel` : undefined}
             onClick={onClose}
             type="button"
           >
@@ -153,6 +157,7 @@ export function ErpLookupDialog<T extends object>({
           </label>
           <input
             className="erp-lookup-dialog__search-input"
+            data-testid={dataTestId ? `${dataTestId}-search-input` : undefined}
             id={searchInputId}
             onChange={(event) => {
               setSearchText(event.target.value);
@@ -165,6 +170,7 @@ export function ErpLookupDialog<T extends object>({
           />
           <button
             className="erp-lookup-dialog__search-button"
+            data-testid={dataTestId ? `${dataTestId}-search-button` : undefined}
             onClick={handleSearch}
             type="button"
           >
@@ -177,6 +183,7 @@ export function ErpLookupDialog<T extends object>({
           <ErpDataGrid
             ariaLabel={`${title} 조회 결과`}
             columns={columns}
+            dataTestId={dataTestId ? `${dataTestId}-grid` : undefined}
             emptyMessage={emptyMessage}
             onRowClick={(row) => {
               setActiveRowKey(rowKey(row));

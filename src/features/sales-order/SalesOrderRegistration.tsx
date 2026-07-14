@@ -39,6 +39,8 @@ import {
   getSalesOrders,
   updateSalesOrder
 } from "../../api/salesOrderApi";
+import { useCrudPage } from "../../hooks/useCrudPage";
+import { useMasterDetailSelection } from "../../hooks/useMasterDetailSelection";
 
 type HeaderEditableField = Exclude<keyof SalesOrderHeader, "NO_SO">;
 type LineEditableField = Exclude<
@@ -171,10 +173,25 @@ function isLineEditableField(field: keyof SalesOrderLine): field is LineEditable
 export function SalesOrderRegistration() {
   const [headers, setHeaders] = useState<SalesOrderHeader[]>([]);
   const [lines, setLines] = useState<SalesOrderLine[]>([]);
-  const [selectedNoSo, setSelectedNoSo] = useState("");
-  const [selectedLine, setSelectedLine] = useState<number | null>(null);
+  const {
+    selectedMasterKey: selectedNoSo,
+    selectedDetailKey: selectedLine,
+    selectMaster,
+    selectDetail
+  } = useMasterDetailSelection<string, number | null>("", null);
+  const {
+    isLoading,
+    isSaving,
+    error,
+    successMessage,
+    clearMessage,
+    executeSearch,
+    executeCreate,
+    executeSave,
+    executeDelete
+  } = useCrudPage();
   const [checkedLineKeys, setCheckedLineKeys] = useState<string[]>([]);
-  const [message, setMessage] = useState("");
+  const [featureMessage, setFeatureMessage] = useState("");
   const [tempSeq, setTempSeq] = useState(1);
   const [partnerLookupOpen, setPartnerLookupOpen] = useState(false);
   const [itemLookupOpen, setItemLookupOpen] = useState(false);
@@ -192,6 +209,12 @@ export function SalesOrderRegistration() {
     cdPartner: "",
     nmPartner: ""
   });
+
+  const message = error ?? successMessage ?? featureMessage;
+  const setMessage = (nextMessage: string) => {
+    clearMessage();
+    setFeatureMessage(nextMessage);
+  };
 
   const selectedHeader = headers.find((header) => header.NO_SO === selectedNoSo);
   const validationIssues = useMemo(() => validateSalesOrders(headers, lines), [headers, lines]);
@@ -241,10 +264,9 @@ export function SalesOrderRegistration() {
     const nextSelectedNoSo = visibleHeaders[0]?.NO_SO ?? "";
     if (nextSelectedNoSo === selectedNoSo) return;
 
-    setSelectedNoSo(nextSelectedNoSo);
-    setSelectedLine(null);
+    selectMaster(nextSelectedNoSo);
     setCheckedLineKeys([]);
-  }, [selectedNoSo, visibleHeaders]);
+  }, [selectMaster, selectedNoSo, visibleHeaders]);
 
   const selectedLines = lines
     .filter((line) => line.NO_SO === selectedNoSo)
@@ -270,8 +292,7 @@ export function SalesOrderRegistration() {
   };
 
   const selectHeader = (header: SalesOrderHeader) => {
-    setSelectedNoSo(header.NO_SO);
-    setSelectedLine(null);
+    selectMaster(header.NO_SO);
     setCheckedLineKeys([]);
   };
 
@@ -306,32 +327,37 @@ export function SalesOrderRegistration() {
     );
   };
 
-  const handleSearch = async () => {
+  const loadSalesOrderData = async () => {
     if (isApiMode()) {
-      try {
-        const orders = await getSalesOrders();
-        const nextHeaders = orders.map((order) => order.Header);
-        const nextLines = orders.flatMap((order) => order.Lines);
-        setHeaders(nextHeaders);
-        setLines(nextLines);
-        setSelectedNoSo(nextHeaders[0]?.NO_SO ?? "");
-        setSelectedLine(null);
-        setCheckedLineKeys([]);
-        setMessage("API 조회가 완료되었습니다.");
-      } catch {
-        setMessage("API 수주 데이터를 불러오지 못했습니다.");
-      }
-      return;
+      const orders = await getSalesOrders();
+      return {
+        headers: orders.map((order) => order.Header),
+        lines: orders.flatMap((order) => order.Lines),
+        source: "api" as const
+      };
     }
 
-    const nextHeaders = mockSalesOrderHeaders.map((header) => ({ ...header }));
-    const nextLines = mockSalesOrderLines.map((line) => ({ ...line }));
-    setHeaders(nextHeaders);
-    setLines(nextLines);
-    setSelectedNoSo(nextHeaders[0]?.NO_SO ?? "");
-    setSelectedLine(null);
-    setCheckedLineKeys([]);
-    setMessage("조회되었습니다");
+    return {
+      headers: mockSalesOrderHeaders.map((header) => ({ ...header })),
+      lines: mockSalesOrderLines.map((line) => ({ ...line })),
+      source: "mock" as const
+    };
+  };
+
+  const handleSearch = async () => {
+    setFeatureMessage("");
+    await executeSearch({
+      execute: loadSalesOrderData,
+      onSuccess: ({ headers: nextHeaders, lines: nextLines }) => {
+        setHeaders(nextHeaders);
+        setLines(nextLines);
+        selectMaster(nextHeaders[0]?.NO_SO ?? "");
+        setCheckedLineKeys([]);
+      },
+      successMessage: (result) =>
+        result.source === "api" ? "API 조회가 완료되었습니다." : "조회되었습니다",
+      errorMessage: "API 수주 데이터를 불러오지 못했습니다."
+    });
   };
 
   const handleSelectPartner = (partner: Partner) => {
@@ -375,15 +401,20 @@ export function SalesOrderRegistration() {
     setMessage(`${item.NM_ITEM} 품목이 ${selectedLine}번 행에 반영되었습니다`);
   };
 
-  const handleNew = () => {
+  const handleNew = async () => {
     const tempNo = createTempOrderNo(tempSeq);
     const nextHeader = createEmptyHeader(tempNo);
-    setHeaders((current) => [nextHeader, ...current]);
-    setSelectedNoSo(tempNo);
-    setSelectedLine(null);
-    setCheckedLineKeys([]);
-    setTempSeq((seq) => seq + 1);
-    setMessage("신규 수주 행이 추가되었습니다");
+    setFeatureMessage("");
+    await executeCreate({
+      execute: () => {
+        setHeaders((current) => [nextHeader, ...current]);
+        selectMaster(tempNo);
+        setCheckedLineKeys([]);
+        setTempSeq((seq) => seq + 1);
+        return nextHeader;
+      },
+      successMessage: "신규 수주 행이 추가되었습니다"
+    });
   };
 
   const handleApplyMailOrder = (result: MailParseResult) => {
@@ -404,8 +435,8 @@ export function SalesOrderRegistration() {
 
     setHeaders((current) => [mappedOrder.header, ...current]);
     setLines((current) => [...current, ...mappedOrder.lines]);
-    setSelectedNoSo(temporaryOrderNo);
-    setSelectedLine(mappedOrder.lines[0]?.NO_LINE ?? null);
+    selectMaster(temporaryOrderNo);
+    selectDetail(mappedOrder.lines[0]?.NO_LINE ?? null);
     setCheckedLineKeys([]);
     setTempSeq((sequence) => sequence + 1);
     setAppliedMailIds((current) => [...current, mailId]);
@@ -424,7 +455,7 @@ export function SalesOrderRegistration() {
       currentLines.length === 0 ? 1 : Math.max(...currentLines.map((line) => line.NO_LINE)) + 1;
     const nextLine = createEmptyLine(selectedHeader, nextNoLine);
     setLines((current) => [...current, nextLine]);
-    setSelectedLine(nextNoLine);
+    selectDetail(nextNoLine);
     setCheckedLineKeys([]);
     setMessage("수주상세 행이 추가되었습니다");
   };
@@ -472,12 +503,12 @@ export function SalesOrderRegistration() {
       });
     });
     setDeleteLineDialogOpen(false);
-    setSelectedLine(null);
+    selectDetail(null);
     setCheckedLineKeys([]);
     setMessage(`${deleteTargetLines.length}건의 수주상세 행이 삭제되었습니다`);
   };
 
-  const handleSave = async () => {
+  const saveSalesOrder = async () => {
     const issues = validateSalesOrders(headers, lines);
     if (issues.length > 0) {
       setValidationDialogOpen(true);
@@ -513,12 +544,11 @@ export function SalesOrderRegistration() {
           : await updateSalesOrder(headerToSave.CD_FIRM, savedOrderNo, { Header: headerToSave, Lines: linesToSave });
         setHeaders((current) => [saved.Header, ...current.filter((header) => header.NO_SO !== selectedHeader.NO_SO)]);
         setLines((current) => [...current.filter((line) => line.NO_SO !== selectedHeader.NO_SO), ...saved.Lines]);
-        setSelectedNoSo(saved.Header.NO_SO);
-        setSelectedLine(null);
+        selectMaster(saved.Header.NO_SO);
         setCheckedLineKeys([]);
         setMessage("API 서버에 저장되었습니다.");
       } catch {
-        setMessage("API 저장에 실패했습니다. 서버 Validation 결과를 확인하세요.");
+        throw new Error("API 저장에 실패했습니다. 서버 Validation 결과를 확인하세요.");
       }
       return;
     }
@@ -555,15 +585,37 @@ export function SalesOrderRegistration() {
 
     setHeaders(savedHeaders);
     setLines(savedLines);
-    setSelectedNoSo(noMap.get(selectedNoSo) ?? selectedNoSo);
-    setSelectedLine(null);
+    selectMaster(noMap.get(selectedNoSo) ?? selectedNoSo);
     setCheckedLineKeys([]);
     console.log("SAL_SOH", savedHeaders);
     console.log("SAL_SOL", savedLines);
     setMessage("저장되었습니다");
   };
 
-  const handleDeleteOrder = async () => {
+  const handleSave = async () => {
+    setFeatureMessage("");
+    await executeSave({
+      validate: () => {
+        const issues = validateSalesOrders(headers, lines);
+        if (issues.length > 0) {
+          setValidationDialogOpen(true);
+          setMessage(`저장 전 검증 오류 ${issues.length}건을 확인하세요.`);
+          focusValidationIssue(issues[0]);
+          return false;
+        }
+        if (isApiMode() && !selectedHeader) {
+          setMessage("저장할 수주 정보를 선택하세요.");
+          return false;
+        }
+        return true;
+      },
+      execute: saveSalesOrder,
+      successMessage: isApiMode() ? "API 서버에 저장되었습니다." : "저장되었습니다",
+      errorMessage: "API 저장에 실패했습니다. 서버 Validation 결과를 확인하세요."
+    });
+  };
+
+  const deleteSalesOrderAction = async () => {
     if (!selectedNoSo) {
       setMessage("삭제할 수주정보를 선택하세요");
       return;
@@ -575,17 +627,29 @@ export function SalesOrderRegistration() {
       try {
         await deleteSalesOrder(orderToDelete.CD_FIRM, orderToDelete.NO_SO);
       } catch {
-        setMessage("API 삭제에 실패했습니다.");
-        return;
+        throw new Error("API 삭제에 실패했습니다.");
       }
     }
 
     setHeaders((current) => current.filter((header) => header.NO_SO !== selectedNoSo));
     setLines((current) => current.filter((line) => line.NO_SO !== selectedNoSo));
-    setSelectedNoSo("");
-    setSelectedLine(null);
+    selectMaster("");
     setCheckedLineKeys([]);
     setMessage("선택된 수주정보가 삭제되었습니다");
+  };
+
+  const handleDeleteOrder = async () => {
+    if (!selectedNoSo) {
+      setMessage("삭제할 수주정보를 선택하세요");
+      return;
+    }
+
+    setFeatureMessage("");
+    await executeDelete({
+      execute: deleteSalesOrderAction,
+      successMessage: "선택된 수주정보가 삭제되었습니다",
+      errorMessage: "API 삭제에 실패했습니다."
+    });
   };
 
   const headerGridColumns: readonly ErpDataGridColumn<SalesOrderHeader>[] = [
@@ -714,18 +778,18 @@ export function SalesOrderRegistration() {
           </nav>
         </aside>
 
-        <main className="workbench">
+        <main aria-busy={isLoading || isSaving} className="workbench">
           <header className="page-header">
             <div>
               <h1 data-testid="page-title">수주등록</h1>
               <p>SAL_SOH / SAL_SOL mock 데이터 입력 샘플</p>
             </div>
             <div className="button-bar">
-              <button data-testid="btn-search" onClick={handleSearch}>
+              <button data-testid="btn-search" disabled={isLoading} onClick={handleSearch}>
                 <Search size={15} />
                 조회
               </button>
-              <button data-testid="btn-new" onClick={handleNew}>
+              <button data-testid="btn-new" disabled={isSaving} onClick={handleNew}>
                 <Plus size={15} />
                 신규
               </button>
@@ -741,11 +805,11 @@ export function SalesOrderRegistration() {
                 <Trash2 size={15} />
                 행삭제
               </button>
-              <button className="primary" data-testid="btn-save" onClick={handleSave}>
+              <button className="primary" data-testid="btn-save" disabled={isSaving} onClick={handleSave}>
                 <Save size={15} />
                 저장
               </button>
-              <button className="danger" data-testid="btn-delete-order" onClick={handleDeleteOrder}>
+              <button className="danger" data-testid="btn-delete-order" disabled={isSaving} onClick={handleDeleteOrder}>
                 <Trash2 size={15} />
                 삭제
               </button>
@@ -882,7 +946,7 @@ export function SalesOrderRegistration() {
                 if (isLineEditableField(field)) updateLine(row.NO_SO, row.NO_LINE, field, value);
               }}
               onCheckedRowKeysChange={setCheckedLineKeys}
-              onRowClick={(line) => setSelectedLine(line.NO_LINE)}
+              onRowClick={(line) => selectDetail(line.NO_LINE)}
               rowKey={(line) => createSalesOrderLineKey(line.CD_FIRM, line.NO_SO, line.NO_LINE)}
               rows={selectedLines}
               selectedRowKey={

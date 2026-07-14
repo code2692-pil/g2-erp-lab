@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import {
   Building2,
   ChevronRight,
@@ -30,6 +30,15 @@ import {
   createSalesOrderLineKey
 } from "./utils";
 import { validateSalesOrders } from "./validation";
+import { isApiMode } from "../../api/apiClient";
+import { getItems } from "../../api/itemApi";
+import { getPartners } from "../../api/partnerApi";
+import {
+  createSalesOrder,
+  deleteSalesOrder,
+  getSalesOrders,
+  updateSalesOrder
+} from "../../api/salesOrderApi";
 
 type HeaderEditableField = Exclude<keyof SalesOrderHeader, "NO_SO">;
 type LineEditableField = Exclude<
@@ -174,6 +183,8 @@ export function SalesOrderRegistration() {
   const [mailImportOpen, setMailImportOpen] = useState(false);
   const [appliedMailIds, setAppliedMailIds] = useState<string[]>([]);
   const [selectedPartnerRowKey, setSelectedPartnerRowKey] = useState<string | null>(null);
+  const [partners, setPartners] = useState<Partner[]>(mockPartners);
+  const [items, setItems] = useState<Item[]>(mockItems);
   const [filters, setFilters] = useState({
     cdFirm: "1000",
     dateFrom: "2026-07-01",
@@ -191,10 +202,10 @@ export function SalesOrderRegistration() {
   const selectedLineData = lines.find(
     (line) => line.NO_SO === selectedNoSo && line.NO_LINE === selectedLine
   );
-  const partnerLookupRows = mockPartners.filter(
+  const partnerLookupRows = partners.filter(
     (partner) => !filters.cdFirm || partner.CD_FIRM === filters.cdFirm
   );
-  const itemLookupRows = mockItems.filter(
+  const itemLookupRows = items.filter(
     (item) => !selectedLineData?.CD_FIRM || item.CD_FIRM === selectedLineData.CD_FIRM
   );
 
@@ -212,6 +223,17 @@ export function SalesOrderRegistration() {
       return firmMatched && partnerMatched && dateMatched;
     });
   }, [filters, headers]);
+
+  useEffect(() => {
+    if (!isApiMode()) return;
+
+    Promise.all([getPartners(), getItems()])
+      .then(([nextPartners, nextItems]) => {
+        setPartners(nextPartners);
+        setItems(nextItems);
+      })
+      .catch(() => setMessage("API Lookup 데이터를 불러오지 못했습니다."));
+  }, []);
 
   useLayoutEffect(() => {
     if (visibleHeaders.some((header) => header.NO_SO === selectedNoSo)) return;
@@ -284,7 +306,24 @@ export function SalesOrderRegistration() {
     );
   };
 
-  const handleSearch = () => {
+  const handleSearch = async () => {
+    if (isApiMode()) {
+      try {
+        const orders = await getSalesOrders();
+        const nextHeaders = orders.map((order) => order.Header);
+        const nextLines = orders.flatMap((order) => order.Lines);
+        setHeaders(nextHeaders);
+        setLines(nextLines);
+        setSelectedNoSo(nextHeaders[0]?.NO_SO ?? "");
+        setSelectedLine(null);
+        setCheckedLineKeys([]);
+        setMessage("API 조회가 완료되었습니다.");
+      } catch {
+        setMessage("API 수주 데이터를 불러오지 못했습니다.");
+      }
+      return;
+    }
+
     const nextHeaders = mockSalesOrderHeaders.map((header) => ({ ...header }));
     const nextLines = mockSalesOrderLines.map((line) => ({ ...line }));
     setHeaders(nextHeaders);
@@ -438,12 +477,49 @@ export function SalesOrderRegistration() {
     setMessage(`${deleteTargetLines.length}건의 수주상세 행이 삭제되었습니다`);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const issues = validateSalesOrders(headers, lines);
     if (issues.length > 0) {
       setValidationDialogOpen(true);
       setMessage(`저장 전 검증 오류 ${issues.length}건을 확인하세요.`);
       focusValidationIssue(issues[0]);
+      return;
+    }
+
+    if (isApiMode()) {
+      if (!selectedHeader) {
+        setMessage("저장할 수주 정보를 선택하세요.");
+        return;
+      }
+
+      const isNewOrder = selectedHeader.NO_SO.startsWith("TEMP_SO_");
+      const yearMonth = today().slice(0, 7).replace("-", "");
+      const savedOrderNo = isNewOrder
+        ? createSavedOrderNo(yearMonth, getNextSavedOrderIndex(headers, yearMonth))
+        : selectedHeader.NO_SO;
+      const headerToSave = {
+        ...selectedHeader,
+        NO_SO: savedOrderNo
+      };
+      const linesToSave = selectedLines.map((line) => ({
+        ...line,
+        CD_FIRM: headerToSave.CD_FIRM,
+        NO_SO: savedOrderNo
+      }));
+
+      try {
+        const saved = isNewOrder
+          ? await createSalesOrder({ Header: headerToSave, Lines: linesToSave })
+          : await updateSalesOrder(headerToSave.CD_FIRM, savedOrderNo, { Header: headerToSave, Lines: linesToSave });
+        setHeaders((current) => [saved.Header, ...current.filter((header) => header.NO_SO !== selectedHeader.NO_SO)]);
+        setLines((current) => [...current.filter((line) => line.NO_SO !== selectedHeader.NO_SO), ...saved.Lines]);
+        setSelectedNoSo(saved.Header.NO_SO);
+        setSelectedLine(null);
+        setCheckedLineKeys([]);
+        setMessage("API 서버에 저장되었습니다.");
+      } catch {
+        setMessage("API 저장에 실패했습니다. 서버 Validation 결과를 확인하세요.");
+      }
       return;
     }
 
@@ -487,10 +563,21 @@ export function SalesOrderRegistration() {
     setMessage("저장되었습니다");
   };
 
-  const handleDeleteOrder = () => {
+  const handleDeleteOrder = async () => {
     if (!selectedNoSo) {
       setMessage("삭제할 수주정보를 선택하세요");
       return;
+    }
+
+    if (isApiMode()) {
+      const orderToDelete = headers.find((header) => header.NO_SO === selectedNoSo);
+      if (!orderToDelete) return;
+      try {
+        await deleteSalesOrder(orderToDelete.CD_FIRM, orderToDelete.NO_SO);
+      } catch {
+        setMessage("API 삭제에 실패했습니다.");
+        return;
+      }
     }
 
     setHeaders((current) => current.filter((header) => header.NO_SO !== selectedNoSo));

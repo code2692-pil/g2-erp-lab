@@ -1,4 +1,5 @@
 using G2Erp.Api.Services;
+using Microsoft.Data.SqlClient;
 
 namespace G2Erp.Api.Middleware;
 
@@ -21,6 +22,11 @@ public sealed class ApiExceptionMiddleware(RequestDelegate next)
         {
             context.Response.StatusCode = StatusCodes.Status404NotFound;
             await context.Response.WriteAsJsonAsync(new { error = "Resource not found." });
+        }
+        catch (SqlException)
+        {
+            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            await context.Response.WriteAsJsonAsync(new { error = "A database operation failed. Contact support with the traceId.", traceId = context.TraceIdentifier });
         }
     }
 }

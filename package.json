@@ -10,10 +10,16 @@
   },
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5173",
+    "dev:mock": "node scripts/run-mode.mjs dev mock",
+    "dev:api:inmemory": "node scripts/run-mode.mjs dev inmemory",
+    "dev:api:sqlserver": "node scripts/run-mode.mjs dev sqlserver",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "build": "pnpm run typecheck && vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
     "test:e2e": "node scripts/run-playwright.mjs",
+    "test:e2e:mock": "node scripts/run-mode.mjs test mock",
+    "test:e2e:api:inmemory": "node scripts/run-mode.mjs test inmemory",
+    "test:e2e:api:sqlserver": "node scripts/run-mode.mjs test sqlserver",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:report": "playwright show-report"
   },

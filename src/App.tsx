@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { PurchaseOrderRegistration } from "./features/purchase-order/PurchaseOrderRegistration";
+import { ApiPurchaseOrderRegistration } from "./features/purchase-order/ApiPurchaseOrderRegistration";
 import { SalesOrderRegistration } from "./features/sales-order/SalesOrderRegistration";
+import { isApiMode } from "./api/apiClient";
 
 export default function App() {
   const [page, setPage] = useState<"sales" | "purchase">("sales");
   return page === "sales"
     ? <SalesOrderRegistration onNavigate={setPage} />
-    : <PurchaseOrderRegistration onNavigate={setPage} />;
+    : isApiMode() ? <ApiPurchaseOrderRegistration onNavigate={setPage} /> : <PurchaseOrderRegistration onNavigate={setPage} />;
 }

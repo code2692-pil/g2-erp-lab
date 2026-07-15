@@ -1,4 +1,4 @@
-export type PurchaseOrderStatus = "미확정" | "확정" | "승인" | "진행" | "마감" | "취소";
+export type PurchaseOrderStatus = string;
 
 export interface PurchaseOrderHeader {
   CD_FIRM: string;

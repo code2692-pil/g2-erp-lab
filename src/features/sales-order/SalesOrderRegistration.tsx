@@ -170,7 +170,11 @@ function isLineEditableField(field: keyof SalesOrderLine): field is LineEditable
   );
 }
 
-export function SalesOrderRegistration() {
+interface SalesOrderRegistrationProps {
+  onNavigate?: (page: "sales" | "purchase") => void;
+}
+
+export function SalesOrderRegistration({ onNavigate }: SalesOrderRegistrationProps) {
   const [headers, setHeaders] = useState<SalesOrderHeader[]>([]);
   const [lines, setLines] = useState<SalesOrderLine[]>([]);
   const {
@@ -769,6 +773,9 @@ export function SalesOrderRegistration() {
             <strong>SMART ERP</strong>
           </div>
           <nav>
+            <button className="menu-item" data-testid="nav-purchase-order" onClick={() => onNavigate?.("purchase")} type="button">
+              구매관리 / 발주등록
+            </button>
             <div className="menu-title">영업관리</div>
             <div className="menu-group">
               <ChevronRight size={14} />

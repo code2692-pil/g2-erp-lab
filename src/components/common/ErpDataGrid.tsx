@@ -314,7 +314,6 @@ export function ErpDataGrid<T extends object>({
                   key={key}
                   onClick={() => onRowClick?.(row)}
                   onDoubleClick={() => onRowDoubleClick?.(row)}
-                  onFocus={() => onRowClick?.(row)}
                   onKeyDown={(event) => {
                     if (event.key === "ArrowDown") {
                       event.preventDefault();

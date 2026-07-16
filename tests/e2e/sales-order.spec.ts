@@ -116,22 +116,22 @@ test("F: 체크 행, 현재 행, 미선택 행삭제를 각각 처리한다", as
   await page.getByTestId(`sales-order-line-grid-checkbox-${firstLineKey}`).check();
   await page.getByTestId(`sales-order-line-grid-checkbox-${secondLineKey}`).check();
   await page.getByTestId("btn-delete-line").click();
-  await expect(page.getByTestId("dialog-delete-line")).toBeVisible();
-  await page.getByTestId("dialog-delete-line-confirm").click();
+  await expect(page.getByTestId("confirm-dialog")).toContainText("선택한 수주상세 2건");
+  await page.getByTestId("confirm-dialog-confirm").click();
   await expect(page.getByTestId("sales-order-line-grid-footer-total")).toHaveText(/0/);
 
   await page.reload();
   await searchSalesOrders(page);
   await lineRow(page, firstLineKey).click();
   await page.getByTestId("btn-delete-line").click();
-  await page.getByTestId("dialog-delete-line-confirm").click();
+  await page.getByTestId("confirm-dialog-confirm").click();
   await expect(lineRow(page, secondLineKey)).toHaveCount(0);
   await expect(lineCell(page, firstLineKey, "CD_ITEM")).toHaveValue("ITM-1204");
 
   await page.reload();
   await searchSalesOrders(page);
   await page.getByTestId("btn-delete-line").click();
-  await expect(page.getByTestId("dialog-delete-line")).toHaveCount(0);
+  await expect(page.getByTestId("confirm-dialog")).toHaveCount(0);
   await expect(page.getByTestId("status-message")).not.toHaveText("조회되었습니다");
 });
 
@@ -167,14 +167,15 @@ test("G: 기존 주요 버튼과 Lookup, Grid 행추가/삭제 동작을 유지�
   await expect(page.getByTestId("sales-order-line-grid-footer-total")).toHaveText(/1/);
 
   await page.getByTestId("btn-delete-line").click();
-  await expect(page.getByTestId("dialog-delete-line")).toBeVisible();
-  await page.getByTestId("dialog-delete-line-cancel").click();
+  await expect(page.getByTestId("confirm-dialog")).toBeVisible();
+  await page.getByTestId("confirm-dialog-cancel").click();
 
   await page.getByTestId("btn-save").click();
   await expect(page.getByTestId("dialog-validation-summary")).toBeVisible();
   await page.getByTestId("dialog-validation-close").click();
   await expect(page.getByTestId("sales-order-header-grid-row-1000::TEMP_SO_001")).toHaveCount(1);
   await page.getByTestId("btn-delete-order").click();
+  await page.getByTestId("confirm-dialog-confirm").click();
   await expect(page.getByTestId("sales-order-header-grid-footer-total")).toHaveText(/2/);
 });
 
@@ -261,9 +262,43 @@ test("Validation F: 정상 입력값이면 mock 저장 성공 메시지를 표�
 
   await page.getByTestId("btn-save").click();
 
+  await expect(page.getByTestId("confirm-dialog")).toContainText("저장하시겠습니까?");
+  await page.getByTestId("confirm-dialog-confirm").click();
+
   await expect(page.getByTestId("dialog-validation-summary")).toHaveCount(0);
   await expect(page.getByTestId("status-message")).toHaveText("저장되었습니다");
   await page.screenshot({ path: testInfo.outputPath("sales-order-validation-success.png"), fullPage: true });
+});
+
+test("UX A: 저장 확인을 취소하면 저장하지 않고, 확인하면 알림을 표시한다", async ({ page }) => {
+  await openSalesOrder(page);
+  await searchSalesOrders(page);
+  await lineCell(page, firstLineKey, "QT_SO").fill("3");
+
+  await page.getByTestId("btn-save").click();
+  await expect(page.getByTestId("confirm-dialog")).toContainText("저장하시겠습니까?");
+  await page.getByTestId("confirm-dialog-cancel").click();
+  await expect(page.getByTestId("status-message")).not.toHaveText("저장되었습니다");
+
+  await page.getByTestId("btn-save").click();
+  await page.getByTestId("confirm-dialog-confirm").click();
+  await expect(page.getByRole("status")).toContainText("저장되었습니다.");
+});
+
+test("UX B: 변경 중 Header 이동은 계속 편집 또는 폐기를 선택할 수 있다", async ({ page }) => {
+  await openSalesOrder(page);
+  await searchSalesOrders(page);
+  await lineCell(page, firstLineKey, "QT_SO").fill("3");
+
+  await headerRow(page, "1000::SO2026070002").click();
+  await expect(page.getByTestId("confirm-dialog")).toContainText("저장하지 않은 변경사항이 있습니다.");
+  await page.getByTestId("confirm-dialog-cancel").click();
+  await expect(page.getByTestId("confirm-dialog")).toHaveCount(0);
+  await expect(lineRow(page, firstLineKey)).toBeVisible();
+
+  await headerRow(page, "1000::SO2026070002").click();
+  await page.getByTestId("confirm-dialog-confirm").click();
+  await expect(lineRow(page, "1000::SO2026070002::1")).toBeVisible();
 });
 
 async function openMailImport(page: Page) {
@@ -286,6 +321,8 @@ test("Mail A: 정상 수주 메일을 분석하고 신규 수주로 반영한다
   await expect(page.getByTestId("mail-import-header-preview")).toContainText("P-10021");
   await expect(page.getByTestId("mail-import-preview-line-1")).toContainText("ITM-1001");
   await page.getByTestId("mail-import-apply").click();
+  await expect(page.getByTestId("confirm-dialog")).toContainText("자동 저장되지 않습니다");
+  await page.getByTestId("confirm-dialog-confirm").click();
 
   const importedHeaderKey = "1000::TEMP_SO_001";
   const importedLineKey = "1000::TEMP_SO_001::1";
@@ -340,6 +377,7 @@ test("Mail F: 동일 MAIL_ID의 중복 반영을 차단한다", async ({ page })
   await openMailImport(page);
   await analyzeMail(page, "mock-mail-normal-001");
   await page.getByTestId("mail-import-apply").click();
+  await page.getByTestId("confirm-dialog-confirm").click();
   await expect(page.getByTestId("mail-order-import-dialog")).toHaveCount(0);
 
   await openMailImport(page);

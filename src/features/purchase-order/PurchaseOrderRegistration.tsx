@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { Building2, ChevronRight, Plus, Rows3, Save, Search, Trash2 } from "lucide-react";
 import { ErpDataGrid } from "../../components/common/ErpDataGrid";
 import type { ErpDataGridCellValue, ErpDataGridColumn } from "../../components/common/ErpDataGrid";
@@ -7,6 +7,10 @@ import { PageToolbar } from "../../components/common/PageToolbar";
 import { SearchPanel } from "../../components/common/SearchPanel";
 import { toValidationCellErrors } from "../../components/common/validation/validation";
 import { useCrudPage } from "../../hooks/useCrudPage";
+import { useConfirm } from "../../hooks/useConfirm";
+import { useDirtyState } from "../../hooks/useDirtyState";
+import { useNotification } from "../../hooks/useNotification";
+import { useValidationSummary } from "../../hooks/useValidationSummary";
 import { useMasterDetailSelection } from "../../hooks/useMasterDetailSelection";
 import { mockItems } from "../common-code/item/mockData";
 import type { Item } from "../common-code/item/types";
@@ -45,6 +49,10 @@ export function PurchaseOrderRegistration({ onNavigate }: PurchaseOrderRegistrat
   const [warehouseOpen, setWarehouseOpen] = useState(false);
   const [filters, setFilters] = useState({ firm: "1000", from: "2026-07-01", to: "2026-07-31", no: "", partner: "", status: "" });
   const [tempSequence, setTempSequence] = useState(1);
+  const { confirm } = useConfirm();
+  const { isDirty, markDirty, clearDirty } = useDirtyState();
+  const { notify } = useNotification();
+  const { showValidationSummary } = useValidationSummary();
   const setMessage = (message: string) => { clearMessage(); setFeatureMessage(message); };
   const message = error ?? successMessage ?? featureMessage;
   const selectedHeader = headers.find((header) => header.NO_PO === selectedNoPo);
@@ -58,16 +66,46 @@ export function PurchaseOrderRegistration({ onNavigate }: PurchaseOrderRegistrat
   const deleteTargetLines = checkedLines.length > 0 ? checkedLines : selectedLine ? [selectedLine] : [];
   const totals = calculatePurchaseOrderTotals(selectedLines);
 
-  useLayoutEffect(() => { if (!visibleHeaders.some((header) => header.NO_PO === selectedNoPo)) selectMaster(visibleHeaders[0]?.NO_PO ?? ""); }, [selectMaster, selectedNoPo, visibleHeaders]);
-  const selectHeader = (header: PurchaseOrderHeader) => { selectMaster(header.NO_PO); setCheckedLineKeys([]); };
-  const updateLine = (no: string, lineNo: number, field: LineField, value: ErpDataGridCellValue) => setLines((current) => current.map((line) => { if (line.NO_PO !== no || line.NO_LINE !== lineNo) return line; if (field === "QT_PO" || field === "UM_PO") { const next = { ...line, [field]: numberValue(value) }; return { ...next, ...calculatePurchaseOrderLineAmounts(next.QT_PO, next.UM_PO) }; } return { ...line, [field]: String(value ?? "") }; }));
+  const focusValidationIssue = (issue: { scope: string; rowKey?: string; field?: string }) => {
+    if (!issue.rowKey || !issue.field || (issue.scope !== "header" && issue.scope !== "line")) return;
+    const grid = issue.scope === "header" ? "purchase-header-grid" : "purchase-line-grid";
+    requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-testid="${grid}-cell-${issue.rowKey}-${issue.field}"], [data-testid="${grid}-cell-container-${issue.rowKey}-${issue.field}"]`)?.focus());
+  };
 
-  const handleSearch = async () => { setFeatureMessage(""); await executeSearch({ execute: () => ({ headers: mockPurchaseOrderHeaders.map((row) => ({ ...row })), lines: mockPurchaseOrderLines.map((row) => ({ ...row })) }), onSuccess: (result) => { setHeaders(result.headers); setLines(result.lines); selectMaster(result.headers[0]?.NO_PO ?? ""); setCheckedLineKeys([]); }, successMessage: "발주를 조회했습니다." }); };
-  const handleNew = async () => { const no = `TEMP_PO_${String(tempSequence).padStart(3, "0")}`; const header = emptyHeader(no); setFeatureMessage(""); await executeCreate({ execute: () => { setHeaders((current) => [header, ...current]); selectMaster(no); setTempSequence((sequence) => sequence + 1); return header; }, successMessage: "신규 발주 행이 추가되었습니다." }); };
-  const handleAddLine = () => { if (!selectedHeader) return setMessage("발주정보를 먼저 선택하세요."); const next = emptyLine(selectedHeader, selectedLines.length + 1); setLines((current) => [...current, next]); selectDetail(next.NO_LINE); setMessage("발주상세 행이 추가되었습니다."); };
-  const handleDeleteLine = () => {
+  useLayoutEffect(() => { if (!visibleHeaders.some((header) => header.NO_PO === selectedNoPo)) selectMaster(visibleHeaders[0]?.NO_PO ?? ""); }, [selectMaster, selectedNoPo, visibleHeaders]);
+  useEffect(() => {
+    const markGridEdit = (event: Event) => {
+      const testId = event.target instanceof HTMLElement ? event.target.dataset.testid : undefined;
+      if (testId?.startsWith("purchase-header-grid-cell-") || testId?.startsWith("purchase-line-grid-cell-")) markDirty();
+    };
+    document.addEventListener("input", markGridEdit, true);
+    document.addEventListener("change", markGridEdit, true);
+    return () => { document.removeEventListener("input", markGridEdit, true); document.removeEventListener("change", markGridEdit, true); };
+  }, [markDirty]);
+  const confirmDiscardChanges = () => isDirty ? confirm({ title: "저장하지 않은 변경사항", message: "저장하지 않은 변경사항이 있습니다.", description: "계속하면 변경사항이 사라집니다.", confirmLabel: "변경사항 폐기", cancelLabel: "계속 편집", danger: true }) : Promise.resolve(true);
+  const selectHeader = async (header: PurchaseOrderHeader) => { if (header.NO_PO !== selectedNoPo && !(await confirmDiscardChanges())) return; if (header.NO_PO !== selectedNoPo) clearDirty(); selectMaster(header.NO_PO); setCheckedLineKeys([]); };
+  const updateLine = (no: string, lineNo: number, field: LineField, value: ErpDataGridCellValue) => { markDirty(); setLines((current) => current.map((line) => { if (line.NO_PO !== no || line.NO_LINE !== lineNo) return line; if (field === "QT_PO" || field === "UM_PO") { const next = { ...line, [field]: numberValue(value) }; return { ...next, ...calculatePurchaseOrderLineAmounts(next.QT_PO, next.UM_PO) }; } return { ...line, [field]: String(value ?? "") }; })); };
+
+  useEffect(() => {
+    const guardSalesNavigation = async (event: MouseEvent) => {
+      const button = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-testid='nav-sales-order']") : null;
+      if (!button || !isDirty) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (!(await confirmDiscardChanges())) return;
+      clearDirty();
+      onNavigate("sales");
+    };
+    document.addEventListener("click", guardSalesNavigation, true);
+    return () => document.removeEventListener("click", guardSalesNavigation, true);
+  }, [clearDirty, confirmDiscardChanges, isDirty, onNavigate]);
+
+  const handleSearch = async () => { if (isDirty && !(await confirm({ title: "저장하지 않은 변경사항", message: "저장하지 않은 변경사항이 있습니다.", description: "계속하면 변경사항이 사라집니다.", confirmLabel: "변경사항 폐기", cancelLabel: "계속 편집", danger: true }))) return; setFeatureMessage(""); await executeSearch({ execute: () => ({ headers: mockPurchaseOrderHeaders.map((row) => ({ ...row })), lines: mockPurchaseOrderLines.map((row) => ({ ...row })) }), onSuccess: (result) => { setHeaders(result.headers); setLines(result.lines); selectMaster(result.headers[0]?.NO_PO ?? ""); setCheckedLineKeys([]); clearDirty(); notify(result.headers.length ? "success" : "info", result.headers.length ? "조회되었습니다." : "조회된 데이터가 없습니다."); }, successMessage: "발주를 조회했습니다.", errorMessage: "처리 중 오류가 발생했습니다." }); };
+  const handleNew = async () => { if (isDirty && !(await confirm({ title: "저장하지 않은 변경사항", message: "저장하지 않은 변경사항이 있습니다.", description: "계속하면 변경사항이 사라집니다.", confirmLabel: "변경사항 폐기", cancelLabel: "계속 편집", danger: true }))) return; const no = `TEMP_PO_${String(tempSequence).padStart(3, "0")}`; const header = emptyHeader(no); setFeatureMessage(""); await executeCreate({ execute: () => { setHeaders((current) => [header, ...current]); selectMaster(no); setTempSequence((sequence) => sequence + 1); clearDirty(); return header; }, successMessage: "신규 발주 행이 추가되었습니다." }); };
+  const handleAddLine = () => { if (!selectedHeader) { notify("info", "선택된 항목이 없습니다."); return; } const next = emptyLine(selectedHeader, selectedLines.length + 1); setLines((current) => [...current, next]); selectDetail(next.NO_LINE); markDirty(); };
+  const handleDeleteLine = async () => {
     if (deleteTargetLines.length === 0) {
-      setMessage("삭제할 발주상세 행을 선택하세요.");
+      notify("info", "선택된 항목이 없습니다.");
       return;
     }
 
@@ -75,7 +113,7 @@ export function PurchaseOrderRegistration({ onNavigate }: PurchaseOrderRegistrat
       deleteTargetLines.map((line) => createPurchaseOrderLineKey(line.CD_FIRM, line.NO_PO, line.NO_LINE)),
     );
 
-    if (!window.confirm(`선택한 발주상세 ${targetKeys.size}건을 삭제하시겠습니까?`)) return;
+    if (!(await confirm({ title: "발주상세 삭제", message: `선택한 발주상세 ${targetKeys.size}건을 삭제하시겠습니까?`, confirmLabel: "삭제", danger: true }))) return;
 
     setLines((current) => {
       return current.filter(
@@ -86,13 +124,13 @@ export function PurchaseOrderRegistration({ onNavigate }: PurchaseOrderRegistrat
       selectDetail(null);
     }
     setCheckedLineKeys((current) => current.filter((key) => !targetKeys.has(key)));
-    setMessage(`${deleteTargetLines.length}건의 발주상세 행을 삭제했습니다.`);
+    markDirty(); notify("success", `선택한 ${deleteTargetLines.length}건이 삭제되었습니다.`);
   };
-  const handleSave = async () => { setFeatureMessage(""); await executeSave({ validate: () => { if (!issues.length) return true; setMessage(`저장 전 검증 오류 ${issues.length}건을 확인하세요.`); return false; }, execute: () => { setHeaders((current) => current.map((header) => header.NO_PO.startsWith("TEMP_PO_") ? { ...header, NO_PO: `PO${today().replaceAll("-", "")}${header.NO_PO.slice(-4)}`, ST_PO: "확정" } : header)); setLines((current) => current.map((line) => line.NO_PO.startsWith("TEMP_PO_") ? { ...line, NO_PO: `PO${today().replaceAll("-", "")}${line.NO_PO.slice(-4)}` } : line)); return true; }, successMessage: "저장되었습니다." }); };
-  const handleDelete = async () => { if (!selectedNoPo) return setMessage("삭제할 발주정보를 선택하세요."); setFeatureMessage(""); await executeDelete({ execute: () => { setHeaders((current) => current.filter((header) => header.NO_PO !== selectedNoPo)); setLines((current) => current.filter((line) => line.NO_PO !== selectedNoPo)); selectMaster(""); setCheckedLineKeys([]); return true; }, successMessage: "선택된 발주정보가 삭제되었습니다." }); };
-  const choosePartner = (partner: Partner) => { if (!selectedHeader) return; setHeaders((current) => current.map((header) => header.NO_PO === selectedHeader.NO_PO ? { ...header, CD_PARTNER: partner.CD_PARTNER, NM_PARTNER: partner.NM_PARTNER } : header)); setPartnerOpen(false); };
-  const chooseItem = (item: Item) => { if (!selectedLine) return; setLines((current) => current.map((line) => line.NO_PO === selectedLine.NO_PO && line.NO_LINE === selectedLine.NO_LINE ? { ...line, CD_ITEM: item.CD_ITEM, NM_ITEM: item.NM_ITEM, STND_ITEM: item.STND_ITEM, UNIT_ITEM: item.UNIT_ITEM } : line)); setItemOpen(false); };
-  const chooseWarehouse = (warehouse: Warehouse) => { if (!selectedLine) return; setLines((current) => current.map((line) => line.NO_PO === selectedLine.NO_PO && line.NO_LINE === selectedLine.NO_LINE ? { ...line, CD_WH: warehouse.CD_WH, NM_WH: warehouse.NM_WH } : line)); setWarehouseOpen(false); };
+  const handleSave = async () => { if (issues.length) { const validationMessage = `저장할 수 없습니다. 입력값 ${issues.length}건을 확인하세요.`; setMessage(validationMessage); showValidationSummary(issues); notify("warning", validationMessage); focusValidationIssue(issues[0]); return; } if (!(await confirm({ title: "저장 확인", message: "저장하시겠습니까?", confirmLabel: "저장" }))) return; setFeatureMessage(""); await executeSave({ execute: () => { setHeaders((current) => current.map((header) => header.NO_PO.startsWith("TEMP_PO_") ? { ...header, NO_PO: `PO${today().replaceAll("-", "")}${header.NO_PO.slice(-4)}`, ST_PO: "확정" } : header)); setLines((current) => current.map((line) => line.NO_PO.startsWith("TEMP_PO_") ? { ...line, NO_PO: `PO${today().replaceAll("-", "")}${line.NO_PO.slice(-4)}` } : line)); clearDirty(); notify("success", "저장되었습니다."); return true; }, errorMessage: "처리 중 오류가 발생했습니다." }); };
+  const handleDelete = async () => { if (!selectedNoPo) { notify("info", "선택된 항목이 없습니다."); return; } if (!(await confirm({ title: "발주 삭제", message: `발주번호 ${selectedNoPo}을 삭제하시겠습니까?`, confirmLabel: "삭제", danger: true }))) return; setFeatureMessage(""); await executeDelete({ execute: () => { setHeaders((current) => current.filter((header) => header.NO_PO !== selectedNoPo)); setLines((current) => current.filter((line) => line.NO_PO !== selectedNoPo)); selectMaster(""); setCheckedLineKeys([]); clearDirty(); notify("success", "삭제되었습니다."); return true; }, errorMessage: "처리 중 오류가 발생했습니다." }); };
+  const choosePartner = (partner: Partner) => { if (!selectedHeader) { notify("info", "선택된 항목이 없습니다."); return; } setHeaders((current) => current.map((header) => header.NO_PO === selectedHeader.NO_PO ? { ...header, CD_PARTNER: partner.CD_PARTNER, NM_PARTNER: partner.NM_PARTNER } : header)); markDirty(); notify("success", "거래처 선택이 반영되었습니다."); setPartnerOpen(false); };
+  const chooseItem = (item: Item) => { if (!selectedLine) { notify("info", "선택된 항목이 없습니다."); return; } setLines((current) => current.map((line) => line.NO_PO === selectedLine.NO_PO && line.NO_LINE === selectedLine.NO_LINE ? { ...line, CD_ITEM: item.CD_ITEM, NM_ITEM: item.NM_ITEM, STND_ITEM: item.STND_ITEM, UNIT_ITEM: item.UNIT_ITEM } : line)); markDirty(); notify("success", "품목 선택이 반영되었습니다."); setItemOpen(false); };
+  const chooseWarehouse = (warehouse: Warehouse) => { if (!selectedLine) { notify("info", "선택된 항목이 없습니다."); return; } setLines((current) => current.map((line) => line.NO_PO === selectedLine.NO_PO && line.NO_LINE === selectedLine.NO_LINE ? { ...line, CD_WH: warehouse.CD_WH, NM_WH: warehouse.NM_WH } : line)); markDirty(); notify("success", "창고 선택이 반영되었습니다."); setWarehouseOpen(false); };
 
   const headerColumns: readonly ErpDataGridColumn<PurchaseOrderHeader>[] = [{ field: "CD_FIRM", headerName: "회사", width: 80, editable: true }, { field: "NO_PO", headerName: "발주번호", width: 145, readOnly: true }, { field: "DT_PO", headerName: "발주일자", width: 120, editable: true, dataType: "date" }, { field: "CD_PARTNER", headerName: "거래처", width: 120, editable: true }, { field: "NM_PARTNER", headerName: "거래처명", width: 150, editable: true }, { field: "CD_EMP", headerName: "담당자", width: 90, editable: true }, { field: "NM_EMP", headerName: "담당자명", width: 110, editable: true }, { field: "CD_CURRENCY", headerName: "통화", width: 70, editable: true }, { field: "RT_EXCHANGE", headerName: "환율", width: 90, editable: true, dataType: "number" }, { field: "ST_PO", headerName: "상태", width: 90, editable: true }, { field: "DC_RMK", headerName: "비고", width: 160, editable: true }];
   const lineColumns: readonly ErpDataGridColumn<PurchaseOrderLine>[] = [{ field: "NO_LINE", headerName: "행", width: 55, readOnly: true }, { field: "CD_ITEM", headerName: "품목코드", width: 110, editable: true }, { field: "NM_ITEM", headerName: "품목명", width: 150, editable: true }, { field: "STND_ITEM", headerName: "규격", width: 130, editable: true }, { field: "UNIT_ITEM", headerName: "단위", width: 60, editable: true }, { field: "QT_PO", headerName: "수량", width: 85, editable: true, dataType: "number", sum: true }, { field: "UM_PO", headerName: "단가", width: 100, editable: true, dataType: "number" }, { field: "AM_SUPPLY", headerName: "공급가", width: 105, readOnly: true, dataType: "number", sum: true, formatter: (value) => money.format(Number(value)) }, { field: "AM_VAT", headerName: "부가세", width: 95, readOnly: true, dataType: "number", sum: true, formatter: (value) => money.format(Number(value)) }, { field: "AM_TOTAL", headerName: "합계", width: 110, readOnly: true, dataType: "number", sum: true, formatter: (value) => money.format(Number(value)) }, { field: "DT_DLV", headerName: "납기일", width: 115, editable: true, dataType: "date" }, { field: "CD_WH", headerName: "창고", width: 100, editable: true }, { field: "NM_WH", headerName: "창고명", width: 130, editable: true }, { field: "DC_RMK", headerName: "비고", width: 140, editable: true }];

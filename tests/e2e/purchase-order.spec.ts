@@ -24,7 +24,9 @@ test("B: 신규 발주 Validation, Lookup, 금액 계산과 저장", async ({ pa
   await openPurchaseOrder(page);
   await page.getByTestId("po-btn-new").click();
   await page.getByTestId("po-btn-save").click();
-  await expect(page.getByTestId("status-message")).toContainText("검증 오류");
+  await expect(page.getByTestId("status-message")).toContainText("저장할 수 없습니다.");
+  await expect(page.getByTestId("purchase-validation-summary")).toBeVisible();
+  await page.getByTestId("purchase-validation-close").click();
 
   await page.getByTestId("po-btn-partner-lookup").click();
   await page.getByTestId("po-partner-lookup-grid-row-1000::P-10021").click();
@@ -44,6 +46,7 @@ test("B: 신규 발주 Validation, Lookup, 금액 계산과 저장", async ({ pa
   await page.getByTestId(`purchase-line-grid-cell-${tempLineKey}-UM_PO`).fill("101");
   await expect(page.getByTestId("purchase-total-summary")).toContainText("333");
   await page.getByTestId("po-btn-save").click();
+  await page.getByTestId("confirm-dialog-confirm").click();
   await expect(page.getByTestId("status-message")).toHaveText("저장되었습니다.");
 });
 
@@ -56,12 +59,9 @@ test("C: 체크된 발주상세 행을 삭제한다", async ({ page }) => {
   await page.getByTestId(`purchase-line-grid-checkbox-${lineKey}`).check();
   await expect(page.getByTestId("purchase-line-grid-footer-selected")).toHaveText(/1/);
 
-  const confirmDialog = page.waitForEvent("dialog").then(async (dialog) => {
-    expect(dialog.type()).toBe("confirm");
-    await dialog.accept();
-  });
   await page.getByTestId("po-btn-delete-line").click();
-  await confirmDialog;
+  await expect(page.getByTestId("confirm-dialog")).toContainText("선택한 발주상세 1건");
+  await page.getByTestId("confirm-dialog-confirm").click();
 
   await expect(page.getByTestId(`purchase-line-grid-row-${lineKey}`)).toHaveCount(0);
   await expect(page.getByTestId(`purchase-line-grid-row-${remainingLineKey}`)).toBeVisible();

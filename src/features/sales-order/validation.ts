@@ -4,7 +4,6 @@ import {
   type FieldValidationRule,
   type ValidationIssue
 } from "../../components/common/validation/validation";
-import { mockPartners } from "../common-code/partner/mockData";
 import type { SalesOrderHeader, SalesOrderLine } from "./types";
 import { createSalesOrderHeaderKey, createSalesOrderLineKey } from "./utils";
 
@@ -22,13 +21,7 @@ const headerRules: readonly FieldValidationRule<SalesOrderHeader>[] = [
     required: true,
     validate: (value, header) => {
       if (!String(value).trim()) return undefined;
-      const partnerMatched = mockPartners.some(
-        (partner) =>
-          partner.CD_FIRM === header.CD_FIRM &&
-          partner.CD_PARTNER === header.CD_PARTNER &&
-          partner.NM_PARTNER === header.NM_PARTNER
-      );
-      return partnerMatched ? undefined : "거래처코드와 거래처명이 일치하지 않습니다.";
+      return header.NM_PARTNER.trim() ? undefined : "거래처코드에 해당하는 거래처명이 필요합니다.";
     }
   }
 ];

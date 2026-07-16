@@ -8,7 +8,7 @@ interface MailOrderImportDialogProps {
   open: boolean;
   appliedMailIds: readonly string[];
   onClose: () => void;
-  onApply: (result: MailParseResult) => { success: boolean; message: string };
+  onApply: (result: MailParseResult) => Promise<{ success: boolean; message: string }>;
 }
 
 function displayValue(value: string | number | null) {
@@ -24,6 +24,7 @@ export function MailOrderImportDialog({
   const [selectedMailId, setSelectedMailId] = useState(mockEmails[0].MAIL_ID);
   const [result, setResult] = useState<MailParseResult | null>(null);
   const [notice, setNotice] = useState("");
+  const [isApplying, setIsApplying] = useState(false);
   const selectedMail = useMemo(
     () => mockEmails.find((mail) => mail.MAIL_ID === selectedMailId) ?? mockEmails[0],
     [selectedMailId]
@@ -40,9 +41,11 @@ export function MailOrderImportDialog({
     setNotice("");
   };
 
-  const apply = () => {
+  const apply = async () => {
     if (!result) return;
-    const response = onApply(result);
+    setIsApplying(true);
+    const response = await onApply(result);
+    setIsApplying(false);
     setNotice(response.message);
     if (response.success) onClose();
   };
@@ -56,7 +59,7 @@ export function MailOrderImportDialog({
           <button
             className="mail-order-import__apply"
             data-testid="mail-import-apply"
-            disabled={!result?.canApply}
+            disabled={!result?.canApply || isApplying}
             onClick={apply}
             type="button"
           >

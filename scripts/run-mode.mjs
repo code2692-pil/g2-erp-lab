@@ -42,7 +42,13 @@ async function main() {
   await waitFor(frontendUrl, "Vite");
   console.log(`Mode: ${mode}`); console.log(`Frontend: ${frontendUrl}`); console.log(`Backend: ${isApi ? backendUrl : "not started"}`); console.log(`Repository: ${isSqlServer ? "SqlServer (localhost / G2ERP_DEV_LOCAL_TEST)" : isApi ? "InMemory" : "Mock"}`);
   if (action === "test") {
-    const testArgs = ["./node_modules/@playwright/test/cli.js", "test", ...(isApi ? ["tests/e2e/api-mode.spec.ts"] : [])];
+    const testArgs = [
+      "./node_modules/@playwright/test/cli.js",
+      "test",
+      ...(isApi
+        ? ["tests/e2e/api-mode.spec.ts"]
+        : ["tests/e2e/sales-order.spec.ts", "tests/e2e/purchase-order.spec.ts"])
+    ];
     const test = start(process.execPath, testArgs, { CI: "true", ...(isApi ? { VITE_DATA_MODE: "api", VITE_API_BASE_URL: backendUrl } : { VITE_DATA_MODE: "mock" }) });
     process.exitCode = await new Promise(resolve => test.once("exit", code => resolve(code ?? 1)));
   } else await new Promise(resolve => process.once("SIGINT", resolve));

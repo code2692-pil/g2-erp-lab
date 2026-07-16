@@ -11,16 +11,17 @@ export interface PageToolbarAction {
 
 interface PageToolbarProps {
   actions: readonly PageToolbarAction[];
+  processing?: boolean;
 }
 
-export function PageToolbar({ actions }: PageToolbarProps) {
+export function PageToolbar({ actions, processing = false }: PageToolbarProps) {
   return (
     <div className="button-bar">
       {actions.map((action) => (
         <button
           className={action.variant === "primary" ? "primary" : action.variant === "danger" ? "danger" : undefined}
           data-testid={action.dataTestId}
-          disabled={action.disabled}
+          disabled={processing || action.disabled}
           key={action.dataTestId}
           onClick={action.onClick}
           type="button"

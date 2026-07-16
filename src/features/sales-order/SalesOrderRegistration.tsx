@@ -40,6 +40,9 @@ import {
   updateSalesOrder
 } from "../../api/salesOrderApi";
 import { useCrudPage } from "../../hooks/useCrudPage";
+import { useConfirm } from "../../hooks/useConfirm";
+import { useDirtyState } from "../../hooks/useDirtyState";
+import { useNotification } from "../../hooks/useNotification";
 import { useMasterDetailSelection } from "../../hooks/useMasterDetailSelection";
 
 type HeaderEditableField = Exclude<keyof SalesOrderHeader, "NO_SO">;
@@ -199,7 +202,6 @@ export function SalesOrderRegistration({ onNavigate }: SalesOrderRegistrationPro
   const [tempSeq, setTempSeq] = useState(1);
   const [partnerLookupOpen, setPartnerLookupOpen] = useState(false);
   const [itemLookupOpen, setItemLookupOpen] = useState(false);
-  const [deleteLineDialogOpen, setDeleteLineDialogOpen] = useState(false);
   const [validationDialogOpen, setValidationDialogOpen] = useState(false);
   const [mailImportOpen, setMailImportOpen] = useState(false);
   const [appliedMailIds, setAppliedMailIds] = useState<string[]>([]);
@@ -213,12 +215,26 @@ export function SalesOrderRegistration({ onNavigate }: SalesOrderRegistrationPro
     cdPartner: "",
     nmPartner: ""
   });
+  const { confirm } = useConfirm();
+  const { isDirty, markDirty, clearDirty } = useDirtyState();
+  const { notify } = useNotification();
 
   const message = error ?? successMessage ?? featureMessage;
   const setMessage = (nextMessage: string) => {
     clearMessage();
     setFeatureMessage(nextMessage);
   };
+  const confirmDiscardChanges = () =>
+    isDirty
+      ? confirm({
+          title: "저장하지 않은 변경사항",
+          message: "저장하지 않은 변경사항이 있습니다.",
+          description: "계속하면 변경사항이 사라집니다.",
+          confirmLabel: "변경사항 폐기",
+          cancelLabel: "계속 편집",
+          danger: true
+        })
+      : Promise.resolve(true);
 
   const selectedHeader = headers.find((header) => header.NO_SO === selectedNoSo);
   const validationIssues = useMemo(() => validateSalesOrders(headers, lines), [headers, lines]);
@@ -295,12 +311,15 @@ export function SalesOrderRegistration({ onNavigate }: SalesOrderRegistrationPro
     });
   };
 
-  const selectHeader = (header: SalesOrderHeader) => {
+  const selectHeader = async (header: SalesOrderHeader) => {
+    if (header.NO_SO !== selectedNoSo && !(await confirmDiscardChanges())) return;
+    if (header.NO_SO !== selectedNoSo) clearDirty();
     selectMaster(header.NO_SO);
     setCheckedLineKeys([]);
   };
 
   const updateHeader = (noSo: string, field: HeaderEditableField, value: string) => {
+    markDirty();
     setHeaders((current) =>
       current.map((header) => (header.NO_SO === noSo ? { ...header, [field]: value } : header))
     );
@@ -314,6 +333,7 @@ export function SalesOrderRegistration({ onNavigate }: SalesOrderRegistrationPro
   };
 
   const updateLine = (noSo: string, noLine: number, field: LineEditableField, value: ErpDataGridCellValue) => {
+    markDirty();
     setLines((current) =>
       current.map((line) => {
         if (line.NO_SO !== noSo || line.NO_LINE !== noLine) return line;
@@ -349,6 +369,7 @@ export function SalesOrderRegistration({ onNavigate }: SalesOrderRegistrationPro
   };
 
   const handleSearch = async () => {
+    if (!(await confirmDiscardChanges())) return;
     setFeatureMessage("");
     await executeSearch({
       execute: loadSalesOrderData,
@@ -357,6 +378,8 @@ export function SalesOrderRegistration({ onNavigate }: SalesOrderRegistrationPro
         setLines(nextLines);
         selectMaster(nextHeaders[0]?.NO_SO ?? "");
         setCheckedLineKeys([]);
+        clearDirty();
+        notify(nextHeaders.length > 0 ? "success" : "info", nextHeaders.length > 0 ? "조회되었습니다." : "조회된 데이터가 없습니다.");
       },
       successMessage: (result) =>
         result.source === "api" ? "API 조회가 완료되었습니다." : "조회되었습니다",
@@ -377,6 +400,7 @@ export function SalesOrderRegistration({ onNavigate }: SalesOrderRegistrationPro
   const handleOpenItemLookup = () => {
     if (!selectedNoSo || selectedLine === null || !selectedLineData) {
       setMessage("품목을 적용할 수주상세 행을 먼저 선택하세요");
+      notify("info", "선택된 항목이 없습니다.");
       return;
     }
 
@@ -402,10 +426,13 @@ export function SalesOrderRegistration({ onNavigate }: SalesOrderRegistrationPro
           : line
       )
     );
+    markDirty();
+    notify("success", "품목 선택이 반영되었습니다.");
     setMessage(`${item.NM_ITEM} 품목이 ${selectedLine}번 행에 반영되었습니다`);
   };
 
   const handleNew = async () => {
+    if (!(await confirmDiscardChanges())) return;
     const tempNo = createTempOrderNo(tempSeq);
     const nextHeader = createEmptyHeader(tempNo);
     setFeatureMessage("");
@@ -415,13 +442,14 @@ export function SalesOrderRegistration({ onNavigate }: SalesOrderRegistrationPro
         selectMaster(tempNo);
         setCheckedLineKeys([]);
         setTempSeq((seq) => seq + 1);
+        clearDirty();
         return nextHeader;
       },
       successMessage: "신규 수주 행이 추가되었습니다"
     });
   };
 
-  const handleApplyMailOrder = (result: MailParseResult) => {
+  const handleApplyMailOrder = async (result: MailParseResult) => {
     const mailId = result.header.MAIL_ID.value;
     if (!mailId) return { success: false, message: "메일 ID를 확인할 수 없어 반영할 수 없습니다." };
     if (appliedMailIds.includes(mailId)) {
@@ -436,6 +464,12 @@ export function SalesOrderRegistration({ onNavigate }: SalesOrderRegistrationPro
     if (issues.length > 0) {
       return { success: false, message: `기존 수주 검증 오류 ${issues.length}건으로 반영을 중단했습니다.` };
     }
+    if (!(await confirm({
+      title: "메일 수주 반영",
+      message: "메일 수주를 화면에 반영하시겠습니까?",
+      description: "자동 저장되지 않습니다. 검토 후 저장하세요.",
+      confirmLabel: "반영"
+    }))) return { success: false, message: "메일 수주 반영을 취소했습니다." };
 
     setHeaders((current) => [mappedOrder.header, ...current]);
     setLines((current) => [...current, ...mappedOrder.lines]);
@@ -444,6 +478,8 @@ export function SalesOrderRegistration({ onNavigate }: SalesOrderRegistrationPro
     setCheckedLineKeys([]);
     setTempSeq((sequence) => sequence + 1);
     setAppliedMailIds((current) => [...current, mailId]);
+    markDirty();
+    notify("success", "메일 수주 반영이 완료되었습니다.");
     setMessage(`메일 ${mailId}의 수주를 신규 임시번호로 반영했습니다. 담당자 검토 후 저장하세요.`);
     return { success: true, message: "수주등록 화면에 반영했습니다." };
   };
@@ -461,21 +497,27 @@ export function SalesOrderRegistration({ onNavigate }: SalesOrderRegistrationPro
     setLines((current) => [...current, nextLine]);
     selectDetail(nextNoLine);
     setCheckedLineKeys([]);
+    markDirty();
     setMessage("수주상세 행이 추가되었습니다");
   };
 
-  const handleDeleteLine = () => {
+  const handleDeleteLine = async () => {
     if (deleteTargetLines.length === 0) {
       setMessage("삭제할 수주상세 행을 선택하거나 체크하세요");
+      notify("info", "선택된 항목이 없습니다.");
       return;
     }
-
-    setDeleteLineDialogOpen(true);
+    if (!(await confirm({
+      title: "수주상세 삭제",
+      message: `선택한 수주상세 ${deleteTargetLines.length}건을 삭제하시겠습니까?`,
+      confirmLabel: "삭제",
+      danger: true
+    }))) return;
+    confirmDeleteLine();
   };
 
   const confirmDeleteLine = () => {
     if (!selectedNoSo || deleteTargetLines.length === 0) {
-      setDeleteLineDialogOpen(false);
       setMessage("삭제할 수주상세 행을 선택하거나 체크하세요");
       return;
     }
@@ -506,9 +548,10 @@ export function SalesOrderRegistration({ onNavigate }: SalesOrderRegistrationPro
         return nextLineNo === undefined ? line : { ...line, NO_LINE: nextLineNo };
       });
     });
-    setDeleteLineDialogOpen(false);
     selectDetail(null);
     setCheckedLineKeys([]);
+    markDirty();
+    notify("success", `선택한 ${deleteTargetLines.length}건이 삭제되었습니다.`);
     setMessage(`${deleteTargetLines.length}건의 수주상세 행이 삭제되었습니다`);
   };
 
@@ -597,6 +640,14 @@ export function SalesOrderRegistration({ onNavigate }: SalesOrderRegistrationPro
   };
 
   const handleSave = async () => {
+    const currentIssues = validateSalesOrders(headers, lines);
+    if (currentIssues.length > 0) {
+      setValidationDialogOpen(true);
+      focusValidationIssue(currentIssues[0]);
+      notify("warning", `저장할 수 없습니다. 입력값 ${currentIssues.length}건을 확인하세요.`);
+      return;
+    }
+    if (!(await confirm({ title: "저장 확인", message: "저장하시겠습니까?", confirmLabel: "저장" }))) return;
     setFeatureMessage("");
     await executeSave({
       validate: () => {
@@ -614,6 +665,7 @@ export function SalesOrderRegistration({ onNavigate }: SalesOrderRegistrationPro
         return true;
       },
       execute: saveSalesOrder,
+      onSuccess: () => { clearDirty(); notify("success", "저장되었습니다."); },
       successMessage: isApiMode() ? "API 서버에 저장되었습니다." : "저장되었습니다",
       errorMessage: "API 저장에 실패했습니다. 서버 Validation 결과를 확인하세요."
     });
@@ -648,12 +700,20 @@ export function SalesOrderRegistration({ onNavigate }: SalesOrderRegistrationPro
       return;
     }
 
+    if (!(await confirm({ title: "수주 삭제", message: `수주번호 ${selectedNoSo}을 삭제하시겠습니까?`, confirmLabel: "삭제", danger: true }))) return;
     setFeatureMessage("");
     await executeDelete({
       execute: deleteSalesOrderAction,
+      onSuccess: () => { clearDirty(); notify("success", "삭제되었습니다."); },
       successMessage: "선택된 수주정보가 삭제되었습니다",
       errorMessage: "API 삭제에 실패했습니다."
     });
+  };
+
+  const handleNavigateToPurchase = async () => {
+    if (!(await confirmDiscardChanges())) return;
+    clearDirty();
+    onNavigate?.("purchase");
   };
 
   const headerGridColumns: readonly ErpDataGridColumn<SalesOrderHeader>[] = [
@@ -773,7 +833,7 @@ export function SalesOrderRegistration({ onNavigate }: SalesOrderRegistrationPro
             <strong>SMART ERP</strong>
           </div>
           <nav>
-            <button className="menu-item" data-testid="nav-purchase-order" onClick={() => onNavigate?.("purchase")} type="button">
+            <button className="menu-item" data-testid="nav-purchase-order" onClick={handleNavigateToPurchase} type="button">
               구매관리 / 발주등록
             </button>
             <div className="menu-title">영업관리</div>
@@ -1060,39 +1120,6 @@ export function SalesOrderRegistration({ onNavigate }: SalesOrderRegistrationPro
         </div>
       </ErpDialog>
 
-      <ErpDialog
-        footer={
-          <div className="erp-confirm-dialog__actions">
-            <button
-              className="erp-confirm-dialog__button erp-confirm-dialog__button--danger"
-              data-testid="dialog-delete-line-confirm"
-              onClick={confirmDeleteLine}
-              type="button"
-            >
-              삭제
-            </button>
-            <button
-              className="erp-confirm-dialog__button"
-              data-testid="dialog-delete-line-cancel"
-              onClick={() => setDeleteLineDialogOpen(false)}
-              type="button"
-            >
-              취소
-            </button>
-          </div>
-        }
-        height={210}
-        dataTestId="dialog-delete-line"
-        onClose={() => setDeleteLineDialogOpen(false)}
-        open={deleteLineDialogOpen}
-        title="수주상세 삭제 확인"
-        width={420}
-      >
-        <div className="erp-confirm-dialog__content">
-          <p>선택한 수주상세 {deleteTargetLines.length}건을 삭제하시겠습니까?</p>
-          <span>이 작업은 mock 화면 데이터에만 반영됩니다.</span>
-        </div>
-      </ErpDialog>
     </>
   );
 }

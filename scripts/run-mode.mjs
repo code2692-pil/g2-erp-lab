@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { existsSync, statSync } from "node:fs";
+import { relative, resolve, sep } from "node:path";
 
 const [action, mode] = process.argv.slice(2);
 const host = "127.0.0.1";
@@ -7,6 +9,21 @@ const backendUrl = `http://${host}:5080`;
 const isApi = mode !== "mock";
 const isSqlServer = mode === "sqlserver";
 const children = [];
+const e2eDirectory = resolve("tests", "e2e");
+
+function selectedTestFile() {
+  const requestedFile = process.env.PLAYWRIGHT_TEST_FILE;
+  if (!requestedFile) return null;
+
+  const resolvedFile = resolve(requestedFile);
+  const relativeFile = relative(e2eDirectory, resolvedFile);
+  const isE2eSpec = relativeFile && !relativeFile.startsWith(`..${sep}`) && relativeFile !== ".." && resolvedFile.endsWith(".spec.ts");
+  if (!isE2eSpec || !existsSync(resolvedFile) || !statSync(resolvedFile).isFile()) {
+    throw new Error("PLAYWRIGHT_TEST_FILE must reference an existing .spec.ts file under tests/e2e.");
+  }
+
+  return relative(process.cwd(), resolvedFile).split(sep).join("/");
+}
 
 function start(command, args, env) {
   const child = spawn(command, args, { stdio: "inherit", windowsHide: true, env: { ...process.env, ...env } });
@@ -42,12 +59,18 @@ async function main() {
   await waitFor(frontendUrl, "Vite");
   console.log(`Mode: ${mode}`); console.log(`Frontend: ${frontendUrl}`); console.log(`Backend: ${isApi ? backendUrl : "not started"}`); console.log(`Repository: ${isSqlServer ? "SqlServer (localhost / G2ERP_DEV_LOCAL_TEST)" : isApi ? "InMemory" : "Mock"}`);
   if (action === "test") {
+    const selectedFile = selectedTestFile();
+    const testFiles = selectedFile
+      ? [selectedFile]
+      : isApi
+        ? ["tests/e2e/api-mode.spec.ts", "tests/e2e/work-order-api-mode.spec.ts", "tests/e2e/work-order-api-validation.spec.ts"]
+        : ["tests/e2e/sales-order.spec.ts", "tests/e2e/purchase-order.spec.ts", "tests/e2e/work-order.spec.ts"];
+    const grepArgs = process.env.PLAYWRIGHT_GREP ? ["--grep", process.env.PLAYWRIGHT_GREP] : [];
     const testArgs = [
       "./node_modules/@playwright/test/cli.js",
       "test",
-      ...(isApi
-        ? ["tests/e2e/api-mode.spec.ts"]
-        : ["tests/e2e/sales-order.spec.ts", "tests/e2e/purchase-order.spec.ts", "tests/e2e/work-order.spec.ts"])
+      ...grepArgs,
+      ...testFiles
     ];
     const test = start(process.execPath, testArgs, { CI: "true", ...(isApi ? { VITE_DATA_MODE: "api", VITE_API_BASE_URL: backendUrl } : { VITE_DATA_MODE: "mock" }) });
     process.exitCode = await new Promise(resolve => test.once("exit", code => resolve(code ?? 1)));

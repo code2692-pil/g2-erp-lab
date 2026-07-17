@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Building2, ChevronRight, Plus, Rows3, Save, Search, Trash2 } from "lucide-react";
 import { ErpDataGrid } from "../../components/common/ErpDataGrid";
 import type { ErpDataGridCellValue, ErpDataGridColumn } from "../../components/common/ErpDataGrid";
@@ -12,15 +12,11 @@ import { useCrudPage } from "../../hooks/useCrudPage";
 import { useDirtyState } from "../../hooks/useDirtyState";
 import { useMasterDetailSelection } from "../../hooks/useMasterDetailSelection";
 import { useNotification } from "../../hooks/useNotification";
-import { mockEquipment } from "../common-code/equipment/mockData";
 import type { Equipment } from "../common-code/equipment/types";
-import { mockItems } from "../common-code/item/mockData";
 import type { Item } from "../common-code/item/types";
-import { mockProductionLines } from "../common-code/production-line/mockData";
 import type { ProductionLine } from "../common-code/production-line/types";
-import { mockProductionProcesses } from "../common-code/process/mockData";
 import type { ProductionProcess } from "../common-code/process/types";
-import { mockWorkOrderHeaders, mockWorkOrderProcesses } from "./mockData";
+import { workOrderDataService, type WorkOrderLookups } from "./workOrderDataService";
 import type { ProcessStatus, WorkOrderHeader, WorkOrderProcess, WorkOrderStatus, YesNo } from "./types";
 import {
   calculateWorkOrderProcessTotals,
@@ -85,17 +81,6 @@ function createTempWorkOrderNo(sequence: number) {
   return `TEMP-WO-${String(sequence).padStart(3, "0")}`;
 }
 
-function createSavedWorkOrderNo(yearMonth: string, sequence: number) {
-  return `WO${yearMonth}${String(sequence).padStart(4, "0")}`;
-}
-
-function getNextSavedSequence(headers: readonly WorkOrderHeader[], yearMonth: string) {
-  const numbers = headers
-    .map((header) => header.NO_WO.match(new RegExp(`^WO${yearMonth}(\\d{4})$`))?.[1])
-    .filter((value): value is string => Boolean(value))
-    .map(Number);
-  return numbers.length === 0 ? 1 : Math.max(...numbers) + 1;
-}
 
 function createEmptyHeader(noWo: string): WorkOrderHeader {
   const issueDate = today();
@@ -157,13 +142,6 @@ function isProcessEditableField(field: keyof WorkOrderProcess): field is Process
   return field !== "CD_FIRM" && field !== "NO_WO" && field !== "NO_PROC";
 }
 
-/** Mock 저장·삭제도 실제 요청처럼 처리 중 상태를 사용자에게 보여 줍니다. */
-function waitForMockResponse() {
-  return new Promise<void>((resolve) => {
-    window.setTimeout(resolve, 1_000);
-  });
-}
-
 export function WorkOrderRegistration({ onNavigate }: WorkOrderRegistrationProps) {
   const [headers, setHeaders] = useState<WorkOrderHeader[]>([]);
   const [processes, setProcesses] = useState<WorkOrderProcess[]>([]);
@@ -185,6 +163,8 @@ export function WorkOrderRegistration({ onNavigate }: WorkOrderRegistrationProps
   const [productionLineLookupOpen, setProductionLineLookupOpen] = useState(false);
   const [processLookupOpen, setProcessLookupOpen] = useState(false);
   const [equipmentLookupOpen, setEquipmentLookupOpen] = useState(false);
+  const [lookups, setLookups] = useState<WorkOrderLookups>({ items: [], productionLines: [], processes: [], equipment: [] });
+  const [serverWarnings, setServerWarnings] = useState<string[]>([]);
   const {
     selectedMasterKey,
     selectedDetailKey: selectedProcessNo,
@@ -204,6 +184,15 @@ export function WorkOrderRegistration({ onNavigate }: WorkOrderRegistrationProps
   const { isDirty, markDirty, clearDirty } = useDirtyState();
   const { confirm } = useConfirm();
   const { notify } = useNotification();
+  const markWorkOrderDirty = () => { setServerWarnings([]); markDirty(); };
+
+  useEffect(() => {
+    let cancelled = false;
+    void workOrderDataService.getLookups()
+      .then((nextLookups) => { if (!cancelled) setLookups(nextLookups); })
+      .catch(() => { if (!cancelled) notify("error", "작업지시 Lookup을 불러오지 못했습니다."); });
+    return () => { cancelled = true; };
+  }, [notify]);
 
   const processing = isLoading || isSaving;
   const message = error ?? successMessage ?? featureMessage;
@@ -229,18 +218,19 @@ export function WorkOrderRegistration({ onNavigate }: WorkOrderRegistrationProps
   const deleteTargetProcesses = checkedProcesses.length > 0 ? checkedProcesses : selectedProcess ? [selectedProcess] : [];
   const validationIssues = useMemo(() => validateWorkOrders(headers, processes), [headers, processes]);
   const validationWarnings = useMemo(() => getWorkOrderWarnings(headers), [headers]);
+  const displayedWarning = serverWarnings[0] ?? validationWarnings[0];
   const validationCellErrors = useMemo(() => toValidationCellErrors(validationIssues), [validationIssues]);
   const processTotals = calculateWorkOrderProcessTotals(selectedProcesses);
-  const itemLookupRows = mockItems.filter((item) =>
+  const itemLookupRows = lookups.items.filter((item) =>
     item.YN_USE === "Y" && (!selectedHeader || item.CD_FIRM === selectedHeader.CD_FIRM)
   );
-  const productionLineLookupRows = mockProductionLines.filter((line) =>
+  const productionLineLookupRows = lookups.productionLines.filter((line) =>
     line.YN_USE === "Y" && (!selectedHeader || line.CD_FIRM === selectedHeader.CD_FIRM)
   );
-  const processLookupRows = mockProductionProcesses.filter((process) =>
+  const processLookupRows = lookups.processes.filter((process) =>
     process.YN_USE === "Y" && (!selectedHeader || process.CD_FIRM === selectedHeader.CD_FIRM)
   );
-  const equipmentLookupRows = mockEquipment
+  const equipmentLookupRows = lookups.equipment
     .filter((equipment) => equipment.YN_USE === "Y" && (!selectedHeader || equipment.CD_FIRM === selectedHeader.CD_FIRM))
     .sort((left, right) => Number(right.CD_LINE === selectedHeader?.CD_LINE) - Number(left.CD_LINE === selectedHeader?.CD_LINE));
 
@@ -265,36 +255,20 @@ export function WorkOrderRegistration({ onNavigate }: WorkOrderRegistrationProps
     });
   };
 
-  const matchesFilter = (header: WorkOrderHeader) => {
-    const itemText = `${header.CD_ITEM} ${header.NM_ITEM}`.toLocaleLowerCase();
-    const lineText = `${header.CD_LINE} ${header.NM_LINE}`.toLocaleLowerCase();
-    return (!filters.cdFirm || header.CD_FIRM.includes(filters.cdFirm))
-      && (!filters.dateFrom || header.DT_WO >= filters.dateFrom)
-      && (!filters.dateTo || header.DT_WO <= filters.dateTo)
-      && (!filters.noWo || header.NO_WO.includes(filters.noWo))
-      && (!filters.item || itemText.includes(filters.item.toLocaleLowerCase()))
-      && (!filters.line || lineText.includes(filters.line.toLocaleLowerCase()))
-      && (!filters.status || header.ST_WO === filters.status)
-      && (!filters.urgent || header.YN_URGENT === filters.urgent);
-  };
-
   const handleSearch = async () => {
     if (!(await confirmDiscardChanges())) return;
     setFeatureMessage("");
     await executeSearch({
-      execute: () => {
-        const nextHeaders = mockWorkOrderHeaders.filter(matchesFilter).map((header) => ({ ...header }));
-        const selectedKeys = new Set(nextHeaders.map((header) => createWorkOrderHeaderKey(header.CD_FIRM, header.NO_WO)));
-        const nextProcesses = mockWorkOrderProcesses
-          .filter((process) => selectedKeys.has(createWorkOrderHeaderKey(process.CD_FIRM, process.NO_WO)))
-          .map((process) => ({ ...process }));
-        return { headers: nextHeaders, processes: nextProcesses };
+      execute: async () => {
+        const details = await workOrderDataService.search(filters);
+        return { headers: details.map((detail) => detail.Header), processes: details.flatMap((detail) => detail.Processes) };
       },
       onSuccess: (result) => {
         setHeaders(result.headers);
         setProcesses(result.processes);
         selectMaster(result.headers[0] ? createWorkOrderHeaderKey(result.headers[0].CD_FIRM, result.headers[0].NO_WO) : "");
         setCheckedProcessKeys([]);
+        setServerWarnings([]);
         clearDirty();
         notify(result.headers.length > 0 ? "success" : "info", result.headers.length > 0 ? "조회되었습니다." : "조회된 작업지시가 없습니다.");
       },
@@ -314,7 +288,7 @@ export function WorkOrderRegistration({ onNavigate }: WorkOrderRegistrationProps
   const updateHeader = (header: WorkOrderHeader, field: HeaderEditableField, value: ErpDataGridCellValue) => {
     const originalKey = createWorkOrderHeaderKey(header.CD_FIRM, header.NO_WO);
     const nextValue = field === "QT_WO" || field === "QT_RESULT" ? toNumber(value) : String(value ?? "");
-    markDirty();
+    markWorkOrderDirty();
     setHeaders((current) => current.map((candidate) =>
       createWorkOrderHeaderKey(candidate.CD_FIRM, candidate.NO_WO) === originalKey
         ? ({ ...candidate, [field]: nextValue } as WorkOrderHeader)
@@ -335,7 +309,7 @@ export function WorkOrderRegistration({ onNavigate }: WorkOrderRegistrationProps
   const updateProcess = (process: WorkOrderProcess, field: ProcessEditableField, value: ErpDataGridCellValue) => {
     const targetKey = createWorkOrderProcessKey(process.CD_FIRM, process.NO_WO, process.NO_PROC);
     const nextValue = field === "QT_PLAN" || field === "QT_RESULT" ? toNumber(value) : String(value ?? "");
-    markDirty();
+    markWorkOrderDirty();
     setProcesses((current) => current.map((candidate) =>
       createWorkOrderProcessKey(candidate.CD_FIRM, candidate.NO_WO, candidate.NO_PROC) === targetKey
         ? ({ ...candidate, [field]: nextValue } as WorkOrderProcess)
@@ -369,7 +343,7 @@ export function WorkOrderRegistration({ onNavigate }: WorkOrderRegistrationProps
     setProcesses((current) => [...current, nextProcess]);
     selectDetail(nextNoProc);
     setCheckedProcessKeys([]);
-    markDirty();
+    markWorkOrderDirty();
     window.requestAnimationFrame(() => {
       document.querySelector<HTMLElement>(
         `[data-testid="work-order-process-grid-cell-${createWorkOrderProcessKey(nextProcess.CD_FIRM, nextProcess.NO_WO, nextProcess.NO_PROC)}-CD_PROC"]`
@@ -396,35 +370,17 @@ export function WorkOrderRegistration({ onNavigate }: WorkOrderRegistrationProps
     setProcesses((current) => current.filter((process) => !targetKeys.has(createWorkOrderProcessKey(process.CD_FIRM, process.NO_WO, process.NO_PROC))));
     setCheckedProcessKeys([]);
     if (selectedProcess && targetKeys.has(createWorkOrderProcessKey(selectedProcess.CD_FIRM, selectedProcess.NO_WO, selectedProcess.NO_PROC))) selectDetail(null);
-    markDirty();
+    markWorkOrderDirty();
     notify("success", `선택한 공정상세 ${deleteTargetProcesses.length}건이 삭제되었습니다.`);
   };
 
-  const saveMockWorkOrders = async () => {
-    await waitForMockResponse();
-    const yearMonth = today().slice(0, 7).replace("-", "");
-    let nextSequence = getNextSavedSequence([...mockWorkOrderHeaders, ...headers], yearMonth);
-    const noMap = new Map<string, string>();
-    const savedHeaders = headers.map((header) => {
-      if (!header.NO_WO.startsWith("TEMP-WO-")) return header;
-      const savedNo = createSavedWorkOrderNo(yearMonth, nextSequence);
-      nextSequence += 1;
-      noMap.set(createWorkOrderHeaderKey(header.CD_FIRM, header.NO_WO), savedNo);
-      return { ...header, NO_WO: savedNo };
-    });
-    const savedProcesses = processes.map((process) => {
-      const savedNo = noMap.get(createWorkOrderHeaderKey(process.CD_FIRM, process.NO_WO));
-      return savedNo ? { ...process, NO_WO: savedNo } : process;
-    });
-    const selectedSavedNo = selectedHeader
-      ? noMap.get(createWorkOrderHeaderKey(selectedHeader.CD_FIRM, selectedHeader.NO_WO)) ?? selectedHeader.NO_WO
-      : "";
-    setHeaders(savedHeaders);
-    setProcesses(savedProcesses);
-    if (selectedHeader) selectMaster(createWorkOrderHeaderKey(selectedHeader.CD_FIRM, selectedSavedNo));
-  };
-
   const handleSave = async () => {
+    if (!selectedHeader) {
+      const notice = "저장할 작업지시를 먼저 선택하세요.";
+      setMessage(notice);
+      notify("info", notice);
+      return;
+    }
     const issues = validateWorkOrders(headers, processes);
     if (issues.length > 0) {
       setValidationDialogOpen(true);
@@ -435,14 +391,26 @@ export function WorkOrderRegistration({ onNavigate }: WorkOrderRegistrationProps
     }
     if (!(await confirm({ title: "작업지시 저장", message: "입력한 작업지시를 저장하시겠습니까?", confirmLabel: "저장" }))) return;
     setFeatureMessage("");
+    const sourceHeader = selectedHeader;
     await executeSave({
-      execute: saveMockWorkOrders,
-      onSuccess: () => {
+      execute: () => workOrderDataService.save({ Header: sourceHeader, Processes: selectedProcesses }, headers),
+      onSuccess: (saved) => {
+        const sourceKey = createWorkOrderHeaderKey(sourceHeader.CD_FIRM, sourceHeader.NO_WO);
+        setHeaders((current) => [saved.Header, ...current.filter((header) => createWorkOrderHeaderKey(header.CD_FIRM, header.NO_WO) !== sourceKey)]);
+        setProcesses((current) => [...current.filter((process) => createWorkOrderHeaderKey(process.CD_FIRM, process.NO_WO) !== sourceKey), ...saved.Processes]);
+        selectMaster(createWorkOrderHeaderKey(saved.Header.CD_FIRM, saved.Header.NO_WO));
+        setServerWarnings(saved.Warnings);
         clearDirty();
-        notify("success", "작업지시가 저장되었습니다.");
+        const warnings = [...new Set(saved.Warnings)];
+        notify(
+          warnings.length > 0 ? "warning" : "success",
+          warnings.length > 0
+            ? `작업지시가 저장되었습니다. 단, ${warnings.join(" ")}`
+            : "작업지시가 저장되었습니다."
+        );
       },
       successMessage: "작업지시가 저장되었습니다.",
-      errorMessage: "작업지시를 저장할 수 없습니다. 입력값을 확인하거나 다시 시도하세요."
+      errorMessage: (caughtError) => caughtError instanceof Error ? caughtError.message : "작업지시를 저장할 수 없습니다. 입력값을 확인하거나 다시 시도하세요."
     });
   };
 
@@ -463,15 +431,14 @@ export function WorkOrderRegistration({ onNavigate }: WorkOrderRegistrationProps
     }))) return;
     setFeatureMessage("");
     await executeDelete({
-      execute: async () => {
-        await waitForMockResponse();
+      execute: () => workOrderDataService.delete(targetHeader.CD_FIRM, targetHeader.NO_WO),
+      onSuccess: () => {
         const targetKey = createWorkOrderHeaderKey(targetHeader.CD_FIRM, targetHeader.NO_WO);
         setHeaders((current) => current.filter((header) => createWorkOrderHeaderKey(header.CD_FIRM, header.NO_WO) !== targetKey));
         setProcesses((current) => current.filter((process) => !(process.CD_FIRM === targetHeader.CD_FIRM && process.NO_WO === targetHeader.NO_WO)));
         selectMaster("");
         setCheckedProcessKeys([]);
-      },
-      onSuccess: () => {
+        setServerWarnings([]);
         clearDirty();
         notify("success", "작업지시가 삭제되었습니다.");
       },
@@ -523,7 +490,7 @@ export function WorkOrderRegistration({ onNavigate }: WorkOrderRegistrationProps
     setHeaders((current) => current.map((header) => createWorkOrderHeaderKey(header.CD_FIRM, header.NO_WO) === targetKey
       ? { ...header, CD_ITEM: item.CD_ITEM, NM_ITEM: item.NM_ITEM, STND_ITEM: item.STND_ITEM, UNIT_ITEM: item.UNIT_ITEM }
       : header));
-    markDirty();
+    markWorkOrderDirty();
     notify("success", "생산품목 선택이 반영되었습니다.");
   };
   const handleSelectProductionLine = (line: ProductionLine) => {
@@ -532,7 +499,7 @@ export function WorkOrderRegistration({ onNavigate }: WorkOrderRegistrationProps
     setHeaders((current) => current.map((header) => createWorkOrderHeaderKey(header.CD_FIRM, header.NO_WO) === targetKey
       ? { ...header, CD_LINE: line.CD_LINE, NM_LINE: line.NM_LINE }
       : header));
-    markDirty();
+    markWorkOrderDirty();
     notify("success", "생산라인 선택이 반영되었습니다.");
   };
   const handleSelectProcess = (processCode: ProductionProcess) => {
@@ -541,7 +508,7 @@ export function WorkOrderRegistration({ onNavigate }: WorkOrderRegistrationProps
     setProcesses((current) => current.map((process) => createWorkOrderProcessKey(process.CD_FIRM, process.NO_WO, process.NO_PROC) === targetKey
       ? { ...process, CD_PROC: processCode.CD_PROC, NM_PROC: processCode.NM_PROC }
       : process));
-    markDirty();
+    markWorkOrderDirty();
     notify("success", "공정 선택이 반영되었습니다.");
   };
   const handleSelectEquipment = (equipment: Equipment) => {
@@ -550,7 +517,7 @@ export function WorkOrderRegistration({ onNavigate }: WorkOrderRegistrationProps
     setProcesses((current) => current.map((process) => createWorkOrderProcessKey(process.CD_FIRM, process.NO_WO, process.NO_PROC) === targetKey
       ? { ...process, CD_EQUIP: equipment.CD_EQUIP, NM_EQUIP: equipment.NM_EQUIP }
       : process));
-    markDirty();
+    markWorkOrderDirty();
     notify("success", "설비 선택이 반영되었습니다.");
   };
 
@@ -631,7 +598,7 @@ export function WorkOrderRegistration({ onNavigate }: WorkOrderRegistrationProps
           <label>작업지시상태<select data-testid="wo-filter-status" value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">전체</option>{workOrderStatuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></label>
           <label>긴급지시 여부<select data-testid="wo-filter-urgent" value={filters.urgent} onChange={(event) => setFilters({ ...filters, urgent: event.target.value })}><option value="">전체</option>{urgentOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
           {validationIssues.length > 0 && <span data-testid="work-order-validation-count">오류 {validationIssues.length}건</span>}
-          {validationWarnings.length > 0 && <span data-testid="work-order-warning">경고: {validationWarnings[0]}</span>}
+          {displayedWarning && <span data-testid="work-order-warning">경고: {displayedWarning}</span>}
         </SearchPanel>
         <section className="grid-section top-grid">
           <div className="section-title"><h2>작업지시 Header</h2><div className="section-title-actions"><span>PRT_WO · PK CD_FIRM + NO_WO</span><button className="section-lookup-button" data-testid="wo-btn-item-lookup" disabled={processing} onClick={handleOpenItemLookup} type="button"><Search size={14} />품목 도움</button><button className="section-lookup-button" data-testid="wo-btn-line-lookup" disabled={processing} onClick={handleOpenProductionLineLookup} type="button"><Search size={14} />라인 도움</button></div></div>

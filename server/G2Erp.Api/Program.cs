@@ -24,6 +24,7 @@ if (string.Equals(repositoryMode, "SqlServer", StringComparison.OrdinalIgnoreCas
     builder.Services.AddScoped<IPartnerRepository, SqlServerPartnerRepository>();
     builder.Services.AddScoped<IItemRepository, SqlServerItemRepository>();
     builder.Services.AddScoped<IWarehouseRepository, SqlServerWarehouseRepository>();
+    builder.Services.AddScoped<IWorkOrderService, UnavailableWorkOrderService>();
 }
 else if (string.Equals(repositoryMode, "InMemory", StringComparison.OrdinalIgnoreCase))
 {
@@ -32,6 +33,11 @@ else if (string.Equals(repositoryMode, "InMemory", StringComparison.OrdinalIgnor
     builder.Services.AddSingleton<IPartnerRepository, InMemoryPartnerRepository>();
     builder.Services.AddSingleton<IItemRepository, InMemoryItemRepository>();
     builder.Services.AddSingleton<IWarehouseRepository, InMemoryWarehouseRepository>();
+    builder.Services.AddSingleton<IWorkOrderRepository, InMemoryWorkOrderRepository>();
+    builder.Services.AddSingleton<IProductionLineRepository, InMemoryProductionLineRepository>();
+    builder.Services.AddSingleton<IProcessRepository, InMemoryProcessRepository>();
+    builder.Services.AddSingleton<IEquipmentRepository, InMemoryEquipmentRepository>();
+    builder.Services.AddScoped<IWorkOrderService, WorkOrderService>();
 }
 else
 {

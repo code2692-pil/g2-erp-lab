@@ -47,7 +47,7 @@ async function main() {
       "test",
       ...(isApi
         ? ["tests/e2e/api-mode.spec.ts"]
-        : ["tests/e2e/sales-order.spec.ts", "tests/e2e/purchase-order.spec.ts"])
+        : ["tests/e2e/sales-order.spec.ts", "tests/e2e/purchase-order.spec.ts", "tests/e2e/work-order.spec.ts"])
     ];
     const test = start(process.execPath, testArgs, { CI: "true", ...(isApi ? { VITE_DATA_MODE: "api", VITE_API_BASE_URL: backendUrl } : { VITE_DATA_MODE: "mock" }) });
     process.exitCode = await new Promise(resolve => test.once("exit", code => resolve(code ?? 1)));

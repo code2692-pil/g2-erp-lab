@@ -174,7 +174,7 @@ function isLineEditableField(field: keyof SalesOrderLine): field is LineEditable
 }
 
 interface SalesOrderRegistrationProps {
-  onNavigate?: (page: "sales" | "purchase") => void;
+  onNavigate?: (page: "sales" | "purchase" | "work") => void;
 }
 
 export function SalesOrderRegistration({ onNavigate }: SalesOrderRegistrationProps) {
@@ -716,6 +716,12 @@ export function SalesOrderRegistration({ onNavigate }: SalesOrderRegistrationPro
     onNavigate?.("purchase");
   };
 
+  const handleNavigateToWorkOrder = async () => {
+    if (!(await confirmDiscardChanges())) return;
+    clearDirty();
+    onNavigate?.("work");
+  };
+
   const headerGridColumns: readonly ErpDataGridColumn<SalesOrderHeader>[] = [
     { field: "CD_FIRM", headerName: "회사코드", width: 90, dataType: "code", editable: true, required: true },
     { field: "NO_SO", headerName: "수주번호", width: 142, dataType: "code", readOnly: true },
@@ -842,6 +848,14 @@ export function SalesOrderRegistration({ onNavigate }: SalesOrderRegistrationPro
               <span>수주관리</span>
             </div>
             <button className="menu-item active">수주등록</button>
+            <div className="menu-title">생산관리</div>
+            <div className="menu-group">
+              <ChevronRight size={14} />
+              <span>작업지시관리</span>
+            </div>
+            <button className="menu-item" data-testid="nav-work-order" onClick={handleNavigateToWorkOrder} type="button">
+              작업지시등록
+            </button>
           </nav>
         </aside>
 

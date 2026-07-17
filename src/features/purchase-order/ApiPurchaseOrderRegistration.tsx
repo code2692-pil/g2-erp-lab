@@ -18,7 +18,7 @@ import type { PurchaseOrderHeader, PurchaseOrderLine } from "./types";
 import { calculatePurchaseOrderLineAmounts, calculatePurchaseOrderTotals } from "./utils";
 import { validatePurchaseOrders } from "./validation";
 
-interface Props { onNavigate: (page: "sales" | "purchase") => void; }
+interface Props { onNavigate: (page: "sales" | "purchase" | "work") => void; }
 const today = () => new Date().toISOString().slice(0, 10);
 const partnerColumns: readonly ErpDataGridColumn<Partner>[] = [{ field: "CD_PARTNER", headerName: "거래처", width: 130 }, { field: "NM_PARTNER", headerName: "거래처명", width: 180 }];
 const itemColumns: readonly ErpDataGridColumn<Item>[] = [{ field: "CD_ITEM", headerName: "품목", width: 130 }, { field: "NM_ITEM", headerName: "품목명", width: 180 }];

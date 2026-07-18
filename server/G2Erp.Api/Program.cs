@@ -17,14 +17,18 @@ if (string.Equals(repositoryMode, "SqlServer", StringComparison.OrdinalIgnoreCas
     var connectionString = builder.Configuration.GetConnectionString("G2Erp")
         ?? throw new InvalidOperationException("ConnectionStrings:G2Erp is required when RepositoryMode is SqlServer.");
     var allowUnencryptedLocal = string.Equals(builder.Configuration["G2ERP_POC_ALLOW_UNENCRYPTED_LOCAL"], "true", StringComparison.OrdinalIgnoreCase);
-    SqlServerConnectionFactory.ValidateLocalOnly(connectionString, builder.Environment.IsDevelopment(), allowUnencryptedLocal, "G2ERP_DEV_LOCAL", "G2ERP_DEV_LOCAL_TEST");
+    SqlServerConnectionFactory.ValidateLocalOnly(connectionString, builder.Environment.IsDevelopment(), allowUnencryptedLocal, "G2ERP_DEV_LOCAL_TEST");
     builder.Services.AddSingleton(new SqlServerConnectionFactory(connectionString));
     builder.Services.AddScoped<ISalesOrderRepository, SqlServerSalesOrderRepository>();
     builder.Services.AddScoped<IPurchaseOrderRepository, SqlServerPurchaseOrderRepository>();
     builder.Services.AddScoped<IPartnerRepository, SqlServerPartnerRepository>();
     builder.Services.AddScoped<IItemRepository, SqlServerItemRepository>();
     builder.Services.AddScoped<IWarehouseRepository, SqlServerWarehouseRepository>();
-    builder.Services.AddScoped<IWorkOrderService, UnavailableWorkOrderService>();
+    builder.Services.AddScoped<IWorkOrderRepository, SqlServerWorkOrderRepository>();
+    builder.Services.AddScoped<IProductionLineRepository, SqlServerProductionLineRepository>();
+    builder.Services.AddScoped<IProcessRepository, SqlServerProcessRepository>();
+    builder.Services.AddScoped<IEquipmentRepository, SqlServerEquipmentRepository>();
+    builder.Services.AddScoped<IWorkOrderService, WorkOrderService>();
 }
 else if (string.Equals(repositoryMode, "InMemory", StringComparison.OrdinalIgnoreCase))
 {

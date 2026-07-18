@@ -16,7 +16,7 @@ public sealed class SqlServerConnectionFactory
         if (!IsLocalSqlServer(builder.DataSource))
             throw new InvalidOperationException("SqlServer PoC permits only localhost, '.', or this computer's local SQL Server instance.");
         if (!allowedDatabases.Any(database => string.Equals(database, builder.InitialCatalog, StringComparison.OrdinalIgnoreCase)))
-            throw new InvalidOperationException("SqlServer PoC permits only G2ERP_DEV_LOCAL or G2ERP_DEV_LOCAL_TEST.");
+            throw new InvalidOperationException("SqlServer PoC permits only G2ERP_DEV_LOCAL_TEST.");
         if (!builder.IntegratedSecurity)
             throw new InvalidOperationException("SqlServer PoC requires Windows integrated authentication.");
         if (!builder.Encrypt &&

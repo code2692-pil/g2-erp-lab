@@ -20,12 +20,12 @@ static async Task<int> RunAsync(string[] args)
         var operationCount = new[] { verifyOnly, reportPoc, probeMaster, createTestDatabase }.Count(value => value);
         if (string.IsNullOrWhiteSpace(connectionString) || operationCount > 1)
         {
-            Console.Error.WriteLine("Usage: dotnet run -- --connection \"Server=.;Database=G2ERP_DEV_LOCAL;Trusted_Connection=True;Encrypt=True;TrustServerCertificate=True\" [--verify-only | --report-poc | --probe-master | --create-test-database]");
+            Console.Error.WriteLine("Usage: dotnet run -- --connection \"Server=.;Database=G2ERP_DEV_LOCAL_TEST;Trusted_Connection=True;Encrypt=True;TrustServerCertificate=True\" [--verify-only | --report-poc | --probe-master | --create-test-database]");
             return 2;
         }
 
         builder = new SqlConnectionStringBuilder(connectionString);
-        var allowedDatabases = new[] { "G2ERP_DEV_LOCAL", "G2ERP_DEV_LOCAL_TEST" };
+        var allowedDatabases = new[] { "G2ERP_DEV_LOCAL_TEST" };
         var isMasterOperation = (probeMaster || createTestDatabase) && string.Equals(builder.InitialCatalog, "master", StringComparison.OrdinalIgnoreCase);
         var databaseAllowed = isMasterOperation || allowedDatabases.Contains(builder.InitialCatalog, StringComparer.OrdinalIgnoreCase);
         var scriptsDirectory = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../database/local"));
@@ -35,7 +35,12 @@ static async Task<int> RunAsync(string[] args)
             "002_create_master_tables.sql",
             "003_create_sales_order_tables.sql",
             "004_create_purchase_order_tables.sql",
-            "005_seed_test_data.sql"
+            "005_seed_test_data.sql",
+            "007_create_work_order_tables.sql",
+            "008_seed_work_order_test_data.sql",
+            "010_seed_production_master_sample_data.sql",
+            "011_seed_work_order_sample_data.sql",
+            "012_verify_production_sample_relationships.sql"
         };
         scripts = (createTestDatabase ? new[] { "006_create_test_database.sql" } : requiredScriptNames)
             .Select(name => Path.Combine(scriptsDirectory, name)).ToArray();
@@ -45,7 +50,7 @@ static async Task<int> RunAsync(string[] args)
 
         if (!IsLocalSqlServer(builder.DataSource) || !databaseAllowed || !builder.IntegratedSecurity)
         {
-            Console.Error.WriteLine("Blocked: only Windows-authenticated local SQL Server / G2ERP_DEV_LOCAL or G2ERP_DEV_LOCAL_TEST is permitted. master is allowed only with --probe-master or --create-test-database.");
+            Console.Error.WriteLine("Blocked: only Windows-authenticated local SQL Server / G2ERP_DEV_LOCAL_TEST is permitted. master is allowed only with --probe-master or --create-test-database.");
             return 3;
         }
         if (!builder.Encrypt &&

@@ -131,8 +131,8 @@ public sealed class WorkOrderService(
                 DC_RMK = process.DC_RMK ?? "",
                 CD_USER_REG = existing?.Processes.SingleOrDefault(x => x.NO_PROC == process.NO_PROC)?.CD_USER_REG ?? process.CD_USER_REG ?? "SYSTEM",
                 TM_REG = existing?.Processes.SingleOrDefault(x => x.NO_PROC == process.NO_PROC)?.TM_REG ?? DateTime.UtcNow,
-                CD_USER_AMD = existing is null ? null : process.CD_USER_AMD ?? "SYSTEM",
-                TM_AMD = existing is null ? null : DateTime.UtcNow
+                CD_USER_AMD = process.CD_USER_AMD ?? "SYSTEM",
+                TM_AMD = DateTime.UtcNow
             });
         }
 
@@ -159,8 +159,8 @@ public sealed class WorkOrderService(
                 DC_RMK = header.DC_RMK ?? "",
                 CD_USER_REG = existing?.Header.CD_USER_REG ?? header.CD_USER_REG ?? "SYSTEM",
                 TM_REG = existing?.Header.TM_REG ?? DateTime.UtcNow,
-                CD_USER_AMD = existing is null ? null : header.CD_USER_AMD ?? "SYSTEM",
-                TM_AMD = existing is null ? null : DateTime.UtcNow
+                CD_USER_AMD = header.CD_USER_AMD ?? "SYSTEM",
+                TM_AMD = DateTime.UtcNow
             },
             Processes = builtProcesses.OrderBy(x => x.NO_PROC).ToArray()
         };

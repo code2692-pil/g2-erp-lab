@@ -7,5 +7,3 @@ public sealed class DomainValidationException : Exception
 }
 
 public sealed class DomainConflictException(string message) : Exception(message);
-
-public sealed class FeatureNotAvailableException(string message) : Exception(message);

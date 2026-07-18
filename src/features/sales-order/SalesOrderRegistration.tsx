@@ -174,10 +174,11 @@ function isLineEditableField(field: keyof SalesOrderLine): field is LineEditable
 }
 
 interface SalesOrderRegistrationProps {
-  onNavigate?: (page: "sales" | "purchase" | "work") => void;
+  onNavigate?: (page: "sales" | "purchase" | "work" | "development") => void;
+  showDevelopmentDataManager?: boolean;
 }
 
-export function SalesOrderRegistration({ onNavigate }: SalesOrderRegistrationProps) {
+export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager = false }: SalesOrderRegistrationProps) {
   const [headers, setHeaders] = useState<SalesOrderHeader[]>([]);
   const [lines, setLines] = useState<SalesOrderLine[]>([]);
   const {
@@ -722,6 +723,12 @@ export function SalesOrderRegistration({ onNavigate }: SalesOrderRegistrationPro
     onNavigate?.("work");
   };
 
+  const handleNavigateToDevelopmentData = async () => {
+    if (!(await confirmDiscardChanges())) return;
+    clearDirty();
+    onNavigate?.("development");
+  };
+
   const headerGridColumns: readonly ErpDataGridColumn<SalesOrderHeader>[] = [
     { field: "CD_FIRM", headerName: "회사코드", width: 90, dataType: "code", editable: true, required: true },
     { field: "NO_SO", headerName: "수주번호", width: 142, dataType: "code", readOnly: true },
@@ -856,6 +863,7 @@ export function SalesOrderRegistration({ onNavigate }: SalesOrderRegistrationPro
             <button className="menu-item" data-testid="nav-work-order" onClick={handleNavigateToWorkOrder} type="button">
               작업지시등록
             </button>
+            {showDevelopmentDataManager && <><div className="menu-title">개발 도구</div><button className="menu-item" data-testid="nav-development-data" onClick={handleNavigateToDevelopmentData} type="button">테스트 데이터 관리</button></>}
           </nav>
         </aside>
 

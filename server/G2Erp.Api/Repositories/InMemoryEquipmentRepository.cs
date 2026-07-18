@@ -4,7 +4,7 @@ namespace G2Erp.Api.Repositories;
 
 public sealed class InMemoryEquipmentRepository : IEquipmentRepository
 {
-    private static readonly Equipment[] Equipment =
+    private static readonly List<Equipment> Equipment =
     [
         new() { CD_FIRM = "1000", CD_EQUIP = "EQ-A01", NM_EQUIP = "Assembly station A1", CD_LINE = "LINE-A", YN_USE = "Y" },
         new() { CD_FIRM = "1000", CD_EQUIP = "EQ-A02", NM_EQUIP = "Assembly station A2", CD_LINE = "LINE-A", YN_USE = "Y" },
@@ -29,4 +29,15 @@ public sealed class InMemoryEquipmentRepository : IEquipmentRepository
 
     public Task<Equipment?> GetAsync(string companyCode, string equipmentCode, CancellationToken cancellationToken) =>
         Task.FromResult(Equipment.SingleOrDefault(x => x.CD_FIRM == companyCode && x.CD_EQUIP == equipmentCode));
+
+    public Task AddAsync(Equipment equipment, CancellationToken cancellationToken)
+    {
+        if (Equipment.Any(x => x.CD_FIRM == equipment.CD_FIRM && x.CD_EQUIP == equipment.CD_EQUIP))
+            throw new InvalidOperationException("Equipment key already exists.");
+        Equipment.Add(equipment);
+        return Task.CompletedTask;
+    }
+
+    public Task<bool> DeleteAsync(string companyCode, string equipmentCode, CancellationToken cancellationToken) =>
+        Task.FromResult(Equipment.RemoveAll(x => x.CD_FIRM == companyCode && x.CD_EQUIP == equipmentCode) > 0);
 }

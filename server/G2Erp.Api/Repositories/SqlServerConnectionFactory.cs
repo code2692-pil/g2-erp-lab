@@ -16,7 +16,7 @@ public sealed class SqlServerConnectionFactory
         if (!IsLocalSqlServer(builder.DataSource))
             throw new InvalidOperationException("SqlServer PoC permits only localhost, '.', or this computer's local SQL Server instance.");
         if (!allowedDatabases.Any(database => string.Equals(database, builder.InitialCatalog, StringComparison.OrdinalIgnoreCase)))
-            throw new InvalidOperationException("SqlServer PoC permits only G2ERP_DEV_LOCAL_TEST.");
+            throw new InvalidOperationException("SqlServer PoC permits only the approved local development databases.");
         if (!builder.IntegratedSecurity)
             throw new InvalidOperationException("SqlServer PoC requires Windows integrated authentication.");
         if (!builder.Encrypt &&
@@ -33,6 +33,7 @@ public sealed class SqlServerConnectionFactory
             source = source[3..];
         var host = source.Split([',', '\\'], 2)[0].Trim();
         return string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(host, "127.0.0.1", StringComparison.Ordinal)
             || string.Equals(host, ".", StringComparison.Ordinal)
             || string.Equals(host, Environment.MachineName, StringComparison.OrdinalIgnoreCase);
     }

@@ -18,6 +18,21 @@ public sealed class SqlServerProcessRepository(SqlServerConnectionFactory connec
         Add(command, "@firm", companyCode, 10); Add(command, "@process", processCode, 30); await using var reader = await command.ExecuteReaderAsync(cancellationToken); return await reader.ReadAsync(cancellationToken) ? Map(reader) : null;
     }
 
+    public async Task AddAsync(ProductionProcess process, CancellationToken cancellationToken)
+    {
+        const string sql = "INSERT INTO POC.MST_PROCESS(CD_FIRM,CD_PROC,NM_PROC,NO_SEQ,YN_USE,CD_USER_REG,TM_REG,CD_USER_AMD,TM_AMD) VALUES(@firm,@process,@name,@sequence,@useYn,N'SYSTEM',SYSUTCDATETIME(),N'SYSTEM',SYSUTCDATETIME())";
+        await using var connection = connections.Create(); await connection.OpenAsync(cancellationToken); await using var command = new SqlCommand(sql, connection);
+        Add(command, "@firm", process.CD_FIRM, 10); Add(command, "@process", process.CD_PROC, 30); Add(command, "@name", process.NM_PROC, 100); command.Parameters.AddWithValue("@sequence", process.NO_SEQ); Add(command, "@useYn", process.YN_USE, 1);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task<bool> DeleteAsync(string companyCode, string processCode, CancellationToken cancellationToken)
+    {
+        await using var connection = connections.Create(); await connection.OpenAsync(cancellationToken); await using var command = new SqlCommand("DELETE FROM POC.MST_PROCESS WHERE CD_FIRM=@firm AND CD_PROC=@process", connection);
+        Add(command, "@firm", companyCode, 10); Add(command, "@process", processCode, 30);
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
     private static ProductionProcess Map(SqlDataReader reader) => new() { CD_FIRM = reader.GetString(0), CD_PROC = reader.GetString(1), NM_PROC = reader.GetString(2), NO_SEQ = reader.GetInt32(3), YN_USE = reader.GetString(4) };
     private static void AddFilters(SqlCommand command, string? firm, string? useYn, string? keyword) { Add(command, "@firm", BlankToNull(firm), 10); Add(command, "@useYn", BlankToNull(useYn), 1); Add(command, "@keyword", BlankToNull(keyword), 100); }
     private static void Add(SqlCommand command, string name, string? value, int size) => command.Parameters.Add(new SqlParameter(name, System.Data.SqlDbType.NVarChar, size) { Value = (object?)value ?? DBNull.Value });

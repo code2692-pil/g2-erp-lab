@@ -18,6 +18,11 @@ public sealed class ApiExceptionMiddleware(RequestDelegate next, ILogger<ApiExce
             context.Response.StatusCode = StatusCodes.Status409Conflict;
             await context.Response.WriteAsJsonAsync(new { error = exception.Message, traceId = context.TraceIdentifier });
         }
+        catch (DevelopmentDataAccessException exception)
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await context.Response.WriteAsJsonAsync(new { error = exception.Message, traceId = context.TraceIdentifier });
+        }
         catch (KeyNotFoundException)
         {
             context.Response.StatusCode = StatusCodes.Status404NotFound;

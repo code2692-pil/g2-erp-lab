@@ -4,7 +4,7 @@ namespace G2Erp.Api.Repositories;
 
 public sealed class InMemoryProcessRepository : IProcessRepository
 {
-    private static readonly ProductionProcess[] Processes =
+    private static readonly List<ProductionProcess> Processes =
     [
         new() { CD_FIRM = "1000", CD_PROC = "PROC-010", NM_PROC = "Material preparation", NO_SEQ = 10, YN_USE = "Y" },
         new() { CD_FIRM = "1000", CD_PROC = "PROC-020", NM_PROC = "Module assembly", NO_SEQ = 20, YN_USE = "Y" },
@@ -27,4 +27,15 @@ public sealed class InMemoryProcessRepository : IProcessRepository
 
     public Task<ProductionProcess?> GetAsync(string companyCode, string processCode, CancellationToken cancellationToken) =>
         Task.FromResult(Processes.SingleOrDefault(x => x.CD_FIRM == companyCode && x.CD_PROC == processCode));
+
+    public Task AddAsync(ProductionProcess process, CancellationToken cancellationToken)
+    {
+        if (Processes.Any(x => x.CD_FIRM == process.CD_FIRM && x.CD_PROC == process.CD_PROC))
+            throw new InvalidOperationException("Process key already exists.");
+        Processes.Add(process);
+        return Task.CompletedTask;
+    }
+
+    public Task<bool> DeleteAsync(string companyCode, string processCode, CancellationToken cancellationToken) =>
+        Task.FromResult(Processes.RemoveAll(x => x.CD_FIRM == companyCode && x.CD_PROC == processCode) > 0);
 }

@@ -17,7 +17,7 @@ if (string.Equals(repositoryMode, "SqlServer", StringComparison.OrdinalIgnoreCas
     var connectionString = builder.Configuration.GetConnectionString("G2Erp")
         ?? throw new InvalidOperationException("ConnectionStrings:G2Erp is required when RepositoryMode is SqlServer.");
     var allowUnencryptedLocal = string.Equals(builder.Configuration["G2ERP_POC_ALLOW_UNENCRYPTED_LOCAL"], "true", StringComparison.OrdinalIgnoreCase);
-    SqlServerConnectionFactory.ValidateLocalOnly(connectionString, builder.Environment.IsDevelopment(), allowUnencryptedLocal, "G2ERP_DEV_LOCAL_TEST");
+    SqlServerConnectionFactory.ValidateLocalOnly(connectionString, builder.Environment.IsDevelopment(), allowUnencryptedLocal, "G2ERP_DEV_LOCAL", "G2ERP_DEV_LOCAL_TEST");
     builder.Services.AddSingleton(new SqlServerConnectionFactory(connectionString));
     builder.Services.AddScoped<ISalesOrderRepository, SqlServerSalesOrderRepository>();
     builder.Services.AddScoped<IPurchaseOrderRepository, SqlServerPurchaseOrderRepository>();
@@ -53,6 +53,7 @@ builder.Services.AddScoped<IPartnerService, PartnerService>();
 builder.Services.AddScoped<IItemService, ItemService>();
 builder.Services.AddScoped<IWarehouseService, WarehouseService>();
 builder.Services.AddScoped<IMailOrderParserService, MailOrderParserService>();
+builder.Services.AddScoped<IDevelopmentDataService, DevelopmentDataService>();
 
 var app = builder.Build();
 

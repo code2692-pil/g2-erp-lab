@@ -4,7 +4,7 @@ namespace G2Erp.Api.Repositories;
 
 public sealed class InMemoryProductionLineRepository : IProductionLineRepository
 {
-    private static readonly ProductionLine[] Lines =
+    private static readonly List<ProductionLine> Lines =
     [
         new() { CD_FIRM = "1000", CD_LINE = "LINE-A", NM_LINE = "Assembly Line A", YN_USE = "Y" },
         new() { CD_FIRM = "1000", CD_LINE = "LINE-B", NM_LINE = "Assembly Line B", YN_USE = "Y" },
@@ -25,4 +25,15 @@ public sealed class InMemoryProductionLineRepository : IProductionLineRepository
 
     public Task<ProductionLine?> GetAsync(string companyCode, string lineCode, CancellationToken cancellationToken) =>
         Task.FromResult(Lines.SingleOrDefault(x => x.CD_FIRM == companyCode && x.CD_LINE == lineCode));
+
+    public Task AddAsync(ProductionLine line, CancellationToken cancellationToken)
+    {
+        if (Lines.Any(x => x.CD_FIRM == line.CD_FIRM && x.CD_LINE == line.CD_LINE))
+            throw new InvalidOperationException("Production line key already exists.");
+        Lines.Add(line);
+        return Task.CompletedTask;
+    }
+
+    public Task<bool> DeleteAsync(string companyCode, string lineCode, CancellationToken cancellationToken) =>
+        Task.FromResult(Lines.RemoveAll(x => x.CD_FIRM == companyCode && x.CD_LINE == lineCode) > 0);
 }

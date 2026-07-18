@@ -63,8 +63,8 @@ async function main() {
     const testFiles = selectedFile
       ? [selectedFile]
       : isApi
-        ? ["tests/e2e/api-mode.spec.ts", "tests/e2e/work-order-api-mode.spec.ts", "tests/e2e/work-order-api-validation.spec.ts"]
-        : ["tests/e2e/sales-order.spec.ts", "tests/e2e/purchase-order.spec.ts", "tests/e2e/work-order.spec.ts"];
+        ? ["tests/e2e/api-mode.spec.ts", "tests/e2e/work-order-api-mode.spec.ts", "tests/e2e/work-order-api-validation.spec.ts", "tests/e2e/development-data.spec.ts"]
+        : ["tests/e2e/sales-order.spec.ts", "tests/e2e/purchase-order.spec.ts", "tests/e2e/work-order.spec.ts", "tests/e2e/development-data.spec.ts"];
     const grepArgs = process.env.PLAYWRIGHT_GREP ? ["--grep", process.env.PLAYWRIGHT_GREP] : [];
     const testArgs = [
       "./node_modules/@playwright/test/cli.js",

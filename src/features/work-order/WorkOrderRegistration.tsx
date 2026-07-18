@@ -26,12 +26,13 @@ import {
 } from "./utils";
 import { getWorkOrderWarnings, validateWorkOrders } from "./validation";
 
-type NavigationPage = "sales" | "purchase" | "work";
+type NavigationPage = "sales" | "purchase" | "work" | "development";
 type HeaderEditableField = Exclude<keyof WorkOrderHeader, "NO_WO">;
 type ProcessEditableField = Exclude<keyof WorkOrderProcess, "CD_FIRM" | "NO_WO" | "NO_PROC">;
 
 interface WorkOrderRegistrationProps {
   onNavigate: (page: NavigationPage) => void;
+  showDevelopmentDataManager?: boolean;
 }
 
 const workOrderStatuses: readonly WorkOrderStatus[] = ["미확정", "확정", "진행", "완료", "마감", "취소"];
@@ -142,7 +143,7 @@ function isProcessEditableField(field: keyof WorkOrderProcess): field is Process
   return field !== "CD_FIRM" && field !== "NO_WO" && field !== "NO_PROC";
 }
 
-export function WorkOrderRegistration({ onNavigate }: WorkOrderRegistrationProps) {
+export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager = false }: WorkOrderRegistrationProps) {
   const [headers, setHeaders] = useState<WorkOrderHeader[]>([]);
   const [processes, setProcesses] = useState<WorkOrderProcess[]>([]);
   const [filters, setFilters] = useState({
@@ -574,6 +575,7 @@ export function WorkOrderRegistration({ onNavigate }: WorkOrderRegistrationProps
           <div className="menu-title">생산관리</div>
           <div className="menu-group"><ChevronRight size={14} /><span>작업지시관리</span></div>
           <button className="menu-item active" data-testid="nav-work-order" type="button">작업지시등록</button>
+          {showDevelopmentDataManager && <><div className="menu-title">개발 도구</div><button className="menu-item" data-testid="nav-development-data" onClick={() => void handleNavigate("development")} type="button">테스트 데이터 관리</button></>}
         </nav>
       </aside>
       <main aria-busy={processing} className="workbench">

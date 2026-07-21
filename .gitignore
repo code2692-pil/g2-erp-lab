@@ -23,6 +23,9 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Local desktop-launcher state
+.runtime/
+
 # Playwright test artifacts
 test-results/
 playwright-report/

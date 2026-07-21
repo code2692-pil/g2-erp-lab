@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, rmSync, statSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 
 const [action, mode] = process.argv.slice(2);
@@ -10,6 +10,14 @@ const isApi = mode !== "mock";
 const isSqlServer = mode === "sqlserver";
 const children = [];
 const e2eDirectory = resolve("tests", "e2e");
+
+function removeManagedSessionFile() {
+  const sessionFile = process.env.G2ERP_SESSION_FILE;
+  if (!sessionFile) return;
+  try { rmSync(sessionFile, { force: true }); } catch { /* process shutdown must remain best-effort */ }
+}
+
+process.once("exit", removeManagedSessionFile);
 
 function selectedTestFile() {
   const requestedFile = process.env.PLAYWRIGHT_TEST_FILE;
@@ -29,6 +37,16 @@ function start(command, args, env) {
   const child = spawn(command, args, { stdio: "inherit", windowsHide: true, env: { ...process.env, ...env } });
   children.push(child);
   return child;
+}
+
+function openBrowserWhenRequested(url) {
+  if (action !== "dev" || process.env.G2ERP_OPEN_BROWSER !== "true") return;
+  const command = process.platform === "win32" ? "explorer.exe" : process.platform === "darwin" ? "open" : "xdg-open";
+  const args = [url];
+  const browser = spawn(command, args, { detached: true, stdio: "ignore", windowsHide: true });
+  browser.once("error", () => {});
+  browser.unref();
+  console.log(`Opening browser: ${url}`);
 }
 
 async function waitFor(url, label) {
@@ -58,6 +76,7 @@ async function main() {
   start(process.execPath, ["./node_modules/vite/bin/vite.js", "--host", host, "--port", "5173"], isApi ? { VITE_DATA_MODE: "api", VITE_API_BASE_URL: backendUrl } : { VITE_DATA_MODE: "mock" });
   await waitFor(frontendUrl, "Vite");
   console.log(`Mode: ${mode}`); console.log(`Frontend: ${frontendUrl}`); console.log(`Backend: ${isApi ? backendUrl : "not started"}`); console.log(`Repository: ${isSqlServer ? "SqlServer (localhost / G2ERP_DEV_LOCAL_TEST)" : isApi ? "InMemory" : "Mock"}`);
+  openBrowserWhenRequested(frontendUrl);
   if (action === "test") {
     const selectedFile = selectedTestFile();
     const testFiles = selectedFile
@@ -74,7 +93,15 @@ async function main() {
     ];
     const test = start(process.execPath, testArgs, { CI: "true", ...(isApi ? { VITE_DATA_MODE: "api", VITE_API_BASE_URL: backendUrl } : { VITE_DATA_MODE: "mock" }) });
     process.exitCode = await new Promise(resolve => test.once("exit", code => resolve(code ?? 1)));
-  } else await new Promise(resolve => process.once("SIGINT", resolve));
+  } else await new Promise(resolve => {
+    const stop = () => resolve();
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+    process.once("SIGHUP", stop);
+  });
 }
 
-try { await main(); } finally { await Promise.all(children.reverse().map(stop)); }
+try { await main(); } finally {
+  await Promise.all(children.reverse().map(stop));
+  removeManagedSessionFile();
+}

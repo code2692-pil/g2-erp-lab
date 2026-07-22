@@ -11,6 +11,7 @@ test("API UI: work order lookup, save warning, and delete", async ({ page }) => 
   await page.goto("/");
   await page.getByTestId("nav-work-order").click();
   await page.getByTestId("wo-btn-new").click();
+  await page.getByTestId("wo-btn-add-process").click();
   await page.getByTestId("wo-btn-item-lookup").click();
   await page.getByTestId("wo-item-lookup-grid-row-1000::ITM-1001").click();
   await page.getByTestId("wo-item-lookup-confirm").click();

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 export interface CrudActionOptions<TResult> {
   execute: () => TResult | Promise<TResult>;
@@ -26,6 +26,7 @@ export function useCrudPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const processingRef = useRef(false);
 
   const clearMessage = useCallback(() => {
     setError(null);
@@ -38,10 +39,12 @@ export function useCrudPage() {
       setPending: (pending: boolean) => void,
       fallbackSuccessMessage: string
     ): Promise<TResult | undefined> => {
+      if (processingRef.current) return undefined;
       clearMessage();
 
       if (options.validate && !(await options.validate())) return undefined;
 
+      processingRef.current = true;
       setPending(true);
       try {
         const result = await options.execute();
@@ -54,6 +57,7 @@ export function useCrudPage() {
         options.onError?.(caughtError);
         return undefined;
       } finally {
+        processingRef.current = false;
         setPending(false);
       }
     },

@@ -63,8 +63,8 @@ test("C: 체크된 발주상세 행을 삭제한다", async ({ page }) => {
   await expect(page.getByTestId("confirm-dialog")).toContainText("선택한 발주상세 1건");
   await page.getByTestId("confirm-dialog-confirm").click();
 
-  await expect(page.getByTestId(`purchase-line-grid-row-${lineKey}`)).toHaveCount(0);
-  await expect(page.getByTestId(`purchase-line-grid-row-${remainingLineKey}`)).toBeVisible();
+  await expect(page.getByTestId(`purchase-line-grid-row-${remainingLineKey}`)).toHaveCount(0);
+  await expect(page.getByTestId(`purchase-line-grid-row-${lineKey}`)).toBeVisible();
   await expect(page.getByTestId("purchase-line-grid-footer-total")).toHaveText(/1/);
   await expect(page.getByTestId("purchase-line-grid-footer-selected")).toHaveText(/0/);
 });

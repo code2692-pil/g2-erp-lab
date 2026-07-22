@@ -178,6 +178,7 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
     error,
     successMessage,
     clearMessage,
+    executeCreate,
     executeDelete,
     executeSave,
     executeSearch
@@ -268,6 +269,7 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
         setHeaders(result.headers);
         setProcesses(result.processes);
         selectMaster(result.headers[0] ? createWorkOrderHeaderKey(result.headers[0].CD_FIRM, result.headers[0].NO_WO) : "");
+        selectDetail(null);
         setCheckedProcessKeys([]);
         setServerWarnings([]);
         clearDirty();
@@ -283,6 +285,7 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
     if (nextKey !== selectedMasterKey && !(await confirmDiscardChanges())) return;
     if (nextKey !== selectedMasterKey) clearDirty();
     selectMaster(nextKey);
+    selectDetail(null);
     setCheckedProcessKeys([]);
   };
 
@@ -321,15 +324,20 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
   const handleNew = async () => {
     if (!(await confirmDiscardChanges())) return;
     const header = createEmptyHeader(createTempWorkOrderNo(tempSequence));
-    const firstProcess = createEmptyProcess(header, 10);
     setFeatureMessage("");
-    setHeaders((current) => [header, ...current]);
-    setProcesses((current) => [firstProcess, ...current]);
-    selectMaster(createWorkOrderHeaderKey(header.CD_FIRM, header.NO_WO));
-    selectDetail(firstProcess.NO_PROC);
-    setCheckedProcessKeys([]);
-    setTempSequence((sequence) => sequence + 1);
-    clearDirty();
+    await executeCreate({
+      execute: () => {
+        setHeaders((current) => [header, ...current]);
+        selectMaster(createWorkOrderHeaderKey(header.CD_FIRM, header.NO_WO));
+        selectDetail(null);
+        setCheckedProcessKeys([]);
+        setTempSequence((sequence) => sequence + 1);
+        markWorkOrderDirty();
+        return header;
+      },
+      onSuccess: () => notify("success", "신규 작업지시가 추가되었습니다."),
+      successMessage: "신규 작업지시가 추가되었습니다."
+    });
   };
 
   const handleAddProcess = () => {
@@ -405,13 +413,12 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
         const warnings = [...new Set(saved.Warnings)];
         notify(
           warnings.length > 0 ? "warning" : "success",
-          warnings.length > 0
-            ? `작업지시가 저장되었습니다. 단, ${warnings.join(" ")}`
-            : "작업지시가 저장되었습니다."
+          "저장되었습니다.",
+          warnings.length > 0 ? warnings.join(" ") : undefined
         );
       },
-      successMessage: "작업지시가 저장되었습니다.",
-      errorMessage: (caughtError) => caughtError instanceof Error ? caughtError.message : "작업지시를 저장할 수 없습니다. 입력값을 확인하거나 다시 시도하세요."
+      successMessage: "저장되었습니다.",
+      errorMessage: (caughtError) => caughtError instanceof Error ? caughtError.message : "저장 중 오류가 발생했습니다. 입력값을 확인하고 다시 시도하세요."
     });
   };
 
@@ -441,10 +448,10 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
         setCheckedProcessKeys([]);
         setServerWarnings([]);
         clearDirty();
-        notify("success", "작업지시가 삭제되었습니다.");
+        notify("success", "삭제되었습니다.");
       },
-      successMessage: "작업지시가 삭제되었습니다.",
-      errorMessage: "작업지시 삭제 중 오류가 발생했습니다."
+      successMessage: "삭제되었습니다.",
+      errorMessage: "삭제 중 오류가 발생했습니다. 다시 시도하세요."
     });
   };
 
@@ -580,7 +587,7 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
       </aside>
       <main aria-busy={processing} className="workbench">
         <header className="page-header">
-          <div><h1 data-testid="work-order-page-title">작업지시등록</h1><p>PRT_WO / PRT_WOPROC Frontend Mock PoC</p></div>
+          <div><h1 data-testid="work-order-page-title">작업지시등록</h1><p>작업지시 정보를 조회하고 등록합니다.</p></div>
           <PageToolbar processing={processing} actions={[
             { dataTestId: "wo-btn-search", label: isLoading ? "조회 중..." : "조회", icon: <Search size={15} />, onClick: () => void handleSearch(), disabled: isLoading },
             { dataTestId: "wo-btn-new", label: "신규", icon: <Plus size={15} />, onClick: () => void handleNew(), disabled: isSaving },
@@ -603,11 +610,11 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
           {displayedWarning && <span data-testid="work-order-warning">경고: {displayedWarning}</span>}
         </SearchPanel>
         <section className="grid-section top-grid">
-          <div className="section-title"><h2>작업지시 Header</h2><div className="section-title-actions"><span>PRT_WO · PK CD_FIRM + NO_WO</span><button className="section-lookup-button" data-testid="wo-btn-item-lookup" disabled={processing} onClick={handleOpenItemLookup} type="button"><Search size={14} />품목 도움</button><button className="section-lookup-button" data-testid="wo-btn-line-lookup" disabled={processing} onClick={handleOpenProductionLineLookup} type="button"><Search size={14} />라인 도움</button></div></div>
+          <div className="section-title"><h2>작업지시</h2><div className="section-title-actions"><button className="section-lookup-button" data-testid="wo-btn-item-lookup" disabled={processing} onClick={handleOpenItemLookup} type="button"><Search size={14} />품목 도움</button><button className="section-lookup-button" data-testid="wo-btn-line-lookup" disabled={processing} onClick={handleOpenProductionLineLookup} type="button"><Search size={14} />라인 도움</button></div></div>
           <ErpDataGrid<WorkOrderHeader> ariaLabel="작업지시 Header" cellErrors={validationCellErrors} className="work-order-header-grid" columns={headerColumns} dataTestId="work-order-header-grid" emptyMessage="조회된 작업지시가 없습니다." onCellValueChange={(row, field, value) => { if (isHeaderEditableField(field)) updateHeader(row, field, value); }} onRowClick={(header) => void selectHeader(header)} rowKey={(header) => createWorkOrderHeaderKey(header.CD_FIRM, header.NO_WO)} rows={headers} selectedRowKey={selectedHeader ? createWorkOrderHeaderKey(selectedHeader.CD_FIRM, selectedHeader.NO_WO) : undefined} selectionMode="single" showFooter showRowNumbers />
         </section>
         <section className="grid-section bottom-grid">
-          <div className="section-title"><h2>공정상세</h2><div className="section-title-actions"><span>PRT_WOPROC · PK CD_FIRM + NO_WO + NO_PROC</span><button className="section-lookup-button" data-testid="wo-btn-process-lookup" disabled={processing} onClick={handleOpenProcessLookup} type="button"><Search size={14} />공정 도움</button><button className="section-lookup-button" data-testid="wo-btn-equipment-lookup" disabled={processing} onClick={handleOpenEquipmentLookup} type="button"><Search size={14} />설비 도움</button></div></div>
+          <div className="section-title"><h2>공정상세</h2><div className="section-title-actions"><button className="section-lookup-button" data-testid="wo-btn-process-lookup" disabled={processing} onClick={handleOpenProcessLookup} type="button"><Search size={14} />공정 도움</button><button className="section-lookup-button" data-testid="wo-btn-equipment-lookup" disabled={processing} onClick={handleOpenEquipmentLookup} type="button"><Search size={14} />설비 도움</button></div></div>
           <ErpDataGrid<WorkOrderProcess> ariaLabel="공정상세" cellErrors={validationCellErrors} checkedRowKeys={checkedProcessKeys} className="work-order-process-grid" columns={processColumns} dataTestId="work-order-process-grid" emptyMessage="작업지시 행을 선택하면 공정상세가 표시됩니다." onCellValueChange={(row, field, value) => { if (isProcessEditableField(field)) updateProcess(row, field, value); }} onCheckedRowKeysChange={setCheckedProcessKeys} onRowClick={(process) => selectDetail(process.NO_PROC)} rowKey={(process) => createWorkOrderProcessKey(process.CD_FIRM, process.NO_WO, process.NO_PROC)} rows={selectedProcesses} selectedRowKey={selectedProcess ? createWorkOrderProcessKey(selectedProcess.CD_FIRM, selectedProcess.NO_WO, selectedProcess.NO_PROC) : undefined} selectionMode="multiple" showCheckboxes showFooter showRowNumbers />
         </section>
         <div className="sales-order-total-summary" data-testid="work-order-process-total-summary"><span>공정 건수 {quantity.format(selectedProcesses.length)}</span><span>계획수량 {quantity.format(processTotals.QT_PLAN)}</span><strong>실적수량 {quantity.format(processTotals.QT_RESULT)}</strong></div>

@@ -13,6 +13,8 @@ import { ErpDataGrid } from "../../components/common/ErpDataGrid";
 import type { ErpDataGridColumn, ErpDataGridCellValue } from "../../components/common/ErpDataGrid";
 import { ErpDialog } from "../../components/common/ErpDialog";
 import { ErpLookupDialog } from "../../components/common/ErpLookupDialog";
+import { PageToolbar } from "../../components/common/PageToolbar";
+import { SearchPanel } from "../../components/common/SearchPanel";
 import { toValidationCellErrors, type ValidationIssue } from "../../components/common/validation/validation";
 import { mockItems } from "../common-code/item/mockData";
 import type { Item } from "../common-code/item/types";
@@ -316,6 +318,7 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
     if (header.NO_SO !== selectedNoSo && !(await confirmDiscardChanges())) return;
     if (header.NO_SO !== selectedNoSo) clearDirty();
     selectMaster(header.NO_SO);
+    selectDetail(null);
     setCheckedLineKeys([]);
   };
 
@@ -375,16 +378,26 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
     await executeSearch({
       execute: loadSalesOrderData,
       onSuccess: ({ headers: nextHeaders, lines: nextLines }) => {
+        const matchedHeaders = nextHeaders.filter((header) => {
+          const firmMatched = !filters.cdFirm || header.CD_FIRM.includes(filters.cdFirm);
+          const partnerMatched =
+            (!filters.cdPartner || header.CD_PARTNER.includes(filters.cdPartner)) &&
+            (!filters.nmPartner || header.NM_PARTNER.includes(filters.nmPartner));
+          const dateMatched =
+            (!filters.dateFrom || header.DT_SO >= filters.dateFrom) &&
+            (!filters.dateTo || header.DT_SO <= filters.dateTo);
+          return firmMatched && partnerMatched && dateMatched;
+        });
         setHeaders(nextHeaders);
         setLines(nextLines);
-        selectMaster(nextHeaders[0]?.NO_SO ?? "");
+        selectMaster(matchedHeaders[0]?.NO_SO ?? "");
+        selectDetail(null);
         setCheckedLineKeys([]);
         clearDirty();
-        notify(nextHeaders.length > 0 ? "success" : "info", nextHeaders.length > 0 ? "조회되었습니다." : "조회된 데이터가 없습니다.");
+        notify(matchedHeaders.length > 0 ? "success" : "info", matchedHeaders.length > 0 ? "조회되었습니다." : "조회된 데이터가 없습니다.");
       },
-      successMessage: (result) =>
-        result.source === "api" ? "API 조회가 완료되었습니다." : "조회되었습니다",
-      errorMessage: "API 수주 데이터를 불러오지 못했습니다."
+      successMessage: () => "조회되었습니다.",
+      errorMessage: "조회 중 오류가 발생했습니다. 다시 시도하세요."
     });
   };
 
@@ -441,12 +454,14 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
       execute: () => {
         setHeaders((current) => [nextHeader, ...current]);
         selectMaster(tempNo);
+        selectDetail(null);
         setCheckedLineKeys([]);
         setTempSeq((seq) => seq + 1);
-        clearDirty();
+        markDirty();
         return nextHeader;
       },
-      successMessage: "신규 수주 행이 추가되었습니다"
+      onSuccess: () => notify("success", "신규 수주가 추가되었습니다."),
+      successMessage: "신규 수주가 추가되었습니다."
     });
   };
 
@@ -635,15 +650,20 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
     setLines(savedLines);
     selectMaster(noMap.get(selectedNoSo) ?? selectedNoSo);
     setCheckedLineKeys([]);
-    console.log("SAL_SOH", savedHeaders);
-    console.log("SAL_SOL", savedLines);
-    setMessage("저장되었습니다");
+    setMessage("저장되었습니다.");
   };
 
   const handleSave = async () => {
+    if (!selectedHeader) {
+      const notice = "저장할 수주정보를 선택하세요.";
+      setMessage(notice);
+      notify("info", "선택된 항목이 없습니다.");
+      return;
+    }
     const currentIssues = validateSalesOrders(headers, lines);
     if (currentIssues.length > 0) {
       setValidationDialogOpen(true);
+      setMessage(`저장할 수 없습니다. 입력값 ${currentIssues.length}건을 확인하세요.`);
       focusValidationIssue(currentIssues[0]);
       notify("warning", `저장할 수 없습니다. 입력값 ${currentIssues.length}건을 확인하세요.`);
       return;
@@ -659,22 +679,19 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
           focusValidationIssue(issues[0]);
           return false;
         }
-        if (isApiMode() && !selectedHeader) {
-          setMessage("저장할 수주 정보를 선택하세요.");
-          return false;
-        }
         return true;
       },
       execute: saveSalesOrder,
       onSuccess: () => { clearDirty(); notify("success", "저장되었습니다."); },
-      successMessage: isApiMode() ? "API 서버에 저장되었습니다." : "저장되었습니다",
-      errorMessage: "API 저장에 실패했습니다. 서버 Validation 결과를 확인하세요."
+      successMessage: "저장되었습니다.",
+      errorMessage: "저장 중 오류가 발생했습니다. 입력값을 확인하고 다시 시도하세요."
     });
   };
 
   const deleteSalesOrderAction = async () => {
     if (!selectedNoSo) {
-      setMessage("삭제할 수주정보를 선택하세요");
+      setMessage("삭제할 수주정보를 선택하세요.");
+      notify("info", "선택된 항목이 없습니다.");
       return;
     }
 
@@ -691,13 +708,15 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
     setHeaders((current) => current.filter((header) => header.NO_SO !== selectedNoSo));
     setLines((current) => current.filter((line) => line.NO_SO !== selectedNoSo));
     selectMaster("");
+    selectDetail(null);
     setCheckedLineKeys([]);
-    setMessage("선택된 수주정보가 삭제되었습니다");
+    setMessage("삭제되었습니다.");
   };
 
   const handleDeleteOrder = async () => {
     if (!selectedNoSo) {
-      setMessage("삭제할 수주정보를 선택하세요");
+      setMessage("삭제할 수주정보를 선택하세요.");
+      notify("info", "선택된 항목이 없습니다.");
       return;
     }
 
@@ -706,8 +725,8 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
     await executeDelete({
       execute: deleteSalesOrderAction,
       onSuccess: () => { clearDirty(); notify("success", "삭제되었습니다."); },
-      successMessage: "선택된 수주정보가 삭제되었습니다",
-      errorMessage: "API 삭제에 실패했습니다."
+      successMessage: "삭제되었습니다.",
+      errorMessage: "삭제 중 오류가 발생했습니다. 다시 시도하세요."
     });
   };
 
@@ -871,41 +890,26 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
           <header className="page-header">
             <div>
               <h1 data-testid="page-title">수주등록</h1>
-              <p>SAL_SOH / SAL_SOL mock 데이터 입력 샘플</p>
+              <p>수주 정보를 조회하고 등록합니다.</p>
             </div>
-            <div className="button-bar">
-              <button data-testid="btn-search" disabled={isLoading} onClick={handleSearch}>
-                <Search size={15} />
-                조회
-              </button>
-              <button data-testid="btn-new" disabled={isSaving} onClick={handleNew}>
-                <Plus size={15} />
-                신규
-              </button>
-              <button data-testid="btn-mail-import" onClick={() => setMailImportOpen(true)}>
-                <MailPlus size={15} />
-                메일 수주 불러오기
-              </button>
-              <button data-testid="btn-add-line" onClick={handleAddLine}>
-                <Rows3 size={15} />
-                행추가
-              </button>
-              <button data-testid="btn-delete-line" onClick={handleDeleteLine}>
-                <Trash2 size={15} />
-                행삭제
-              </button>
-              <button className="primary" data-testid="btn-save" disabled={isSaving} onClick={handleSave}>
-                <Save size={15} />
-                저장
-              </button>
-              <button className="danger" data-testid="btn-delete-order" disabled={isSaving} onClick={handleDeleteOrder}>
-                <Trash2 size={15} />
-                삭제
-              </button>
-            </div>
+            <PageToolbar
+              processing={isLoading || isSaving}
+              actions={[
+                { dataTestId: "btn-search", label: isLoading ? "조회 중..." : "조회", icon: <Search size={15} />, onClick: () => void handleSearch() },
+                { dataTestId: "btn-new", label: "신규", icon: <Plus size={15} />, onClick: () => void handleNew() },
+                { dataTestId: "btn-add-line", label: "행추가", icon: <Rows3 size={15} />, onClick: handleAddLine },
+                { dataTestId: "btn-delete-line", label: "행삭제", icon: <Trash2 size={15} />, onClick: () => void handleDeleteLine() },
+                { dataTestId: "btn-save", label: isSaving ? "저장 중..." : "저장", icon: <Save size={15} />, onClick: () => void handleSave(), variant: "primary" },
+                { dataTestId: "btn-delete-order", label: isSaving ? "삭제 중..." : "삭제", icon: <Trash2 size={15} />, onClick: () => void handleDeleteOrder(), variant: "danger" },
+                { dataTestId: "btn-mail-import", label: "메일 수주 불러오기", icon: <MailPlus size={15} />, onClick: () => setMailImportOpen(true) }
+              ]}
+            />
           </header>
 
-          <section className="search-panel" aria-label="조회조건">
+          <SearchPanel
+            message={message}
+            statusAddon={validationIssues.length > 0 ? <span data-testid="validation-error-count">오류 {validationIssues.length}건</span> : undefined}
+          >
             <label>
               회사코드
               <input
@@ -970,18 +974,11 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
                 </button>
               </div>
             </div>
-            <div className="status-message">
-              <span data-testid="status-message">{message}</span>
-              {validationIssues.length > 0 && (
-                <span data-testid="validation-error-count">오류 {validationIssues.length}건</span>
-              )}
-            </div>
-          </section>
+          </SearchPanel>
 
           <section className="grid-section top-grid">
             <div className="section-title">
               <h2>수주정보</h2>
-              <span>SAL_SOH · PK CD_FIRM + NO_SO</span>
             </div>
             <ErpDataGrid<SalesOrderHeader>
               ariaLabel="수주정보"
@@ -989,7 +986,7 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
               className="sales-order-header-grid"
               columns={headerGridColumns}
               dataTestId="sales-order-header-grid"
-              emptyMessage="조회 버튼을 눌러 mock 수주정보를 불러오세요."
+              emptyMessage="조회 조건에 맞는 수주정보가 없습니다."
               onCellValueChange={(row, field, value) => {
                 if (isHeaderEditableField(field)) updateHeader(row.NO_SO, field, String(value ?? ""));
               }}
@@ -1011,10 +1008,10 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
             <div className="section-title">
               <h2>수주상세</h2>
               <div className="section-title-actions">
-                <span>SAL_SOL · PK CD_FIRM + NO_SO + NO_LINE</span>
                 <button
                   className="section-lookup-button"
                   data-testid="btn-item-lookup"
+                  disabled={isLoading || isSaving}
                   onClick={handleOpenItemLookup}
                   type="button"
                 >

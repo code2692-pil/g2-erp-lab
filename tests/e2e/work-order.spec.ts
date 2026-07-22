@@ -33,6 +33,48 @@ async function searchWorkOrders(page: Page) {
   await expect(headerRow(page)).toBeVisible();
 }
 
+async function holdNextMockResponse(page: Page) {
+  await page.evaluate(() => {
+    const controlledWindow = window as Window & {
+      __releaseWorkOrderMockResponse?: () => void;
+      __workOrderMockResponseStartedAt?: number;
+    };
+    const originalSetTimeout = window.setTimeout;
+    controlledWindow.__releaseWorkOrderMockResponse = undefined;
+    controlledWindow.__workOrderMockResponseStartedAt = undefined;
+
+    window.setTimeout = ((callback: TimerHandler, delay?: number, ...args: unknown[]) => {
+      if (delay === 1_000 && typeof callback === "function" && !controlledWindow.__releaseWorkOrderMockResponse) {
+        controlledWindow.__workOrderMockResponseStartedAt = performance.now();
+        controlledWindow.__releaseWorkOrderMockResponse = () => {
+          window.setTimeout = originalSetTimeout;
+          callback(...args);
+        };
+        return 0;
+      }
+      return originalSetTimeout(callback, delay, ...args);
+    }) as typeof window.setTimeout;
+  });
+}
+
+async function releaseMockResponse(page: Page) {
+  await page.evaluate(() => {
+    const controlledWindow = window as Window & {
+      __releaseWorkOrderMockResponse?: () => void;
+    };
+    controlledWindow.__releaseWorkOrderMockResponse?.();
+  });
+}
+
+async function getMockResponseStartedAt(page: Page) {
+  return page.evaluate(() => {
+    const controlledWindow = window as Window & {
+      __workOrderMockResponseStartedAt?: number;
+    };
+    return controlledWindow.__workOrderMockResponseStartedAt;
+  });
+}
+
 test("A: 생산관리 메뉴에서 작업지시 화면으로 이동하고 기존 화면과 전환한다", async ({ page }) => {
   await openWorkOrder(page);
   await page.getByTestId("nav-sales-order").click();
@@ -178,8 +220,16 @@ test("G: Header 삭제와 저장 처리 중 버튼 비활성화를 확인한다"
   await page.getByTestId("nav-work-order").click();
   await expect(page.getByTestId("work-order-page-title")).toHaveText("작업지시등록");
   await searchWorkOrders(page);
+  await holdNextMockResponse(page);
   await page.getByTestId("wo-btn-save").click();
   await page.getByTestId("confirm-dialog-confirm").click();
+  await expect.poll(() => getMockResponseStartedAt(page)).toBeDefined();
+  const startedAt = await getMockResponseStartedAt(page);
   await expect(page.getByTestId("wo-btn-save")).toBeDisabled();
+  const disabledAt = await page.evaluate(() => performance.now());
+  await releaseMockResponse(page);
   await expect(page.getByRole("status")).toContainText("저장되었습니다.");
+  await expect(page.getByTestId("wo-btn-save")).toBeEnabled();
+  const completedAt = await page.evaluate(() => performance.now());
+  console.log(`work-order mock save timing: started=${startedAt}ms, disabled=${disabledAt}ms, completed=${completedAt}ms`);
 });

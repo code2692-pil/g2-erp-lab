@@ -158,7 +158,6 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
   });
   const [checkedProcessKeys, setCheckedProcessKeys] = useState<string[]>([]);
   const [tempSequence, setTempSequence] = useState(1);
-  const [featureMessage, setFeatureMessage] = useState("");
   const [validationDialogOpen, setValidationDialogOpen] = useState(false);
   const [itemLookupOpen, setItemLookupOpen] = useState(false);
   const [productionLineLookupOpen, setProductionLineLookupOpen] = useState(false);
@@ -175,9 +174,9 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
   const {
     isLoading,
     isSaving,
-    error,
-    successMessage,
-    clearMessage,
+    message,
+    setMessage,
+    setFeatureMessage,
     executeCreate,
     executeDelete,
     executeSave,
@@ -197,11 +196,6 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
   }, [notify]);
 
   const processing = isLoading || isSaving;
-  const message = error ?? successMessage ?? featureMessage;
-  const setMessage = (nextMessage: string) => {
-    clearMessage();
-    setFeatureMessage(nextMessage);
-  };
   const selectedHeader = headers.find(
     (header) => createWorkOrderHeaderKey(header.CD_FIRM, header.NO_WO) === selectedMasterKey
   );
@@ -269,7 +263,6 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
         setHeaders(result.headers);
         setProcesses(result.processes);
         selectMaster(result.headers[0] ? createWorkOrderHeaderKey(result.headers[0].CD_FIRM, result.headers[0].NO_WO) : "");
-        selectDetail(null);
         setCheckedProcessKeys([]);
         setServerWarnings([]);
         clearDirty();
@@ -285,7 +278,6 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
     if (nextKey !== selectedMasterKey && !(await confirmDiscardChanges())) return;
     if (nextKey !== selectedMasterKey) clearDirty();
     selectMaster(nextKey);
-    selectDetail(null);
     setCheckedProcessKeys([]);
   };
 
@@ -329,7 +321,6 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
       execute: () => {
         setHeaders((current) => [header, ...current]);
         selectMaster(createWorkOrderHeaderKey(header.CD_FIRM, header.NO_WO));
-        selectDetail(null);
         setCheckedProcessKeys([]);
         setTempSequence((sequence) => sequence + 1);
         markWorkOrderDirty();

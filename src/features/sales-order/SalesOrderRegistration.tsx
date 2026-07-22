@@ -192,16 +192,15 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
   const {
     isLoading,
     isSaving,
-    error,
-    successMessage,
-    clearMessage,
+    message,
+    setMessage,
+    setFeatureMessage,
     executeSearch,
     executeCreate,
     executeSave,
     executeDelete
   } = useCrudPage();
   const [checkedLineKeys, setCheckedLineKeys] = useState<string[]>([]);
-  const [featureMessage, setFeatureMessage] = useState("");
   const [tempSeq, setTempSeq] = useState(1);
   const [partnerLookupOpen, setPartnerLookupOpen] = useState(false);
   const [itemLookupOpen, setItemLookupOpen] = useState(false);
@@ -222,11 +221,6 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
   const { isDirty, markDirty, clearDirty } = useDirtyState();
   const { notify } = useNotification();
 
-  const message = error ?? successMessage ?? featureMessage;
-  const setMessage = (nextMessage: string) => {
-    clearMessage();
-    setFeatureMessage(nextMessage);
-  };
   const confirmDiscardChanges = () =>
     isDirty
       ? confirm({
@@ -318,7 +312,6 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
     if (header.NO_SO !== selectedNoSo && !(await confirmDiscardChanges())) return;
     if (header.NO_SO !== selectedNoSo) clearDirty();
     selectMaster(header.NO_SO);
-    selectDetail(null);
     setCheckedLineKeys([]);
   };
 
@@ -391,7 +384,6 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
         setHeaders(nextHeaders);
         setLines(nextLines);
         selectMaster(matchedHeaders[0]?.NO_SO ?? "");
-        selectDetail(null);
         setCheckedLineKeys([]);
         clearDirty();
         notify(matchedHeaders.length > 0 ? "success" : "info", matchedHeaders.length > 0 ? "조회되었습니다." : "조회된 데이터가 없습니다.");
@@ -454,7 +446,6 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
       execute: () => {
         setHeaders((current) => [nextHeader, ...current]);
         selectMaster(tempNo);
-        selectDetail(null);
         setCheckedLineKeys([]);
         setTempSeq((seq) => seq + 1);
         markDirty();
@@ -708,7 +699,6 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
     setHeaders((current) => current.filter((header) => header.NO_SO !== selectedNoSo));
     setLines((current) => current.filter((line) => line.NO_SO !== selectedNoSo));
     selectMaster("");
-    selectDetail(null);
     setCheckedLineKeys([]);
     setMessage("삭제되었습니다.");
   };

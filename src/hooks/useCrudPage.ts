@@ -26,12 +26,20 @@ export function useCrudPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [featureMessage, setFeatureMessage] = useState("");
   const processingRef = useRef(false);
 
   const clearMessage = useCallback(() => {
     setError(null);
     setSuccessMessage(null);
   }, []);
+
+  const setMessage = useCallback((message: string) => {
+    clearMessage();
+    setFeatureMessage(message);
+  }, [clearMessage]);
+
+  const message = error ?? successMessage ?? featureMessage;
 
   const runAction = useCallback(
     async <TResult>(
@@ -86,7 +94,10 @@ export function useCrudPage() {
     isSaving,
     error,
     successMessage,
+    message,
     clearMessage,
+    setMessage,
+    setFeatureMessage,
     executeSearch,
     executeCreate,
     executeSave,

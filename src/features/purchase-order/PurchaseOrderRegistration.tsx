@@ -41,8 +41,7 @@ export function PurchaseOrderRegistration({ onNavigate, showDevelopmentDataManag
     const [headers, setHeaders] = useState<PurchaseOrderHeader[]>([]);
     const [lines, setLines] = useState<PurchaseOrderLine[]>([]);
     const { selectedMasterKey: selectedNoPo, selectedDetailKey: selectedLineNo, selectMaster, selectDetail } = useMasterDetailSelection<string, number | null>("", null);
-    const { isLoading, isSaving, error, successMessage, clearMessage, executeCreate, executeDelete, executeSave, executeSearch } = useCrudPage();
-    const [featureMessage, setFeatureMessage] = useState("");
+    const { isLoading, isSaving, message, setMessage, setFeatureMessage, executeCreate, executeDelete, executeSave, executeSearch } = useCrudPage();
     const [checkedLineKeys, setCheckedLineKeys] = useState<string[]>([]);
     const [partnerOpen, setPartnerOpen] = useState(false);
     const [itemOpen, setItemOpen] = useState(false);
@@ -53,8 +52,6 @@ export function PurchaseOrderRegistration({ onNavigate, showDevelopmentDataManag
     const { isDirty, markDirty, clearDirty } = useDirtyState();
     const { notify } = useNotification();
     const { showValidationSummary } = useValidationSummary();
-    const setMessage = (message: string) => { clearMessage(); setFeatureMessage(message); };
-    const message = error ?? successMessage ?? featureMessage;
     const selectedHeader = headers.find((header) => header.NO_PO === selectedNoPo);
     const selectedLine = lines.find((line) => line.NO_PO === selectedNoPo && line.NO_LINE === selectedLineNo);
     const issues = useMemo(() => validatePurchaseOrders(headers, lines), [headers, lines]);
@@ -88,7 +85,7 @@ export function PurchaseOrderRegistration({ onNavigate, showDevelopmentDataManag
     const confirmDiscardChanges = () => isDirty ? confirm({ title: "저장하지 않은 변경사항", message: "저장하지 않은 변경사항이 있습니다.", description: "계속하면 변경사항이 사라집니다.", confirmLabel: "변경사항 폐기", cancelLabel: "계속 편집", danger: true }) : Promise.resolve(true);
     const selectHeader = async (header: PurchaseOrderHeader) => { if (header.NO_PO !== selectedNoPo && !(await confirmDiscardChanges()))
         return; if (header.NO_PO !== selectedNoPo)
-        clearDirty(); selectMaster(header.NO_PO); selectDetail(null); setCheckedLineKeys([]); };
+        clearDirty(); selectMaster(header.NO_PO); setCheckedLineKeys([]); };
     const updateLine = (no: string, lineNo: number, field: LineField, value: ErpDataGridCellValue) => { markDirty(); setLines((current) => current.map((line) => { if (line.NO_PO !== no || line.NO_LINE !== lineNo)
         return line; if (field === "QT_PO" || field === "UM_PO") {
         const next = { ...line, [field]: numberValue(value) };
@@ -136,7 +133,6 @@ export function PurchaseOrderRegistration({ onNavigate, showDevelopmentDataManag
                 setHeaders(result.headers);
                 setLines(result.lines);
                 selectMaster(matchedHeaders[0]?.NO_PO ?? "");
-                selectDetail(null);
                 setCheckedLineKeys([]);
                 clearDirty();
                 notify(matchedHeaders.length ? "success" : "info", matchedHeaders.length ? "조회되었습니다." : "조회된 데이터가 없습니다.");
@@ -154,7 +150,6 @@ export function PurchaseOrderRegistration({ onNavigate, showDevelopmentDataManag
             execute: () => {
                 setHeaders((current) => [header, ...current]);
                 selectMaster(no);
-                selectDetail(null);
                 setCheckedLineKeys([]);
                 setTempSequence((sequence) => sequence + 1);
                 markDirty();
@@ -241,7 +236,7 @@ export function PurchaseOrderRegistration({ onNavigate, showDevelopmentDataManag
         notify("info", "선택된 항목이 없습니다.");
         return;
     } if (!(await confirm({ title: "발주 삭제", message: `발주번호 ${selectedNoPo}을 삭제하시겠습니까?`, confirmLabel: "삭제", danger: true })))
-        return; setFeatureMessage(""); await executeDelete({ execute: () => { setHeaders((current) => current.filter((header) => header.NO_PO !== selectedNoPo)); setLines((current) => current.filter((line) => line.NO_PO !== selectedNoPo)); selectMaster(""); selectDetail(null); setCheckedLineKeys([]); clearDirty(); notify("success", "삭제되었습니다."); return true; }, successMessage: "삭제되었습니다.", errorMessage: "삭제 중 오류가 발생했습니다. 다시 시도하세요." }); };
+        return; setFeatureMessage(""); await executeDelete({ execute: () => { setHeaders((current) => current.filter((header) => header.NO_PO !== selectedNoPo)); setLines((current) => current.filter((line) => line.NO_PO !== selectedNoPo)); selectMaster(""); setCheckedLineKeys([]); clearDirty(); notify("success", "삭제되었습니다."); return true; }, successMessage: "삭제되었습니다.", errorMessage: "삭제 중 오류가 발생했습니다. 다시 시도하세요." }); };
     const choosePartner = (partner: Partner) => { if (!selectedHeader) {
         notify("info", "선택된 항목이 없습니다.");
         return;

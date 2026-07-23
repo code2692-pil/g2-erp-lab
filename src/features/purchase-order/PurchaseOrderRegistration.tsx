@@ -12,17 +12,15 @@ import { useDirtyState } from "../../hooks/useDirtyState";
 import { useNotification } from "../../hooks/useNotification";
 import { useValidationSummary } from "../../hooks/useValidationSummary";
 import { useMasterDetailSelection } from "../../hooks/useMasterDetailSelection";
-import { mockItems } from "../common-code/item/mockData";
 import type { Item } from "../common-code/item/types";
-import { mockPartners } from "../common-code/partner/mockData";
 import type { Partner } from "../common-code/partner/types";
-import { mockWarehouses } from "../common-code/warehouse/mockData";
 import type { Warehouse } from "../common-code/warehouse/types";
-import { mockPurchaseOrderHeaders, mockPurchaseOrderLines } from "./mockData";
+import type { PurchaseOrderDataAdapter } from "./purchaseOrderDataAdapter";
 import type { PurchaseOrderHeader, PurchaseOrderLine, PurchaseOrderStatus } from "./types";
 import { calculatePurchaseOrderLineAmounts, calculatePurchaseOrderTotals, createPurchaseOrderHeaderKey, createPurchaseOrderLineKey } from "./utils";
 import { validatePurchaseOrders } from "./validation";
 interface PurchaseOrderRegistrationProps {
+    adapter: PurchaseOrderDataAdapter;
     onNavigate: (page: "sales" | "purchase" | "work" | "development") => void;
     showDevelopmentDataManager?: boolean;
 }
@@ -37,7 +35,7 @@ function today() { return new Date().toISOString().slice(0, 10); }
 function numberValue(value: ErpDataGridCellValue) { const result = Number(value); return Number.isFinite(result) ? result : 0; }
 function emptyHeader(no: string): PurchaseOrderHeader { return { CD_FIRM: "1000", NO_PO: no, DT_PO: today(), CD_PARTNER: "", NM_PARTNER: "", CD_EMP: "E-001", NM_EMP: "Buyer", CD_CURRENCY: "KRW", RT_EXCHANGE: 1, ST_PO: "미확정", DC_RMK: "" }; }
 function emptyLine(header: PurchaseOrderHeader, number: number): PurchaseOrderLine { return { CD_FIRM: header.CD_FIRM, NO_PO: header.NO_PO, NO_LINE: number, CD_ITEM: "", NM_ITEM: "", STND_ITEM: "", UNIT_ITEM: "", QT_PO: 0, UM_PO: 0, AM_SUPPLY: 0, AM_VAT: 0, AM_TOTAL: 0, DT_DLV: today(), CD_WH: "", NM_WH: "", DC_RMK: "" }; }
-export function PurchaseOrderRegistration({ onNavigate, showDevelopmentDataManager = false }: PurchaseOrderRegistrationProps) {
+export function PurchaseOrderRegistration({ adapter, onNavigate, showDevelopmentDataManager = false }: PurchaseOrderRegistrationProps) {
     const [headers, setHeaders] = useState<PurchaseOrderHeader[]>([]);
     const [lines, setLines] = useState<PurchaseOrderLine[]>([]);
     const { selectedMasterKey: selectedNoPo, selectedDetailKey: selectedLineNo, selectMaster, selectDetail } = useMasterDetailSelection<string, number | null>("", null);
@@ -46,6 +44,12 @@ export function PurchaseOrderRegistration({ onNavigate, showDevelopmentDataManag
     const [partnerOpen, setPartnerOpen] = useState(false);
     const [itemOpen, setItemOpen] = useState(false);
     const [warehouseOpen, setWarehouseOpen] = useState(false);
+    const [partners, setPartners] = useState<Partner[]>([]);
+    const [items, setItems] = useState<Item[]>([]);
+    const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+    const mockPartners = partners;
+    const mockItems = items;
+    const mockWarehouses = warehouses;
     const [filters, setFilters] = useState({ firm: "1000", from: "2026-07-01", to: "2026-07-31", no: "", partner: "", status: "" });
     const [tempSequence, setTempSequence] = useState(1);
     const { confirm } = useConfirm();
@@ -82,6 +86,16 @@ export function PurchaseOrderRegistration({ onNavigate, showDevelopmentDataManag
         document.addEventListener("change", markGridEdit, true);
         return () => { document.removeEventListener("input", markGridEdit, true); document.removeEventListener("change", markGridEdit, true); };
     }, [markDirty]);
+    useEffect(() => {
+        let cancelled = false;
+        void Promise.all([adapter.getPartners(), adapter.getItems(), adapter.getWarehouses()]).then(([nextPartners, nextItems, nextWarehouses]) => {
+            if (cancelled) return;
+            setPartners(nextPartners);
+            setItems(nextItems);
+            setWarehouses(nextWarehouses);
+        });
+        return () => { cancelled = true; };
+    }, [adapter]);
     const confirmDiscardChanges = () => isDirty ? confirm({ title: "저장하지 않은 변경사항", message: "저장하지 않은 변경사항이 있습니다.", description: "계속하면 변경사항이 사라집니다.", confirmLabel: "변경사항 폐기", cancelLabel: "계속 편집", danger: true }) : Promise.resolve(true);
     const selectHeader = async (header: PurchaseOrderHeader) => { if (header.NO_PO !== selectedNoPo && !(await confirmDiscardChanges()))
         return; if (header.NO_PO !== selectedNoPo)
@@ -117,10 +131,7 @@ export function PurchaseOrderRegistration({ onNavigate, showDevelopmentDataManag
         if (!(await confirmDiscardChanges())) return;
         setFeatureMessage("");
         await executeSearch({
-            execute: () => ({
-                headers: mockPurchaseOrderHeaders.map((row) => ({ ...row })),
-                lines: mockPurchaseOrderLines.map((row) => ({ ...row }))
-            }),
+            execute: () => adapter.search(),
             onSuccess: (result) => {
                 const matchedHeaders = result.headers.filter((header) =>
                     (!filters.firm || header.CD_FIRM === filters.firm) &&
@@ -217,26 +228,27 @@ export function PurchaseOrderRegistration({ onNavigate, showDevelopmentDataManag
         focusValidationIssue(issues[0]);
         return;
     } if (!(await confirm({ title: "저장 확인", message: "저장하시겠습니까?", confirmLabel: "저장" })))
-        return; setFeatureMessage(""); await executeSave({ execute: () => {
-        const savedNo = selectedNoPo.startsWith("TEMP_PO_")
-            ? `PO${today().replaceAll("-", "")}${selectedNoPo.slice(-4)}`
-            : selectedNoPo;
-        setHeaders((current) => current.map((header) => header.NO_PO === selectedNoPo ? { ...header, NO_PO: savedNo, ST_PO: "확정" } : header));
-        setLines((current) => current.map((line) => line.NO_PO === selectedNoPo ? { ...line, NO_PO: savedNo } : line));
-        selectMaster(savedNo);
-        setCheckedLineKeys([]);
-        clearDirty();
-        notify("success", "저장되었습니다.");
-        return true;
-    }, successMessage: "저장되었습니다.", errorMessage: "저장 중 오류가 발생했습니다. 입력값을 확인하고 다시 시도하세요." }); };
+        return; setFeatureMessage(""); await executeSave({
+            execute: () => adapter.save({ Header: selectedHeader, Lines: selectedLines }),
+            onSuccess: ({ document }) => {
+                setHeaders((current) => current.map((header) => header.NO_PO === selectedNoPo ? document.Header : header));
+                setLines((current) => current.map((line) => line.NO_PO === selectedNoPo ? document.Lines.find((savedLine) => savedLine.NO_LINE === line.NO_LINE) ?? line : line));
+                selectMaster(document.Header.NO_PO);
+                setCheckedLineKeys([]);
+                clearDirty();
+                notify("success", "저장되었습니다.");
+            },
+            successMessage: "저장되었습니다.",
+            errorMessage: "저장 중 오류가 발생했습니다. 입력값을 확인하고 다시 시도하세요."
+        }); };
     const navigateWorkOrder = async () => { if (!(await confirmDiscardChanges()))
         return; clearDirty(); onNavigate("work"); };
-    const handleDelete = async () => { if (!selectedNoPo) {
+    const handleDelete = async () => { if (!selectedNoPo || !selectedHeader) {
         setMessage("선택된 항목이 없습니다.");
         notify("info", "선택된 항목이 없습니다.");
         return;
     } if (!(await confirm({ title: "발주 삭제", message: `발주번호 ${selectedNoPo}을 삭제하시겠습니까?`, confirmLabel: "삭제", danger: true })))
-        return; setFeatureMessage(""); await executeDelete({ execute: () => { setHeaders((current) => current.filter((header) => header.NO_PO !== selectedNoPo)); setLines((current) => current.filter((line) => line.NO_PO !== selectedNoPo)); selectMaster(""); setCheckedLineKeys([]); clearDirty(); notify("success", "삭제되었습니다."); return true; }, successMessage: "삭제되었습니다.", errorMessage: "삭제 중 오류가 발생했습니다. 다시 시도하세요." }); };
+        return; setFeatureMessage(""); await executeDelete({ execute: async () => { await adapter.delete(selectedHeader.CD_FIRM, selectedNoPo); setHeaders((current) => current.filter((header) => header.NO_PO !== selectedNoPo)); setLines((current) => current.filter((line) => line.NO_PO !== selectedNoPo)); selectMaster(""); setCheckedLineKeys([]); clearDirty(); notify("success", "삭제되었습니다."); return true; }, successMessage: "삭제되었습니다.", errorMessage: "삭제 중 오류가 발생했습니다. 다시 시도하세요." }); };
     const choosePartner = (partner: Partner) => { if (!selectedHeader) {
         notify("info", "선택된 항목이 없습니다.");
         return;

@@ -13,13 +13,20 @@ export interface PurchaseOrderSearchResult {
   lines: PurchaseOrderLine[];
 }
 
-export interface PurchaseOrderSaveResult {
-  document: PurchaseOrderDocument;
+export interface PurchaseOrderSearchFilters {
+  companyCode?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  purchaseOrderNo?: string;
+  partner?: string;
+  status?: string;
 }
 
 export interface PurchaseOrderDataAdapter {
-  search(): Promise<PurchaseOrderSearchResult>;
-  save(document: PurchaseOrderDocument): Promise<PurchaseOrderSaveResult>;
+  search(filters: PurchaseOrderSearchFilters): Promise<PurchaseOrderSearchResult>;
+  getDetail(companyCode: string, purchaseOrderNo: string): Promise<PurchaseOrderDocument>;
+  create(document: PurchaseOrderDocument): Promise<PurchaseOrderDocument>;
+  update(companyCode: string, purchaseOrderNo: string, document: PurchaseOrderDocument): Promise<PurchaseOrderDocument>;
   delete(companyCode: string, purchaseOrderNo: string): Promise<void>;
   getPartners(): Promise<Partner[]>;
   getItems(): Promise<Item[]>;

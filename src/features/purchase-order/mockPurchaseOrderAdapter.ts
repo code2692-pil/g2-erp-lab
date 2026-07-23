@@ -4,8 +4,7 @@ import { mockWarehouses } from "../common-code/warehouse/mockData";
 import { mockPurchaseOrderHeaders, mockPurchaseOrderLines } from "./mockData";
 import type {
   PurchaseOrderDataAdapter,
-  PurchaseOrderDocument,
-  PurchaseOrderSaveResult
+  PurchaseOrderDocument
 } from "./purchaseOrderDataAdapter";
 
 function today() {
@@ -27,7 +26,18 @@ export const mockPurchaseOrderAdapter: PurchaseOrderDataAdapter = {
     };
   },
 
-  async save(document): Promise<PurchaseOrderSaveResult> {
+  async getDetail(companyCode, purchaseOrderNo) {
+    const header = mockPurchaseOrderHeaders.find((row) => row.CD_FIRM === companyCode && row.NO_PO === purchaseOrderNo);
+    if (!header) throw new Error("발주 정보를 찾을 수 없습니다.");
+    return {
+      Header: { ...header },
+      Lines: mockPurchaseOrderLines
+        .filter((line) => line.CD_FIRM === companyCode && line.NO_PO === purchaseOrderNo)
+        .map((line) => ({ ...line }))
+    };
+  },
+
+  async create(document) {
     const savedNo = document.Header.NO_PO.startsWith("TEMP_PO_")
       ? `PO${today().replaceAll("-", "")}${document.Header.NO_PO.slice(-4)}`
       : document.Header.NO_PO;
@@ -37,7 +47,11 @@ export const mockPurchaseOrderAdapter: PurchaseOrderDataAdapter = {
     if (document.Header.NO_PO.startsWith("TEMP_PO_")) saved.Header.ST_PO = "확정";
     saved.Lines = saved.Lines.map((line) => ({ ...line, NO_PO: savedNo }));
 
-    return { document: saved };
+    return saved;
+  },
+
+  async update(_companyCode, _purchaseOrderNo, document) {
+    return cloneDocument(document);
   },
 
   async delete() {},

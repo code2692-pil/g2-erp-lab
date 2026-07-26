@@ -131,6 +131,9 @@ test("C: 신규 작업지시와 품목·라인·공정·설비 Lookup을 저장�
   await processCell(page, tempProcessKey, "QT_PLAN").fill("10");
   await page.getByTestId("wo-btn-save").click();
   await expect(page.getByTestId("confirm-dialog")).toContainText("입력한 작업지시를 저장하시겠습니까?");
+  expect(await page.getByTestId("confirm-dialog").locator("button").evaluateAll(
+    (buttons) => buttons.map((button) => button.getAttribute("data-testid")).filter(Boolean)
+  )).toEqual(["confirm-dialog-confirm", "confirm-dialog-cancel"]);
   await page.getByTestId("confirm-dialog-confirm").click();
   await expect(page.getByRole("status")).toContainText("저장되었습니다.");
   await expect(page.getByTestId("work-order-header-grid-row-1000::WO2026070007")).toBeVisible();

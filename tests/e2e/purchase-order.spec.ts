@@ -46,6 +46,9 @@ test("B: 신규 발주 Validation, Lookup, 금액 계산과 저장", async ({ pa
   await page.getByTestId(`purchase-line-grid-cell-${tempLineKey}-UM_PO`).fill("101");
   await expect(page.getByTestId("purchase-total-summary")).toContainText("333");
   await page.getByTestId("po-btn-save").click();
+  expect(await page.getByTestId("confirm-dialog").locator("button").evaluateAll(
+    (buttons) => buttons.map((button) => button.getAttribute("data-testid")).filter(Boolean)
+  )).toEqual(["confirm-dialog-confirm", "confirm-dialog-cancel"]);
   await page.getByTestId("confirm-dialog-confirm").click();
   await expect(page.getByTestId("status-message")).toHaveText("저장되었습니다.");
 });

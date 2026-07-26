@@ -16,5 +16,5 @@ export function ConfirmDialog({ open, pending = false, title, message, descripti
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [open, pending, onCancel, onConfirm]);
-  return <ErpDialog open={open} title={title} onClose={pending ? () => undefined : onCancel} dataTestId="confirm-dialog" footer={<><button data-testid="confirm-dialog-cancel" ref={cancelRef} type="button" onClick={onCancel} disabled={pending}>{cancelLabel}</button><button data-testid="confirm-dialog-confirm" type="button" className={danger ? "danger" : "primary"} onClick={onConfirm} disabled={pending}>{pending ? "처리 중..." : confirmLabel}</button></>}><p>{message}</p>{description && <p className="muted">{description}</p>}</ErpDialog>;
+  return <ErpDialog open={open} title={title} onClose={pending ? () => undefined : onCancel} dataTestId="confirm-dialog" footer={<><button data-testid="confirm-dialog-confirm" type="button" className={danger ? "danger" : "primary"} onClick={onConfirm} disabled={pending}>{pending ? "처리 중..." : confirmLabel}</button><button data-testid="confirm-dialog-cancel" ref={cancelRef} type="button" onClick={onCancel} disabled={pending}>{cancelLabel}</button></>}><p>{message}</p>{description && <p className="muted">{description}</p>}</ErpDialog>;
 }

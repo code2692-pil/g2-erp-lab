@@ -277,6 +277,9 @@ test("UX A: 저장 확인을 취소하면 저장하지 않고, 확인하면 알�
 
   await page.getByTestId("btn-save").click();
   await expect(page.getByTestId("confirm-dialog")).toContainText("저장하시겠습니까?");
+  expect(await page.getByTestId("confirm-dialog").locator("button").evaluateAll(
+    (buttons) => buttons.map((button) => button.getAttribute("data-testid")).filter(Boolean)
+  )).toEqual(["confirm-dialog-confirm", "confirm-dialog-cancel"]);
   await page.getByTestId("confirm-dialog-cancel").click();
   await expect(page.getByTestId("status-message")).not.toHaveText("저장되었습니다");
 

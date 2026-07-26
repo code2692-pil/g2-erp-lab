@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { PurchaseOrderRegistration } from "./features/purchase-order/PurchaseOrderRegistration";
-import { ApiPurchaseOrderRegistration } from "./features/purchase-order/ApiPurchaseOrderRegistration";
 import { apiPurchaseOrderAdapter } from "./features/purchase-order/apiPurchaseOrderAdapter";
 import { mockPurchaseOrderAdapter } from "./features/purchase-order/mockPurchaseOrderAdapter";
 import { SalesOrderRegistration } from "./features/sales-order/SalesOrderRegistration";
@@ -12,6 +11,7 @@ import { DevelopmentDataManager } from "./features/development-data/DevelopmentD
 export default function App() {
   const [page, setPage] = useState<"sales" | "purchase" | "work" | "development">("sales");
   const [showDevelopmentDataManager, setShowDevelopmentDataManager] = useState(false);
+  const purchaseOrderAdapter = isApiMode() ? apiPurchaseOrderAdapter : mockPurchaseOrderAdapter;
 
   useEffect(() => {
     let cancelled = false;
@@ -25,6 +25,6 @@ export default function App() {
   return page === "sales"
     ? <SalesOrderRegistration onNavigate={setPage} showDevelopmentDataManager={showDevelopmentDataManager} />
     : page === "purchase"
-      ? <PurchaseOrderRegistration adapter={isApiMode() ? apiPurchaseOrderAdapter : mockPurchaseOrderAdapter} onNavigate={setPage} showDevelopmentDataManager={showDevelopmentDataManager} />
+      ? <PurchaseOrderRegistration adapter={purchaseOrderAdapter} onNavigate={setPage} showDevelopmentDataManager={showDevelopmentDataManager} />
       : <WorkOrderRegistration onNavigate={setPage} showDevelopmentDataManager={showDevelopmentDataManager} />;
 }

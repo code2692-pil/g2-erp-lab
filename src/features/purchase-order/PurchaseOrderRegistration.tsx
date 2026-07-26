@@ -38,7 +38,10 @@ function emptyLine(header: PurchaseOrderHeader, number: number): PurchaseOrderLi
 export function PurchaseOrderRegistration({ adapter, onNavigate, showDevelopmentDataManager = false }: PurchaseOrderRegistrationProps) {
     const [headers, setHeaders] = useState<PurchaseOrderHeader[]>([]);
     const [lines, setLines] = useState<PurchaseOrderLine[]>([]);
+    const latestHeaders = useRef<PurchaseOrderHeader[]>(headers);
+    const latestLines = useRef<PurchaseOrderLine[]>(lines);
     const detailRequestVersion = useRef(0);
+    const persistedPurchaseOrderKeys = useRef(new Set<string>());
     const { selectedMasterKey: selectedNoPo, selectedDetailKey: selectedLineNo, selectMaster, selectDetail } = useMasterDetailSelection<string, number | null>("", null);
     const { isLoading, isSaving, message, setMessage, setFeatureMessage, executeCreate, executeDelete, executeSave, executeSearch } = useCrudPage();
     const [checkedLineKeys, setCheckedLineKeys] = useState<string[]>([]);
@@ -65,6 +68,10 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, showDevelopment
     const checkedLines = selectedLines.filter((line) => checkedLineKeys.includes(createPurchaseOrderLineKey(line.CD_FIRM, line.NO_PO, line.NO_LINE)));
     const deleteTargetLines = checkedLines.length > 0 ? checkedLines : selectedLine ? [selectedLine] : [];
     const totals = calculatePurchaseOrderTotals(selectedLines);
+    useLayoutEffect(() => {
+        latestHeaders.current = headers;
+        latestLines.current = lines;
+    }, [headers, lines]);
     const focusValidationIssue = (issue: {
         scope: string;
         rowKey?: string;
@@ -77,16 +84,6 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, showDevelopment
     };
     useLayoutEffect(() => { if (!visibleHeaders.some((header) => header.NO_PO === selectedNoPo))
         selectMaster(visibleHeaders[0]?.NO_PO ?? ""); }, [selectMaster, selectedNoPo, visibleHeaders]);
-    useEffect(() => {
-        const markGridEdit = (event: Event) => {
-            const testId = event.target instanceof HTMLElement ? event.target.dataset.testid : undefined;
-            if (testId?.startsWith("purchase-header-grid-cell-") || testId?.startsWith("purchase-line-grid-cell-"))
-                markDirty();
-        };
-        document.addEventListener("input", markGridEdit, true);
-        document.addEventListener("change", markGridEdit, true);
-        return () => { document.removeEventListener("input", markGridEdit, true); document.removeEventListener("change", markGridEdit, true); };
-    }, [markDirty]);
     useEffect(() => {
         let cancelled = false;
         void Promise.all([adapter.getPartners(), adapter.getItems(), adapter.getWarehouses()]).then(([nextPartners, nextItems, nextWarehouses]) => {
@@ -113,13 +110,17 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, showDevelopment
     const updateHeader = (no: string, field: HeaderField, value: ErpDataGridCellValue) => {
         detailRequestVersion.current += 1;
         markDirty();
-        setHeaders((current) => current.map((header) => header.NO_PO === no ? { ...header, [field]: field === "RT_EXCHANGE" ? numberValue(value) : String(value ?? "") } as PurchaseOrderHeader : header));
+        setHeaders((current) => {
+            const nextHeaders = current.map((header) => header.NO_PO === no ? { ...header, [field]: field === "RT_EXCHANGE" ? numberValue(value) : String(value ?? "") } as PurchaseOrderHeader : header);
+            latestHeaders.current = nextHeaders;
+            return nextHeaders;
+        });
     };
-    const updateLine = (no: string, lineNo: number, field: LineField, value: ErpDataGridCellValue) => { detailRequestVersion.current += 1; markDirty(); setLines((current) => current.map((line) => { if (line.NO_PO !== no || line.NO_LINE !== lineNo)
+    const updateLine = (no: string, lineNo: number, field: LineField, value: ErpDataGridCellValue) => { detailRequestVersion.current += 1; markDirty(); setLines((current) => { const nextLines = current.map((line) => { if (line.NO_PO !== no || line.NO_LINE !== lineNo)
         return line; if (field === "QT_PO" || field === "UM_PO") {
         const next = { ...line, [field]: numberValue(value) };
         return { ...next, ...calculatePurchaseOrderLineAmounts(next.QT_PO, next.UM_PO) };
-    } return { ...line, [field]: String(value ?? "") }; })); };
+    } return { ...line, [field]: String(value ?? "") }; }); latestLines.current = nextLines; return nextLines; }); };
     useEffect(() => {
     const guardNavigation = async (event: MouseEvent) => {
             const button = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-testid^='nav-']") : null;
@@ -165,6 +166,7 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, showDevelopment
                 );
                 setHeaders(result.headers);
                 setLines(result.lines);
+                result.headers.forEach((header) => persistedPurchaseOrderKeys.current.add(createPurchaseOrderHeaderKey(header.CD_FIRM, header.NO_PO)));
                 selectMaster(matchedHeaders[0]?.NO_PO ?? "");
                 setCheckedLineKeys([]);
                 clearDirty();
@@ -238,23 +240,28 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, showDevelopment
         markDirty();
         notify("success", `선택한 ${deleteTargetLines.length}건이 삭제되었습니다.`);
     };
-    const handleSave = async () => { if (!selectedHeader) {
+    const handleSave = async () => { const headerToSave = latestHeaders.current.find((header) => header.NO_PO === selectedNoPo); const linesToSave = latestLines.current.filter((line) => line.NO_PO === selectedNoPo).sort((left, right) => left.NO_LINE - right.NO_LINE); const currentIssues = validatePurchaseOrders(latestHeaders.current, latestLines.current); if (!headerToSave) {
         setMessage("저장할 발주정보를 선택하세요.");
         notify("info", "선택된 항목이 없습니다.");
         return;
-    } if (issues.length) {
-        const validationMessage = `저장할 수 없습니다. 입력값 ${issues.length}건을 확인하세요.`;
+    } if (currentIssues.length) {
+        const validationMessage = `저장할 수 없습니다. 입력값 ${currentIssues.length}건을 확인하세요.`;
         setMessage(validationMessage);
-        showValidationSummary(issues);
+        showValidationSummary(currentIssues);
         notify("warning", validationMessage);
-        focusValidationIssue(issues[0]);
+        focusValidationIssue(currentIssues[0]);
         return;
     } if (!(await confirm({ title: "저장 확인", message: "저장하시겠습니까?", confirmLabel: "저장" })))
         return; setFeatureMessage(""); await executeSave({
-            execute: () => selectedHeader.NO_PO.startsWith("TEMP_PO_")
-                ? adapter.create({ Header: selectedHeader, Lines: selectedLines })
-                : adapter.update(selectedHeader.CD_FIRM, selectedHeader.NO_PO, { Header: selectedHeader, Lines: selectedLines }),
+            execute: () => {
+                const document = { Header: headerToSave, Lines: linesToSave };
+                const key = createPurchaseOrderHeaderKey(headerToSave.CD_FIRM, headerToSave.NO_PO);
+                return persistedPurchaseOrderKeys.current.has(key)
+                    ? adapter.update(headerToSave.CD_FIRM, headerToSave.NO_PO, document)
+                    : adapter.create(document);
+            },
             onSuccess: (document) => {
+                persistedPurchaseOrderKeys.current.add(createPurchaseOrderHeaderKey(document.Header.CD_FIRM, document.Header.NO_PO));
                 setHeaders((current) => current.map((header) => header.NO_PO === selectedNoPo ? document.Header : header));
                 setLines((current) => current.map((line) => line.NO_PO === selectedNoPo ? document.Lines.find((savedLine) => savedLine.NO_LINE === line.NO_LINE) ?? line : line));
                 selectMaster(document.Header.NO_PO);
@@ -272,7 +279,7 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, showDevelopment
         notify("info", "선택된 항목이 없습니다.");
         return;
     } if (!(await confirm({ title: "발주 삭제", message: `발주번호 ${selectedNoPo}을 삭제하시겠습니까?`, confirmLabel: "삭제", danger: true })))
-        return; setFeatureMessage(""); await executeDelete({ execute: async () => { await adapter.delete(selectedHeader.CD_FIRM, selectedNoPo); setHeaders((current) => current.filter((header) => header.NO_PO !== selectedNoPo)); setLines((current) => current.filter((line) => line.NO_PO !== selectedNoPo)); selectMaster(""); setCheckedLineKeys([]); clearDirty(); notify("success", "삭제되었습니다."); return true; }, successMessage: "삭제되었습니다.", errorMessage: "삭제 중 오류가 발생했습니다. 다시 시도하세요." }); };
+        return; setFeatureMessage(""); await executeDelete({ execute: async () => { await adapter.delete(selectedHeader.CD_FIRM, selectedNoPo); persistedPurchaseOrderKeys.current.delete(createPurchaseOrderHeaderKey(selectedHeader.CD_FIRM, selectedNoPo)); setHeaders((current) => current.filter((header) => header.NO_PO !== selectedNoPo)); setLines((current) => current.filter((line) => line.NO_PO !== selectedNoPo)); selectMaster(""); setCheckedLineKeys([]); clearDirty(); notify("success", "삭제되었습니다."); return true; }, successMessage: "삭제되었습니다.", errorMessage: "삭제 중 오류가 발생했습니다. 다시 시도하세요." }); };
     const choosePartner = (partner: Partner) => { if (!selectedHeader) {
         notify("info", "선택된 항목이 없습니다.");
         return;

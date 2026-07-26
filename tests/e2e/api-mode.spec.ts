@@ -132,6 +132,43 @@ test("API UI: purchase order lookup, save/delete dialogs, dirty navigation, and 
     await page.getByTestId("confirm-dialog-confirm").click();
     await expect(page.getByRole("status")).toContainText("저장되었습니다.");
 
+    const purchaseRemark = page.getByTestId(`purchase-header-grid-cell-1000::${number}-DC_RMK`);
+    await purchaseRemark.fill("saved purchase order update");
+    await expect(purchaseRemark).toHaveValue("saved purchase order update");
+    let updateRequestBody: { Header: { DC_RMK: string } } | undefined;
+    page.once("request", (request) => {
+      if (request.url() === `${apiBaseUrl}/api/purchase-orders/1000/${number}` && request.method() === "PUT") {
+        updateRequestBody = request.postDataJSON() as { Header: { DC_RMK: string } };
+      }
+    });
+    const updateResponse = page.waitForResponse((response) => response.url() === `${apiBaseUrl}/api/purchase-orders/1000/${number}` && response.request().method() === "PUT");
+    await page.getByTestId("po-btn-save").click();
+    await page.getByTestId("confirm-dialog-confirm").click();
+    expect((await updateResponse).status()).toBe(200);
+    expect(updateRequestBody?.Header.DC_RMK).toBe("saved purchase order update");
+    await expect(page.getByRole("status")).toContainText("저장되었습니다.");
+    const updatedPurchaseOrder = await request.get(`${apiBaseUrl}/api/purchase-orders/1000/${number}`);
+    expect(updatedPurchaseOrder.status()).toBe(200);
+    expect((await updatedPurchaseOrder.json()).Header.DC_RMK).toBe("saved purchase order update");
+
+    const purchaseQuantity = page.getByTestId(`purchase-line-grid-cell-1000::${number}::1-QT_PO`);
+    await purchaseQuantity.fill("4");
+    await expect(purchaseQuantity).toHaveValue("4");
+    let lineUpdateRequestBody: { Lines: Array<{ QT_PO: number }> } | undefined;
+    page.once("request", (request) => {
+      if (request.url() === `${apiBaseUrl}/api/purchase-orders/1000/${number}` && request.method() === "PUT") {
+        lineUpdateRequestBody = request.postDataJSON() as { Lines: Array<{ QT_PO: number }> };
+      }
+    });
+    const lineUpdateResponse = page.waitForResponse((response) => response.url() === `${apiBaseUrl}/api/purchase-orders/1000/${number}` && response.request().method() === "PUT");
+    await page.getByTestId("po-btn-save").click();
+    await page.getByTestId("confirm-dialog-confirm").click();
+    expect((await lineUpdateResponse).status()).toBe(200);
+    expect(lineUpdateRequestBody?.Lines[0]?.QT_PO).toBe(4);
+    const lineUpdatedPurchaseOrder = await request.get(`${apiBaseUrl}/api/purchase-orders/1000/${number}`);
+    expect(lineUpdatedPurchaseOrder.status()).toBe(200);
+    expect((await lineUpdatedPurchaseOrder.json()).Lines[0]).toMatchObject({ QT_PO: 4, AM_TOTAL: 0 });
+
     await page.getByTestId(`purchase-line-grid-row-1000::${number}::1`).click();
     await page.getByTestId("po-btn-delete-line").click();
     await expect(page.getByTestId("confirm-dialog")).toContainText("발주상세 1건");

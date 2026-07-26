@@ -41,7 +41,10 @@ test("A: 기본 화면에서 조회 후 수주정보와 수주상세를 표시�
   await expect(page.getByTestId("btn-delete-order")).toBeVisible();
 
   await searchSalesOrders(page);
+  await expect(page.getByTestId("sales-order-header-grid-total-count")).toHaveText("전체 2건");
   await headerRow(page).click();
+  await expect(page.getByTestId("sales-order-header-grid-selected-document")).toHaveText("선택 문서 SO2026070001");
+  await expect(page.getByTestId("sales-order-line-grid-total-count")).toHaveText("전체 2건");
 
   await expect(lineRow(page, firstLineKey)).toBeVisible();
   await expect(lineRow(page, secondLineKey)).toBeVisible();
@@ -65,7 +68,8 @@ test("C: 품목 Lookup은 선택한 수주상세 행만 갱신한다", async ({ 
   await searchSalesOrders(page);
   await lineRow(page, firstLineKey).click();
 
-  await page.getByTestId("btn-item-lookup").click();
+  await expect(page.getByTestId("btn-item-lookup")).toHaveCount(0);
+  await page.getByTestId(`sales-order-line-grid-cell-container-${firstLineKey}-CD_ITEM`).dblclick();
   await page.getByTestId("item-lookup-search-input").fill("ITM-1204");
   await page.getByTestId("item-lookup-search-button").click();
   await page.getByTestId("item-lookup-grid-row-1000::ITM-1204").click();
@@ -92,7 +96,7 @@ test("D: 수주상세 Grid의 단일, 다중, 전체 선택을 반영한다", as
   await expect(page.getByTestId("sales-order-line-grid-footer-selected")).toHaveText(/2/);
 
   await page.getByTestId("sales-order-line-grid-select-all").uncheck();
-  await expect(page.getByTestId("sales-order-line-grid-footer-selected")).toHaveText(/0/);
+  await expect(page.getByTestId("sales-order-line-grid-selected-count")).toHaveCount(0);
 });
 
 test("E: 수량과 단가 변경 시 금액 및 Footer 합계를 재계산한다", async ({ page }) => {
@@ -146,8 +150,7 @@ test("G: 기존 주요 버튼과 Lookup, Grid 행추가/삭제 동작을 유지�
     "btn-delete-order",
     "btn-add-line",
     "btn-delete-line",
-    "btn-partner-lookup",
-    "btn-item-lookup"
+    "btn-partner-lookup"
   ]) {
     await expect(page.getByTestId(testId)).toBeVisible();
   }
@@ -157,7 +160,8 @@ test("G: 기존 주요 버튼과 Lookup, Grid 행추가/삭제 동작을 유지�
   await page.getByTestId("partner-lookup-cancel").click();
 
   await lineRow(page, firstLineKey).click();
-  await page.getByTestId("btn-item-lookup").click();
+  await expect(page.getByTestId("btn-item-lookup")).toHaveCount(0);
+  await page.getByTestId(`sales-order-line-grid-cell-container-${firstLineKey}-CD_ITEM`).dblclick();
   await expect(page.getByTestId("item-lookup-search-input")).toBeVisible();
   await page.getByTestId("item-lookup-cancel").click();
 
@@ -388,4 +392,117 @@ test("Mail F: 동일 MAIL_ID의 중복 반영을 차단한다", async ({ page })
   await page.getByTestId("mail-import-apply").click();
   await expect(page.getByTestId("mail-order-import-dialog")).toBeVisible();
   await expect(page.getByTestId("mail-import-notice")).toContainText("동일 MAIL_ID가 이미 반영되었습니다.");
+});
+
+test("Paste: detail grid applies a valid clipboard matrix atomically and adds rows", async ({ page }) => {
+  await openSalesOrder(page);
+  await searchSalesOrders(page);
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://127.0.0.1:5173" });
+  await page.evaluate(() => navigator.clipboard.writeText("ITM-1001\tignored\tignored\tignored\t2\t100\nITM-1204\tignored\tignored\tignored\t3\t200"));
+  await lineCell(page, secondLineKey, "CD_ITEM").click();
+  await page.keyboard.press("Control+V");
+
+  await expect(lineCell(page, secondLineKey, "CD_ITEM")).toHaveValue("ITM-1001");
+  await expect(lineCell(page, secondLineKey, "NM_ITEM")).not.toHaveValue("ignored");
+  await expect(lineCell(page, "1000::SO2026070001::3", "CD_ITEM")).toHaveValue("ITM-1204");
+  await expect(page.getByTestId("sales-order-line-grid-total-count")).toHaveText("전체 3건");
+});
+
+test("Paste: an invalid lookup code leaves sales detail rows unchanged", async ({ page }) => {
+  await openSalesOrder(page);
+  await searchSalesOrders(page);
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://127.0.0.1:5173" });
+  const before = await lineCell(page, secondLineKey, "CD_ITEM").inputValue();
+  await page.evaluate(() => navigator.clipboard.writeText("ITM-1001\tignored\tignored\tignored\t2\t100\nNOT-FOUND\tignored\tignored\tignored\t3\t200"));
+  await lineCell(page, secondLineKey, "CD_ITEM").click();
+  await page.keyboard.press("Control+V");
+
+  await expect(lineCell(page, secondLineKey, "CD_ITEM")).toHaveValue(before);
+  await expect(page.getByTestId("sales-order-line-grid-total-count")).toHaveText("전체 2건");
+  await expect(page.getByRole("alert")).toContainText("붙여넣기 실패");
+});
+
+test("Paste: a middle blank row is preserved as an empty detail row", async ({ page }) => {
+  await openSalesOrder(page);
+  await searchSalesOrders(page);
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://127.0.0.1:5173" });
+  await page.evaluate(() => navigator.clipboard.writeText("first note\n\nthird note"));
+  await lineCell(page, secondLineKey, "DC_RMK").click();
+  await page.keyboard.press("Control+V");
+
+  await expect(lineCell(page, secondLineKey, "DC_RMK")).toHaveValue("first note");
+  await expect(lineCell(page, "1000::SO2026070001::4", "DC_RMK")).toHaveValue("third note");
+  await expect(page.getByTestId("sales-order-line-grid-total-count")).toHaveText("전체 4건");
+});
+
+test("Gate 3: whitespace-only paste is rejected and the next Unicode paste recovers", async ({ page }) => {
+  await openSalesOrder(page);
+  await searchSalesOrders(page);
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://127.0.0.1:5173" });
+  const remark = lineCell(page, secondLineKey, "DC_RMK");
+  const before = await remark.inputValue();
+
+  await page.evaluate(() => navigator.clipboard.writeText("   "));
+  await remark.click();
+  await page.keyboard.press("Control+V");
+
+  await expect(remark).toHaveValue(before);
+  await expect(page.getByRole("alert")).toContainText("붙여넣기 실패");
+
+  await page.evaluate(() => navigator.clipboard.writeText("테스트 🚀 / Ω"));
+  await remark.click();
+  await page.keyboard.press("Control+V");
+  await expect(remark).toHaveValue("테스트 🚀 / Ω");
+});
+
+test("Gate 3: parser row and cell limits reject a matrix before changing detail rows", async ({ page }) => {
+  await openSalesOrder(page);
+  await searchSalesOrders(page);
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://127.0.0.1:5173" });
+  const remark = lineCell(page, secondLineKey, "DC_RMK");
+  const before = await remark.inputValue();
+
+  await page.evaluate((matrix) => navigator.clipboard.writeText(matrix), Array.from({ length: 1_001 }, () => "row").join("\n"));
+  await remark.click();
+  await page.keyboard.press("Control+V");
+  await expect(remark).toHaveValue(before);
+  await expect(page.locator(".erp-snackbar--error")).toContainText("붙여넣기 실패");
+  await expect(page.getByTestId("sales-order-line-grid-total-count")).toHaveText("전체 2건");
+
+  await page.evaluate((matrix) => navigator.clipboard.writeText(matrix), Array.from({ length: 20_001 }, () => "cell").join("\t"));
+  await remark.click();
+  await page.keyboard.press("Control+V");
+  await expect(remark).toHaveValue(before);
+  await expect(page.getByTestId("sales-order-line-grid-total-count")).toHaveText("전체 2건");
+});
+
+test("Gate 3: rapid repeated Ctrl+V keeps one deterministic detail transaction", async ({ page }) => {
+  await openSalesOrder(page);
+  await searchSalesOrders(page);
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://127.0.0.1:5173" });
+  await page.evaluate(() => navigator.clipboard.writeText("first\nsecond"));
+  await lineCell(page, secondLineKey, "DC_RMK").click();
+  await page.keyboard.down("Control");
+  await page.keyboard.press("v");
+  await page.keyboard.press("v");
+  await page.keyboard.up("Control");
+
+  await expect(lineCell(page, secondLineKey, "DC_RMK")).toHaveValue("first");
+  await expect(lineCell(page, "1000::SO2026070001::3", "DC_RMK")).toHaveValue("second");
+  await expect(page.getByTestId("sales-order-line-grid-row-1000::SO2026070001::3")).toHaveCount(1);
+  await expect(page.getByTestId("sales-order-line-grid-total-count")).toHaveText("전체 3건");
+});
+
+test("Gate 3: header grid retains its normal single-cell clipboard behavior", async ({ page }) => {
+  await openSalesOrder(page);
+  await searchSalesOrders(page);
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://127.0.0.1:5173" });
+  const partnerCode = headerCell(page, headerRowKey, "CD_PARTNER");
+
+  await page.evaluate(() => navigator.clipboard.writeText("P-10021"));
+  await partnerCode.click();
+  await page.keyboard.press("Control+V");
+
+  await expect(partnerCode).toHaveValue("P-10021P-10021");
+  await expect(page.locator(".erp-snackbar--error")).toHaveCount(0);
 });

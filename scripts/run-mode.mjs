@@ -85,10 +85,14 @@ async function main() {
         ? ["tests/e2e/api-mode.spec.ts", "tests/e2e/work-order-api-mode.spec.ts", "tests/e2e/work-order-api-validation.spec.ts", "tests/e2e/development-data.spec.ts"]
         : ["tests/e2e/sales-order.spec.ts", "tests/e2e/purchase-order.spec.ts", "tests/e2e/work-order.spec.ts", "tests/e2e/development-data.spec.ts"];
     const grepArgs = process.env.PLAYWRIGHT_GREP ? ["--grep", process.env.PLAYWRIGHT_GREP] : [];
+    const workerArgs = process.env.PLAYWRIGHT_WORKERS ? ["--workers", process.env.PLAYWRIGHT_WORKERS] : [];
+    const headedArgs = process.env.PLAYWRIGHT_HEADED === "true" ? ["--headed"] : [];
     const testArgs = [
       "./node_modules/@playwright/test/cli.js",
       "test",
       ...grepArgs,
+      ...workerArgs,
+      ...headedArgs,
       ...testFiles
     ];
     const test = start(process.execPath, testArgs, { CI: "true", ...(isApi ? { VITE_DATA_MODE: "api", VITE_API_BASE_URL: backendUrl } : { VITE_DATA_MODE: "mock" }) });

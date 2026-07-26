@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Building2,
   ChevronRight,
@@ -10,7 +10,8 @@ import {
   Trash2
 } from "lucide-react";
 import { ErpDataGrid } from "../../components/common/ErpDataGrid";
-import type { ErpDataGridColumn, ErpDataGridCellValue } from "../../components/common/ErpDataGrid";
+import type { ErpDataGridColumn, ErpDataGridCellValue, ErpDataGridPasteRequest } from "../../components/common/ErpDataGrid";
+import { parseErpGridPasteDate, parseErpGridPasteNumber } from "../../components/common/erpGridPaste";
 import { ErpDialog } from "../../components/common/ErpDialog";
 import { ErpLookupDialog } from "../../components/common/ErpLookupDialog";
 import { PageToolbar } from "../../components/common/PageToolbar";
@@ -204,6 +205,7 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
   const [tempSeq, setTempSeq] = useState(1);
   const [partnerLookupOpen, setPartnerLookupOpen] = useState(false);
   const [itemLookupOpen, setItemLookupOpen] = useState(false);
+  const itemLookupLineKeyRef = useRef<string | null>(null);
   const [validationDialogOpen, setValidationDialogOpen] = useState(false);
   const [mailImportOpen, setMailImportOpen] = useState(false);
   const [appliedMailIds, setAppliedMailIds] = useState<string[]>([]);
@@ -348,6 +350,58 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
     );
   };
 
+  const handleLinePaste = (request: ErpDataGridPasteRequest<SalesOrderLine>) => {
+    if (!selectedHeader) return { error: "수주정보를 먼저 선택하세요." };
+    const fields = request.columns.map((column) => column.field);
+    if (fields.some((field) => !isLineEditableField(field))) return { error: "수정할 수 없는 열이 포함되어 있습니다." };
+
+    const draftLines = selectedLines.map((line) => ({ ...line }));
+    let nextLineNo = draftLines.length === 0 ? 1 : Math.max(...draftLines.map((line) => line.NO_LINE)) + 1;
+    while (draftLines.length < request.startRowIndex + request.matrix.length) {
+      draftLines.push(createEmptyLine(selectedHeader, nextLineNo));
+      nextLineNo += 1;
+    }
+
+    try {
+      request.matrix.forEach((values, rowOffset) => {
+        let nextLine = { ...draftLines[request.startRowIndex + rowOffset] };
+        let selectedItem: Item | undefined;
+        values.forEach((value, columnOffset) => {
+          const column = request.columns[columnOffset];
+          const field = fields[columnOffset] as LineEditableField;
+          if (field === "CD_ITEM") {
+            selectedItem = mockItems.find((item) => item.CD_FIRM === nextLine.CD_FIRM && item.CD_ITEM === value.trim() && item.YN_USE === "Y");
+            if (!selectedItem) throw new Error(`${rowOffset + 1}행 품목코드에 존재하지 않는 코드가 있습니다.`);
+            nextLine.CD_ITEM = selectedItem.CD_ITEM;
+            return;
+          }
+          const nextValue = column.dataType === "number"
+            ? parseErpGridPasteNumber(value)
+            : column.dataType === "date"
+              ? parseErpGridPasteDate(value)
+              : value;
+          nextLine = { ...nextLine, [field]: nextValue };
+        });
+        if (selectedItem) {
+          nextLine = { ...nextLine, CD_ITEM: selectedItem.CD_ITEM, NM_ITEM: selectedItem.NM_ITEM, STND_ITEM: selectedItem.STND_ITEM, UNIT_ITEM: selectedItem.UNIT_ITEM };
+        }
+        draftLines[request.startRowIndex + rowOffset] = {
+          ...nextLine,
+          ...calculateSalesOrderLineAmounts(nextLine.QT_SO, nextLine.UM_SO)
+        };
+      });
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : "입력값을 확인하세요." };
+    }
+
+    setLines((current) => [
+      ...current.filter((line) => line.CD_FIRM !== selectedHeader.CD_FIRM || line.NO_SO !== selectedHeader.NO_SO),
+      ...draftLines
+    ]);
+    markDirty();
+    return undefined;
+  };
+
   const loadSalesOrderData = async () => {
     if (isApiMode()) {
       const orders = await getSalesOrders();
@@ -410,18 +464,31 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
       return;
     }
 
+    itemLookupLineKeyRef.current = createSalesOrderLineKey(
+      selectedLineData.CD_FIRM,
+      selectedLineData.NO_SO,
+      selectedLineData.NO_LINE
+    );
+    setItemLookupOpen(true);
+  };
+
+  const handleLookupCellDoubleClick = (line: SalesOrderLine) => {
+    if (itemLookupOpen || isLoading || isSaving) return;
+    itemLookupLineKeyRef.current = createSalesOrderLineKey(line.CD_FIRM, line.NO_SO, line.NO_LINE);
+    selectDetail(line.NO_LINE);
     setItemLookupOpen(true);
   };
 
   const handleSelectItem = (item: Item) => {
-    if (!selectedNoSo || selectedLine === null) {
+    const targetKey = itemLookupLineKeyRef.current;
+    if (!targetKey) {
       setMessage("품목을 적용할 수주상세 행을 찾을 수 없습니다");
       return;
     }
 
     setLines((current) =>
       current.map((line) =>
-        line.NO_SO === selectedNoSo && line.NO_LINE === selectedLine
+        createSalesOrderLineKey(line.CD_FIRM, line.NO_SO, line.NO_LINE) === targetKey
           ? {
               ...line,
               CD_ITEM: item.CD_ITEM,
@@ -435,6 +502,8 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
     markDirty();
     notify("success", "품목 선택이 반영되었습니다.");
     setMessage(`${item.NM_ITEM} 품목이 ${selectedLine}번 행에 반영되었습니다`);
+    itemLookupLineKeyRef.current = null;
+    setItemLookupOpen(false);
   };
 
   const handleNew = async () => {
@@ -780,7 +849,8 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
       width: 116,
       dataType: "code",
       editable: true,
-      required: true
+      required: true,
+      lookup: { instruction: "더블클릭하여 품목을 선택합니다." }
     },
     { field: "NM_ITEM", headerName: "품목명", width: 170, editable: true },
     { field: "STND_ITEM", headerName: "규격", width: 140, editable: true },
@@ -997,18 +1067,6 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
           <section className="grid-section bottom-grid">
             <div className="section-title">
               <h2>수주상세</h2>
-              <div className="section-title-actions">
-                <button
-                  className="section-lookup-button"
-                  data-testid="btn-item-lookup"
-                  disabled={isLoading || isSaving}
-                  onClick={handleOpenItemLookup}
-                  type="button"
-                >
-                  <Search size={14} />
-                  품목 도움
-                </button>
-              </div>
             </div>
             <ErpDataGrid<SalesOrderLine>
               ariaLabel="수주상세"
@@ -1018,9 +1076,13 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
               columns={lineGridColumns}
               dataTestId="sales-order-line-grid"
               emptyMessage="수주정보 행을 선택하면 상세 목록이 표시됩니다."
+              lookupDisabled={isLoading || isSaving || itemLookupOpen}
+              onPaste={handleLinePaste}
+              onPasteError={(pasteMessage) => notify("error", pasteMessage)}
               onCellValueChange={(row, field, value) => {
                 if (isLineEditableField(field)) updateLine(row.NO_SO, row.NO_LINE, field, value);
               }}
+              onLookupCellDoubleClick={(line) => handleLookupCellDoubleClick(line)}
               onCheckedRowKeysChange={setCheckedLineKeys}
               onRowClick={(line) => selectDetail(line.NO_LINE)}
               rowKey={(line) => createSalesOrderLineKey(line.CD_FIRM, line.NO_SO, line.NO_LINE)}
@@ -1082,7 +1144,7 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
         dataTestId="item-lookup"
         emptyMessage="조회된 품목이 없습니다."
         height={520}
-        onClose={() => setItemLookupOpen(false)}
+        onClose={() => { itemLookupLineKeyRef.current = null; setItemLookupOpen(false); }}
         onSelect={handleSelectItem}
         open={itemLookupOpen}
         rowKey={getItemRowKey}

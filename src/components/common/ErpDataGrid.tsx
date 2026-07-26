@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
+import type { ClipboardEvent as ReactClipboardEvent, CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
+import { parseErpGridPasteMatrix } from "./erpGridPaste";
 
 export type ErpDataGridAlign = "left" | "center" | "right";
 export type ErpDataGridDataType = "text" | "number" | "date" | "code" | "boolean";
@@ -12,6 +13,34 @@ export interface ErpDataGridEditorContext<T extends object> {
   column: ErpDataGridColumn<T>;
   value: T[keyof T];
   onChange: (value: ErpDataGridCellValue) => void;
+}
+
+export interface ErpDataGridPasteRequest<T extends object> {
+  startRowIndex: number;
+  matrix: string[][];
+  columns: readonly ErpDataGridColumn<T>[];
+}
+
+type ErpDataGridPasteHandler = (request: ErpDataGridPasteRequest<object>) => { error?: string } | void;
+interface ErpDataGridPasteRegistration {
+  handler: ErpDataGridPasteHandler;
+  onError?: (message: string) => void;
+}
+const pasteHandlerStore = globalThis as typeof globalThis & {
+  __erpDataGridPasteHandlers?: Map<string, ErpDataGridPasteRegistration>;
+};
+const registeredPasteHandlers = pasteHandlerStore.__erpDataGridPasteHandlers ??= new Map<string, ErpDataGridPasteRegistration>();
+
+export function registerErpDataGridPasteHandler<T extends object>(
+  dataTestId: string,
+  handler: (request: ErpDataGridPasteRequest<T>) => { error?: string } | void,
+  onError?: (message: string) => void
+) {
+  const registration = { handler: handler as unknown as ErpDataGridPasteHandler, onError };
+  registeredPasteHandlers.set(dataTestId, registration);
+  return () => {
+    if (registeredPasteHandlers.get(dataTestId) === registration) registeredPasteHandlers.delete(dataTestId);
+  };
 }
 
 export interface ErpDataGridColumn<T extends object> {
@@ -31,6 +60,10 @@ export interface ErpDataGridColumn<T extends object> {
   validator?: (value: T[keyof T], row: T) => string | undefined;
   render?: (row: T) => ReactNode;
   editor?: (context: ErpDataGridEditorContext<T>) => ReactNode;
+  /** Opens the existing lookup dialog when this editable cell is double-clicked. */
+  lookup?: {
+    instruction: string;
+  };
 }
 
 export interface ErpDataGridProps<T extends object> {
@@ -45,12 +78,16 @@ export interface ErpDataGridProps<T extends object> {
   showFooter?: boolean;
   onRowClick?: (row: T) => void;
   onRowDoubleClick?: (row: T) => void;
+  onLookupCellDoubleClick?: (row: T, column: ErpDataGridColumn<T>) => void;
+  lookupDisabled?: boolean;
   onCheckedRowKeysChange?: (rowKeys: string[]) => void;
   onCellValueChange?: (
     row: T,
     field: keyof T,
     value: ErpDataGridCellValue
   ) => void;
+  onPaste?: (request: ErpDataGridPasteRequest<T>) => { error?: string } | void;
+  onPasteError?: (message: string) => void;
   emptyMessage?: string;
   ariaLabel?: string;
   className?: string;
@@ -89,8 +126,12 @@ export function ErpDataGrid<T extends object>({
   showFooter = true,
   onRowClick,
   onRowDoubleClick,
+  onLookupCellDoubleClick,
+  lookupDisabled = false,
   onCheckedRowKeysChange,
   onCellValueChange,
+  onPaste,
+  onPasteError,
   emptyMessage = "조회된 데이터가 없습니다.",
   ariaLabel = "조회 결과",
   className = "",
@@ -116,6 +157,9 @@ export function ErpDataGrid<T extends object>({
       ? 1
       : 0;
   const sumColumns = visibleColumns.filter((column) => column.sum);
+  const selectedDocumentNumber = dataTestId?.endsWith("-header-grid") && selectedRowKey
+    ? selectedRowKey.split("::").at(-1)
+    : null;
 
   useEffect(() => {
     if (headerCheckboxRef.current) headerCheckboxRef.current.indeterminate = hasPartiallyCheckedRows;
@@ -191,6 +235,44 @@ export function ErpDataGrid<T extends object>({
     focusEditableCell(currentCell, event.key === "Tab" && event.shiftKey);
   };
 
+  const handlePasteCapture = (event: ReactClipboardEvent<HTMLTableElement>) => {
+    const pasteRegistration = dataTestId ? registeredPasteHandlers.get(dataTestId) : undefined;
+    const pasteHandler = onPaste ?? pasteRegistration?.handler as ((request: ErpDataGridPasteRequest<T>) => { error?: string } | void) | undefined;
+    const reportPasteError = onPasteError ?? pasteRegistration?.onError;
+    if (!pasteHandler || !(event.target instanceof Element)) return;
+
+    const cell = event.target.closest<HTMLTableCellElement>('td[data-erp-grid-field]');
+    const row = event.target.closest<HTMLTableRowElement>('tr[data-row-key]');
+    if (!cell || !row) return;
+
+    const startRowIndex = rows.findIndex((candidate) => rowKey(candidate) === row.dataset.rowKey);
+    const startColumnIndex = visibleColumns.findIndex((column) => String(column.field) === cell.dataset.erpGridField);
+    if (startRowIndex < 0 || startColumnIndex < 0) return;
+
+    event.preventDefault();
+    let matrix: string[][];
+    try {
+      matrix = parseErpGridPasteMatrix(event.clipboardData.getData("text/plain")).rows;
+    } catch (error) {
+      reportPasteError?.(`붙여넣기 실패: ${error instanceof Error ? error.message : "데이터를 읽을 수 없습니다."}`);
+      return;
+    }
+
+    const targetColumns = visibleColumns.slice(startColumnIndex, startColumnIndex + matrix[0].length);
+    if (targetColumns.length !== matrix[0].length) {
+      reportPasteError?.("붙여넣기 실패: 현재 Grid의 마지막 열을 넘어갑니다.");
+      return;
+    }
+    const blockedColumn = targetColumns.find((column) => !column.editable || column.readOnly);
+    if (blockedColumn) {
+      reportPasteError?.(`붙여넣기 실패: ${String(blockedColumn.headerName ?? blockedColumn.field)} 열은 수정할 수 없습니다.`);
+      return;
+    }
+
+    const result = pasteHandler({ startRowIndex, matrix, columns: targetColumns });
+    if (result?.error) reportPasteError?.(`붙여넣기 실패: ${result.error}`);
+  };
+
   const getCellError = (row: T, column: ErpDataGridColumn<T>, rowIdentifier: string) => {
     if (cellErrors) return cellErrors[rowIdentifier]?.[String(column.field)];
     const value = row[column.field];
@@ -250,6 +332,7 @@ export function ErpDataGrid<T extends object>({
           aria-label={ariaLabel}
           className="erp-data-grid__table"
           onKeyDownCapture={handleTableKeyDownCapture}
+          onPasteCapture={handlePasteCapture}
           ref={tableRef}
           role="grid"
         >
@@ -359,6 +442,7 @@ export function ErpDataGrid<T extends object>({
                   {visibleColumns.map((column) => {
                     const align = column.align ?? (column.dataType === "number" ? "right" : "left");
                     const editable = Boolean(column.editable) && !column.readOnly;
+                    const canOpenLookup = editable && Boolean(column.lookup) && !lookupDisabled;
                     const error = getCellError(row, column, key);
                     const errorId = dataTestId
                       ? `${dataTestId}-error-${key}-${String(column.field)}`
@@ -371,17 +455,25 @@ export function ErpDataGrid<T extends object>({
                         className={`erp-data-grid__cell erp-data-grid__cell--${align}${
                           column.readOnly ? " erp-data-grid__cell--readonly" : ""
                         }${editable ? " erp-data-grid__cell--editable" : ""}${
+                          canOpenLookup ? " erp-data-grid__cell--lookup" : ""
+                        }${
                           error ? " erp-data-grid__cell--invalid" : ""
                         }`}
                         data-erp-grid-editable={editable ? "true" : undefined}
+                        data-erp-grid-field={String(column.field)}
                         data-testid={
                           dataTestId
                             ? `${dataTestId}-cell-container-${key}-${String(column.field)}`
                             : undefined
                         }
                         key={String(column.field)}
+                        onDoubleClick={(event) => {
+                          if (!canOpenLookup) return;
+                          event.stopPropagation();
+                          onLookupCellDoubleClick?.(row, column);
+                        }}
                         tabIndex={error && !editable ? 0 : undefined}
-                        title={error}
+                        title={error ?? column.lookup?.instruction}
                       >
                         {column.render
                           ? column.render(row)
@@ -446,12 +538,11 @@ export function ErpDataGrid<T extends object>({
       </div>
       {showFooter && (
         <footer className="erp-data-grid__status-bar">
+          {selectedDocumentNumber && <span className="erp-data-grid__document-status" data-testid={`${dataTestId}-selected-document`}>선택 문서 {selectedDocumentNumber}</span>}
           <span data-testid={dataTestId ? `${dataTestId}-footer-total` : undefined}>
-            전체 {numberFormatter.format(rows.length)}건
+            <span data-testid={dataTestId ? `${dataTestId}-total-count` : undefined}>전체 {numberFormatter.format(rows.length)}건</span>
           </span>
-          <span data-testid={dataTestId ? `${dataTestId}-footer-selected` : undefined}>
-            선택 {numberFormatter.format(selectionCount)}건
-          </span>
+          {selectionCount > 0 && <span className="erp-data-grid__selection-status" data-testid={dataTestId ? `${dataTestId}-footer-selected` : undefined}><span data-testid={dataTestId ? `${dataTestId}-selected-count` : undefined}>선택 {numberFormatter.format(selectionCount)}건</span></span>}
         </footer>
       )}
     </div>

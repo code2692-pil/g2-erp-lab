@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Building2, ChevronRight, Plus, Rows3, Save, Search, Trash2 } from "lucide-react";
-import { ErpDataGrid } from "../../components/common/ErpDataGrid";
-import type { ErpDataGridCellValue, ErpDataGridColumn } from "../../components/common/ErpDataGrid";
+import { ErpDataGrid, registerErpDataGridPasteHandler } from "../../components/common/ErpDataGrid";
+import type { ErpDataGridCellValue, ErpDataGridColumn, ErpDataGridPasteRequest } from "../../components/common/ErpDataGrid";
+import { parseErpGridPasteDate, parseErpGridPasteNumber } from "../../components/common/erpGridPaste";
 import { ErpLookupDialog } from "../../components/common/ErpLookupDialog";
 import { PageToolbar } from "../../components/common/PageToolbar";
 import { SearchPanel } from "../../components/common/SearchPanel";
@@ -42,6 +43,7 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, showDevelopment
     const latestLines = useRef<PurchaseOrderLine[]>(lines);
     const detailRequestVersion = useRef(0);
     const persistedPurchaseOrderKeys = useRef(new Set<string>());
+    const lineLookupKeyRef = useRef<string | null>(null);
     const { selectedMasterKey: selectedNoPo, selectedDetailKey: selectedLineNo, selectMaster, selectDetail } = useMasterDetailSelection<string, number | null>("", null);
     const { isLoading, isSaving, message, setMessage, setFeatureMessage, executeCreate, executeDelete, executeSave, executeSearch } = useCrudPage();
     const [checkedLineKeys, setCheckedLineKeys] = useState<string[]>([]);
@@ -121,6 +123,55 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, showDevelopment
         const next = { ...line, [field]: numberValue(value) };
         return { ...next, ...calculatePurchaseOrderLineAmounts(next.QT_PO, next.UM_PO) };
     } return { ...line, [field]: String(value ?? "") }; }); latestLines.current = nextLines; return nextLines; }); };
+    const handleLinePaste = (request: ErpDataGridPasteRequest<PurchaseOrderLine>) => {
+        if (!selectedHeader) return { error: "발주정보를 먼저 선택하세요." };
+        const fields = request.columns.map((column) => column.field);
+        if (fields.some((field) => field === "CD_FIRM" || field === "NO_PO" || field === "NO_LINE" || field === "AM_SUPPLY" || field === "AM_VAT" || field === "AM_TOTAL")) return { error: "수정할 수 없는 열이 포함되어 있습니다." };
+        const draftLines = selectedLines.map((line) => ({ ...line }));
+        let nextLineNo = draftLines.length === 0 ? 1 : Math.max(...draftLines.map((line) => line.NO_LINE)) + 1;
+        while (draftLines.length < request.startRowIndex + request.matrix.length) {
+            draftLines.push(emptyLine(selectedHeader, nextLineNo));
+            nextLineNo += 1;
+        }
+        try {
+            request.matrix.forEach((values, rowOffset) => {
+                let nextLine = { ...draftLines[request.startRowIndex + rowOffset] };
+                let selectedItem: Item | undefined;
+                let selectedWarehouse: Warehouse | undefined;
+                values.forEach((value, columnOffset) => {
+                    const column = request.columns[columnOffset];
+                    const field = fields[columnOffset] as LineField;
+                    if (field === "CD_ITEM") {
+                        selectedItem = mockItems.find((item) => item.CD_FIRM === nextLine.CD_FIRM && item.CD_ITEM === value.trim() && item.YN_USE === "Y");
+                        if (!selectedItem) throw new Error(`${rowOffset + 1}행 품목코드에 존재하지 않는 코드가 있습니다.`);
+                        nextLine.CD_ITEM = selectedItem.CD_ITEM;
+                        return;
+                    }
+                    if (field === "CD_WH") {
+                        selectedWarehouse = mockWarehouses.find((warehouse) => warehouse.CD_FIRM === nextLine.CD_FIRM && warehouse.CD_WH === value.trim());
+                        if (!selectedWarehouse) throw new Error(`${rowOffset + 1}행 창고코드에 존재하지 않는 코드가 있습니다.`);
+                        nextLine.CD_WH = selectedWarehouse.CD_WH;
+                        return;
+                    }
+                    const nextValue = column.dataType === "number" ? parseErpGridPasteNumber(value) : column.dataType === "date" ? parseErpGridPasteDate(value) : value;
+                    nextLine = { ...nextLine, [field]: nextValue };
+                });
+                if (selectedItem) nextLine = { ...nextLine, CD_ITEM: selectedItem.CD_ITEM, NM_ITEM: selectedItem.NM_ITEM, STND_ITEM: selectedItem.STND_ITEM, UNIT_ITEM: selectedItem.UNIT_ITEM };
+                if (selectedWarehouse) nextLine = { ...nextLine, CD_WH: selectedWarehouse.CD_WH, NM_WH: selectedWarehouse.NM_WH };
+                draftLines[request.startRowIndex + rowOffset] = { ...nextLine, ...calculatePurchaseOrderLineAmounts(nextLine.QT_PO, nextLine.UM_PO) };
+            });
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : "입력값을 확인하세요.";
+            return { error: errorMessage };
+        }
+        const nextLines = [...lines.filter((line) => line.CD_FIRM !== selectedHeader.CD_FIRM || line.NO_PO !== selectedHeader.NO_PO), ...draftLines];
+        latestLines.current = nextLines;
+        detailRequestVersion.current += 1;
+        setLines(nextLines);
+        markDirty();
+        return undefined;
+    };
+    useLayoutEffect(() => registerErpDataGridPasteHandler("purchase-line-grid", handleLinePaste, (pasteMessage) => notify("error", pasteMessage)), [handleLinePaste, notify]);
     useEffect(() => {
     const guardNavigation = async (event: MouseEvent) => {
             const button = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-testid^='nav-']") : null;
@@ -284,14 +335,21 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, showDevelopment
         notify("info", "선택된 항목이 없습니다.");
         return;
     } setHeaders((current) => current.map((header) => header.NO_PO === selectedHeader.NO_PO ? { ...header, CD_PARTNER: partner.CD_PARTNER, NM_PARTNER: partner.NM_PARTNER } : header)); markDirty(); notify("success", "거래처 선택이 반영되었습니다."); setPartnerOpen(false); };
-    const chooseItem = (item: Item) => { if (!selectedLine) {
+    const chooseItem = (item: Item) => { const targetKey = lineLookupKeyRef.current; if (!targetKey) {
         notify("info", "선택된 항목이 없습니다.");
         return;
-    } setLines((current) => current.map((line) => line.NO_PO === selectedLine.NO_PO && line.NO_LINE === selectedLine.NO_LINE ? { ...line, CD_ITEM: item.CD_ITEM, NM_ITEM: item.NM_ITEM, STND_ITEM: item.STND_ITEM, UNIT_ITEM: item.UNIT_ITEM } : line)); markDirty(); notify("success", "품목 선택이 반영되었습니다."); setItemOpen(false); };
-    const chooseWarehouse = (warehouse: Warehouse) => { if (!selectedLine) {
+    } setLines((current) => current.map((line) => createPurchaseOrderLineKey(line.CD_FIRM, line.NO_PO, line.NO_LINE) === targetKey ? { ...line, CD_ITEM: item.CD_ITEM, NM_ITEM: item.NM_ITEM, STND_ITEM: item.STND_ITEM, UNIT_ITEM: item.UNIT_ITEM } : line)); markDirty(); notify("success", "품목 선택이 반영되었습니다."); lineLookupKeyRef.current = null; setItemOpen(false); };
+    const chooseWarehouse = (warehouse: Warehouse) => { const targetKey = lineLookupKeyRef.current; if (!targetKey) {
         notify("info", "선택된 항목이 없습니다.");
         return;
-    } setLines((current) => current.map((line) => line.NO_PO === selectedLine.NO_PO && line.NO_LINE === selectedLine.NO_LINE ? { ...line, CD_WH: warehouse.CD_WH, NM_WH: warehouse.NM_WH } : line)); markDirty(); notify("success", "창고 선택이 반영되었습니다."); setWarehouseOpen(false); };
+    } setLines((current) => current.map((line) => createPurchaseOrderLineKey(line.CD_FIRM, line.NO_PO, line.NO_LINE) === targetKey ? { ...line, CD_WH: warehouse.CD_WH, NM_WH: warehouse.NM_WH } : line)); markDirty(); notify("success", "창고 선택이 반영되었습니다."); lineLookupKeyRef.current = null; setWarehouseOpen(false); };
+    const handleLineLookupCellDoubleClick = (line: PurchaseOrderLine, field: keyof PurchaseOrderLine) => {
+        if (isLoading || isSaving || itemOpen || warehouseOpen) return;
+        lineLookupKeyRef.current = createPurchaseOrderLineKey(line.CD_FIRM, line.NO_PO, line.NO_LINE);
+        selectDetail(line.NO_LINE);
+        if (field === "CD_ITEM") setItemOpen(true);
+        if (field === "CD_WH") setWarehouseOpen(true);
+    };
     const headerColumns: readonly ErpDataGridColumn<PurchaseOrderHeader>[] = [
         { field: "CD_FIRM", headerName: "회사", width: 80, editable: true },
         { field: "NO_PO", headerName: "발주번호", width: 145, readOnly: true },
@@ -311,7 +369,7 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, showDevelopment
         },
         { field: "DC_RMK", headerName: "비고", width: 160, editable: true }
     ];
-    const lineColumns: readonly ErpDataGridColumn<PurchaseOrderLine>[] = [{ field: "NO_LINE", headerName: "행", width: 55, readOnly: true }, { field: "CD_ITEM", headerName: "품목코드", width: 110, editable: true }, { field: "NM_ITEM", headerName: "품목명", width: 150, editable: true }, { field: "STND_ITEM", headerName: "규격", width: 130, editable: true }, { field: "UNIT_ITEM", headerName: "단위", width: 60, editable: true }, { field: "QT_PO", headerName: "수량", width: 85, editable: true, dataType: "number", sum: true }, { field: "UM_PO", headerName: "단가", width: 100, editable: true, dataType: "number" }, { field: "AM_SUPPLY", headerName: "공급가", width: 105, readOnly: true, dataType: "number", sum: true, formatter: (value) => money.format(Number(value)) }, { field: "AM_VAT", headerName: "부가세", width: 95, readOnly: true, dataType: "number", sum: true, formatter: (value) => money.format(Number(value)) }, { field: "AM_TOTAL", headerName: "합계", width: 110, readOnly: true, dataType: "number", sum: true, formatter: (value) => money.format(Number(value)) }, { field: "DT_DLV", headerName: "납기일", width: 115, editable: true, dataType: "date" }, { field: "CD_WH", headerName: "창고", width: 100, editable: true }, { field: "NM_WH", headerName: "창고명", width: 130, editable: true }, { field: "DC_RMK", headerName: "비고", width: 140, editable: true }];
+    const lineColumns: readonly ErpDataGridColumn<PurchaseOrderLine>[] = [{ field: "NO_LINE", headerName: "행", width: 55, readOnly: true }, { field: "CD_ITEM", headerName: "품목코드", width: 110, editable: true, lookup: { instruction: "더블클릭하여 품목을 선택합니다." } }, { field: "NM_ITEM", headerName: "품목명", width: 150, editable: true }, { field: "STND_ITEM", headerName: "규격", width: 130, editable: true }, { field: "UNIT_ITEM", headerName: "단위", width: 60, editable: true }, { field: "QT_PO", headerName: "수량", width: 85, editable: true, dataType: "number", sum: true }, { field: "UM_PO", headerName: "단가", width: 100, editable: true, dataType: "number" }, { field: "AM_SUPPLY", headerName: "공급가", width: 105, readOnly: true, dataType: "number", sum: true, formatter: (value) => money.format(Number(value)) }, { field: "AM_VAT", headerName: "부가세", width: 95, readOnly: true, dataType: "number", sum: true, formatter: (value) => money.format(Number(value)) }, { field: "AM_TOTAL", headerName: "합계", width: 110, readOnly: true, dataType: "number", sum: true, formatter: (value) => money.format(Number(value)) }, { field: "DT_DLV", headerName: "납기일", width: 115, editable: true, dataType: "date" }, { field: "CD_WH", headerName: "창고", width: 100, editable: true, lookup: { instruction: "더블클릭하여 창고를 선택합니다." } }, { field: "NM_WH", headerName: "창고명", width: 130, editable: true }, { field: "DC_RMK", headerName: "비고", width: 140, editable: true }];
     return <><div className="erp-shell"><aside className="side-nav"><div className="brand"><Building2 size={20}/><strong>SMART ERP</strong></div><nav><div className="menu-title">영업관리</div><button className="menu-item" data-testid="nav-sales-order" onClick={() => onNavigate("sales")}>수주등록</button><div className="menu-title">구매관리</div><div className="menu-group"><ChevronRight size={14}/><span>발주관리</span></div><button className="menu-item active" data-testid="nav-purchase-order">발주등록</button><div className="menu-title">생산관리</div><div className="menu-group"><ChevronRight size={14}/><span>작업지시관리</span></div><button className="menu-item" data-testid="nav-work-order" onClick={() => void navigateWorkOrder()} type="button">작업지시등록</button>{showDevelopmentDataManager && <><div className="menu-title">개발 도구</div><button className="menu-item" data-testid="nav-development-data" onClick={() => onNavigate("development")} type="button">테스트 데이터 관리</button></>}</nav></aside><main aria-busy={isLoading || isSaving} className="workbench"><header className="page-header"><div><h1 data-testid="purchase-page-title">발주등록</h1><p>PUR_POH / PUR_POL mock 입력 샘플</p></div><PageToolbar actions={[{ dataTestId: "po-btn-search", label: "조회", icon: <Search size={15}/>, onClick: handleSearch, disabled: isLoading }, { dataTestId: "po-btn-new", label: "신규", icon: <Plus size={15}/>, onClick: handleNew, disabled: isSaving }, { dataTestId: "po-btn-add-line", label: "행추가", icon: <Rows3 size={15}/>, onClick: handleAddLine }, { dataTestId: "po-btn-delete-line", label: "행삭제", icon: <Trash2 size={15}/>, onClick: handleDeleteLine }, { dataTestId: "po-btn-save", label: "저장", icon: <Save size={15}/>, onClick: handleSave, disabled: isSaving, variant: "primary" }, { dataTestId: "po-btn-delete", label: "삭제", icon: <Trash2 size={15}/>, onClick: handleDelete, disabled: isSaving, variant: "danger" }]}/></header><SearchPanel message={message}><label>회사<input data-testid="po-filter-firm" value={filters.firm} onChange={(event) => setFilters({ ...filters, firm: event.target.value })}/></label><label>발주일 From<input type="date" value={filters.from} onChange={(event) => setFilters({ ...filters, from: event.target.value })}/></label><label>발주일 To<input type="date" value={filters.to} onChange={(event) => setFilters({ ...filters, to: event.target.value })}/></label><label>발주번호<input data-testid="po-filter-no" value={filters.no} onChange={(event) => setFilters({ ...filters, no: event.target.value })}/></label><label>거래처<input data-testid="po-filter-partner" value={filters.partner} onChange={(event) => setFilters({ ...filters, partner: event.target.value })}/></label><label>상태<select data-testid="po-filter-status" value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">전체</option>{statuses.map((status) => <option key={status}>{status}</option>)}</select></label></SearchPanel><section className="grid-section top-grid"><div className="section-title"><h2>발주정보</h2><button data-testid="po-btn-partner-lookup" onClick={() => setPartnerOpen(true)} type="button">거래처 Lookup</button></div><ErpDataGrid columns={headerColumns} dataTestId="purchase-header-grid" rows={visibleHeaders} rowKey={(row) => createPurchaseOrderHeaderKey(row.CD_FIRM, row.NO_PO)} selectedRowKey={selectedHeader ? createPurchaseOrderHeaderKey(selectedHeader.CD_FIRM, selectedHeader.NO_PO) : undefined} selectionMode="single" showFooter showRowNumbers cellErrors={toValidationCellErrors(issues)} onRowClick={selectHeader} onCellValueChange={(row, field, value) => { if (field !== "NO_PO")
-        updateHeader(row.NO_PO, field as HeaderField, value); }}/></section><section className="grid-section bottom-grid"><div className="section-title"><h2>발주상세</h2><div className="section-title-actions"><button data-testid="po-btn-item-lookup" onClick={() => selectedLine ? setItemOpen(true) : setMessage("발주상세 행을 선택하세요.")} type="button">품목 Lookup</button><button data-testid="po-btn-warehouse-lookup" onClick={() => selectedLine ? setWarehouseOpen(true) : setMessage("발주상세 행을 선택하세요.")} type="button">창고 Lookup</button></div></div><ErpDataGrid columns={lineColumns} dataTestId="purchase-line-grid" rows={selectedLines} rowKey={(row) => createPurchaseOrderLineKey(row.CD_FIRM, row.NO_PO, row.NO_LINE)} selectedRowKey={selectedLine ? createPurchaseOrderLineKey(selectedLine.CD_FIRM, selectedLine.NO_PO, selectedLine.NO_LINE) : undefined} checkedRowKeys={checkedLineKeys} onCheckedRowKeysChange={setCheckedLineKeys} selectionMode="multiple" showCheckboxes showFooter showRowNumbers cellErrors={toValidationCellErrors(issues)} onRowClick={(row) => selectDetail(row.NO_LINE)} onCellValueChange={(row, field, value) => updateLine(row.NO_PO, row.NO_LINE, field as LineField, value)}/></section><div className="sales-order-total-summary" data-testid="purchase-total-summary"><span>수량 {money.format(totals.QT_PO)}</span><span>공급가 {money.format(totals.AM_SUPPLY)}</span><span>부가세 {money.format(totals.AM_VAT)}</span><strong>합계 {money.format(totals.AM_TOTAL)}</strong></div></main></div><ErpLookupDialog columns={partnerColumns} dataTestId="po-partner-lookup" emptyMessage="거래처가 없습니다." height={480} onClose={() => setPartnerOpen(false)} onSelect={choosePartner} open={partnerOpen} rowKey={(row) => `${row.CD_FIRM}::${row.CD_PARTNER}`} rows={mockPartners.filter((row) => row.YN_USE === "Y")} searchFields={["CD_PARTNER", "NM_PARTNER"]} title="거래처 Lookup" width={700}/><ErpLookupDialog columns={itemColumns} dataTestId="po-item-lookup" emptyMessage="품목이 없습니다." height={480} onClose={() => setItemOpen(false)} onSelect={chooseItem} open={itemOpen} rowKey={(row) => `${row.CD_FIRM}::${row.CD_ITEM}`} rows={mockItems.filter((row) => row.YN_USE === "Y" && (!selectedHeader || row.CD_FIRM === selectedHeader.CD_FIRM))} searchFields={["CD_ITEM", "NM_ITEM"]} title="품목 Lookup" width={700}/><ErpLookupDialog columns={warehouseColumns} dataTestId="po-warehouse-lookup" emptyMessage="창고가 없습니다." height={480} onClose={() => setWarehouseOpen(false)} onSelect={chooseWarehouse} open={warehouseOpen} rowKey={(row) => `${row.CD_FIRM}::${row.CD_WH}`} rows={mockWarehouses.filter((row) => !selectedHeader || row.CD_FIRM === selectedHeader.CD_FIRM)} searchFields={["CD_WH", "NM_WH"]} title="창고 Lookup" width={700}/></>;
+        updateHeader(row.NO_PO, field as HeaderField, value); }}/></section><section className="grid-section bottom-grid"><div className="section-title"><h2>발주상세</h2></div><ErpDataGrid columns={lineColumns} dataTestId="purchase-line-grid" rows={selectedLines} rowKey={(row) => createPurchaseOrderLineKey(row.CD_FIRM, row.NO_PO, row.NO_LINE)} selectedRowKey={selectedLine ? createPurchaseOrderLineKey(selectedLine.CD_FIRM, selectedLine.NO_PO, selectedLine.NO_LINE) : undefined} checkedRowKeys={checkedLineKeys} onCheckedRowKeysChange={setCheckedLineKeys} selectionMode="multiple" showCheckboxes showFooter showRowNumbers cellErrors={toValidationCellErrors(issues)} lookupDisabled={isLoading || isSaving || itemOpen || warehouseOpen} onLookupCellDoubleClick={(row, column) => handleLineLookupCellDoubleClick(row, column.field)} onRowClick={(row) => selectDetail(row.NO_LINE)} onCellValueChange={(row, field, value) => updateLine(row.NO_PO, row.NO_LINE, field as LineField, value)}/></section><div className="sales-order-total-summary" data-testid="purchase-total-summary"><span>수량 {money.format(totals.QT_PO)}</span><span>공급가 {money.format(totals.AM_SUPPLY)}</span><span>부가세 {money.format(totals.AM_VAT)}</span><strong>합계 {money.format(totals.AM_TOTAL)}</strong></div></main></div><ErpLookupDialog columns={partnerColumns} dataTestId="po-partner-lookup" emptyMessage="거래처가 없습니다." height={480} onClose={() => setPartnerOpen(false)} onSelect={choosePartner} open={partnerOpen} rowKey={(row) => `${row.CD_FIRM}::${row.CD_PARTNER}`} rows={mockPartners.filter((row) => row.YN_USE === "Y")} searchFields={["CD_PARTNER", "NM_PARTNER"]} title="거래처 Lookup" width={700}/><ErpLookupDialog columns={itemColumns} dataTestId="po-item-lookup" emptyMessage="품목이 없습니다." height={480} onClose={() => { lineLookupKeyRef.current = null; setItemOpen(false); }} onSelect={chooseItem} open={itemOpen} rowKey={(row) => `${row.CD_FIRM}::${row.CD_ITEM}`} rows={mockItems.filter((row) => row.YN_USE === "Y" && (!selectedHeader || row.CD_FIRM === selectedHeader.CD_FIRM))} searchFields={["CD_ITEM", "NM_ITEM"]} title="품목 Lookup" width={700}/><ErpLookupDialog columns={warehouseColumns} dataTestId="po-warehouse-lookup" emptyMessage="창고가 없습니다." height={480} onClose={() => { lineLookupKeyRef.current = null; setWarehouseOpen(false); }} onSelect={chooseWarehouse} open={warehouseOpen} rowKey={(row) => `${row.CD_FIRM}::${row.CD_WH}`} rows={mockWarehouses.filter((row) => !selectedHeader || row.CD_FIRM === selectedHeader.CD_FIRM)} searchFields={["CD_WH", "NM_WH"]} title="창고 Lookup" width={700}/></>;
 }

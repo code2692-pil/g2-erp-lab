@@ -89,6 +89,10 @@ test("B: 조회 결과와 Header-공정상세 연결, 결과 없음 안내를 �
   await openWorkOrder(page);
   await searchWorkOrders(page);
   await headerRow(page).click();
+  const renderedHeaderRows = await page.locator('[data-testid="work-order-header-grid"] tbody tr[data-row-key]').count();
+  await expect(page.getByTestId("work-order-header-grid-total-count")).toHaveText(`전체 ${renderedHeaderRows}건`);
+  await expect(page.getByTestId("work-order-header-grid-selected-document")).toHaveText("선택 문서 WO2026070001");
+  await expect(page.getByTestId("work-order-process-grid-total-count")).toHaveText("전체 2건");
   await expect(processRow(page, firstProcessKey)).toBeVisible();
   await expect(processRow(page, secondProcessKey)).toBeVisible();
   await expect(page.getByTestId("work-order-process-grid-footer-total")).toContainText("2");
@@ -97,6 +101,7 @@ test("B: 조회 결과와 Header-공정상세 연결, 결과 없음 안내를 �
   await page.getByTestId("wo-btn-search").click();
   await expect(page.getByTestId("status-message")).toHaveText("조회된 작업지시가 없습니다.");
   await expect(page.getByTestId("work-order-header-grid-footer-total")).toContainText("0");
+  await expect(page.getByTestId("work-order-header-grid-total-count")).toHaveText("전체 0건");
 });
 
 test("C: 신규 작업지시와 품목·라인·공정·설비 Lookup을 저장한다", async ({ page }, testInfo) => {
@@ -110,20 +115,21 @@ test("C: 신규 작업지시와 품목·라인·공정·설비 Lookup을 저장�
   await expect(headerRow(page, tempHeaderKey)).toContainText("N");
   await expect(processRow(page, tempProcessKey)).toHaveCount(0);
 
-  await page.getByTestId("wo-btn-item-lookup").click();
+  await page.getByTestId(`work-order-header-grid-cell-container-${tempHeaderKey}-CD_ITEM`).dblclick();
   await page.getByTestId("wo-item-lookup-grid-row-1000::ITM-1001").click();
   await page.getByTestId("wo-item-lookup-confirm").click();
-  await page.getByTestId("wo-btn-line-lookup").click();
+  await page.getByTestId(`work-order-header-grid-cell-container-${tempHeaderKey}-CD_LINE`).dblclick();
   await page.getByTestId("wo-line-lookup-grid-row-1000::LINE-A").click();
   await page.getByTestId("wo-line-lookup-confirm").click();
 
   await page.getByTestId("wo-btn-add-process").click();
   await expect(processRow(page, tempProcessKey)).toBeVisible();
-  await processRow(page, tempProcessKey).click();
-  await page.getByTestId("wo-btn-process-lookup").click();
+  await expect(page.getByTestId("wo-btn-process-lookup")).toHaveCount(0);
+  await page.getByTestId(`work-order-process-grid-cell-container-${tempProcessKey}-CD_PROC`).dblclick();
   await page.getByTestId("wo-process-lookup-grid-row-1000::PROC-010").click();
   await page.getByTestId("wo-process-lookup-confirm").click();
-  await page.getByTestId("wo-btn-equipment-lookup").click();
+  await expect(page.getByTestId("wo-btn-equipment-lookup")).toHaveCount(0);
+  await page.getByTestId(`work-order-process-grid-cell-container-${tempProcessKey}-CD_EQUIP`).dblclick();
   await page.getByTestId("wo-equipment-lookup-grid-row-1000::EQ-A01").click();
   await page.getByTestId("wo-equipment-lookup-confirm").click();
 
@@ -235,4 +241,36 @@ test("G: Header 삭제와 저장 처리 중 버튼 비활성화를 확인한다"
   await expect(page.getByTestId("wo-btn-save")).toBeEnabled();
   const completedAt = await page.evaluate(() => performance.now());
   console.log(`work-order mock save timing: started=${startedAt}ms, disabled=${disabledAt}ms, completed=${completedAt}ms`);
+});
+
+test("Paste: work order process detail applies lookup codes through Ctrl+V", async ({ page }) => {
+  await openWorkOrder(page);
+  await searchWorkOrders(page);
+  await page.getByTestId("wo-btn-add-process").click();
+  const addedProcessKey = "1000::WO2026070001::30";
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://127.0.0.1:5173" });
+  await page.evaluate(() => navigator.clipboard.writeText("PROC-010\tignored\tEQ-A01\tignored\t3\t0"));
+  await processCell(page, addedProcessKey, "CD_PROC").click();
+  await page.keyboard.press("Control+V");
+
+  await expect(processCell(page, addedProcessKey, "CD_PROC")).toHaveValue("PROC-010");
+  await expect(processCell(page, addedProcessKey, "CD_EQUIP")).toHaveValue("EQ-A01");
+  await expect(page.getByTestId("work-order-process-grid-total-count")).toHaveText("전체 3건");
+});
+
+test("Paste: an invalid work-order process code leaves the row unchanged", async ({ page }) => {
+  await openWorkOrder(page);
+  await searchWorkOrders(page);
+  await page.getByTestId("wo-btn-add-process").click();
+  const addedProcessKey = "1000::WO2026070001::30";
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://127.0.0.1:5173" });
+  const before = await processCell(page, addedProcessKey, "CD_PROC").inputValue();
+
+  await page.evaluate(() => navigator.clipboard.writeText("PROC-NOT-FOUND"));
+  await processCell(page, addedProcessKey, "CD_PROC").click();
+  await page.keyboard.press("Control+V");
+
+  await expect(processCell(page, addedProcessKey, "CD_PROC")).toHaveValue(before);
+  await expect(page.getByTestId("work-order-process-grid-total-count")).toHaveText("전체 3건");
+  await expect(page.locator(".erp-snackbar--error")).toContainText("붙여넣기 실패");
 });

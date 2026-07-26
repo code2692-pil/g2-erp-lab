@@ -119,10 +119,12 @@ test("API UI: purchase order lookup, save/delete dialogs, dirty navigation, and 
     await page.getByTestId("po-partner-lookup-grid-row-1000::P-10021").click();
     await page.getByTestId("po-partner-lookup-confirm").click();
     await page.getByTestId(`purchase-line-grid-row-1000::${number}::1`).click();
-    await page.getByTestId("po-btn-item-lookup").click();
+    await expect(page.getByTestId("po-btn-item-lookup")).toHaveCount(0);
+    await page.getByTestId(`purchase-line-grid-cell-container-1000::${number}::1-CD_ITEM`).dblclick();
     await page.getByTestId("po-item-lookup-grid-row-1000::ITM-1001").click();
     await page.getByTestId("po-item-lookup-confirm").click();
-    await page.getByTestId("po-btn-warehouse-lookup").click();
+    await expect(page.getByTestId("po-btn-warehouse-lookup")).toHaveCount(0);
+    await page.getByTestId(`purchase-line-grid-cell-container-1000::${number}::1-CD_WH`).dblclick();
     await page.getByTestId("po-warehouse-lookup-grid-row-1000::WH-100").click();
     await page.getByTestId("po-warehouse-lookup-confirm").click();
     await page.getByTestId(`purchase-line-grid-cell-1000::${number}::1-QT_PO`).fill("3");
@@ -196,6 +198,101 @@ test("API UI: purchase order lookup, save/delete dialogs, dirty navigation, and 
     await expect(page.getByRole("status")).toContainText("삭제되었습니다.");
   } finally {
     await request.delete(`${apiBaseUrl}/api/purchase-orders/1000/${number}`);
+  }
+});
+
+test("API UI: sales order shows 400 and network save errors, then recovers", async ({ page, request }, testInfo) => {
+  test.slow();
+  const number = `E2E-SO-ERROR-${testInfo.workerIndex}-${Date.now()}`;
+  const endpoint = `${apiBaseUrl}/api/sales-orders/1000/${number}`;
+  let badRequestCount = 0;
+  let networkFailureCount = 0;
+
+  try {
+    expect((await request.post(`${apiBaseUrl}/api/sales-orders`, { data: salesRequest(number) })).status()).toBe(201);
+    await page.goto("/");
+    await page.getByTestId("btn-search").click();
+    await page.getByTestId(`sales-order-header-grid-row-1000::${number}`).click();
+    const quantity = page.getByTestId(`sales-order-line-grid-cell-1000::${number}::1-QT_SO`);
+    await quantity.fill("4");
+
+    const badRequest = async (route: import("@playwright/test").Route) => {
+      if (route.request().method() !== "PUT") return route.continue();
+      badRequestCount += 1;
+      await route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "invalid save request" }) });
+    };
+    await page.route(endpoint, badRequest);
+    await page.getByTestId("btn-save").click();
+    await page.getByTestId("confirm-dialog-confirm").click();
+    await expect(page.getByTestId("confirm-dialog")).toHaveCount(0);
+    await expect(page.getByTestId("status-message")).toContainText("저장 중 오류가 발생했습니다.");
+    await expect(page.getByTestId("btn-save")).toBeEnabled();
+    expect(badRequestCount).toBe(1);
+    await page.unroute(endpoint, badRequest);
+
+    const recoveredFrom400 = page.waitForResponse((response) => response.url() === endpoint && response.request().method() === "PUT");
+    await page.getByTestId("btn-save").click();
+    await page.getByTestId("confirm-dialog-confirm").click();
+    expect((await recoveredFrom400).status()).toBe(200);
+
+    await quantity.fill("5");
+    const networkFailure = async (route: import("@playwright/test").Route) => {
+      if (route.request().method() !== "PUT") return route.continue();
+      networkFailureCount += 1;
+      await route.abort("failed");
+    };
+    await page.route(endpoint, networkFailure);
+    await page.getByTestId("btn-save").click();
+    await page.getByTestId("confirm-dialog-confirm").click();
+    await expect(page.getByTestId("confirm-dialog")).toHaveCount(0);
+    await expect(page.getByTestId("status-message")).toContainText("저장 중 오류가 발생했습니다.");
+    await expect(page.getByTestId("btn-save")).toBeEnabled();
+    expect(networkFailureCount).toBe(1);
+    await page.unroute(endpoint, networkFailure);
+
+    const recoveredFromNetworkFailure = page.waitForResponse((response) => response.url() === endpoint && response.request().method() === "PUT");
+    await page.getByTestId("btn-save").click();
+    await page.getByTestId("confirm-dialog-confirm").click();
+    expect((await recoveredFromNetworkFailure).status()).toBe(200);
+  } finally {
+    await request.delete(endpoint);
+  }
+});
+
+test("API UI: purchase order shows 409 save error, then recovers", async ({ page, request }, testInfo) => {
+  test.slow();
+  const number = `E2E-PO-ERROR-${testInfo.workerIndex}-${Date.now()}`;
+  const endpoint = `${apiBaseUrl}/api/purchase-orders/1000/${number}`;
+  let conflictCount = 0;
+
+  try {
+    expect((await request.post(`${apiBaseUrl}/api/purchase-orders`, { data: purchaseRequest(number) })).status()).toBe(201);
+    await page.goto("/");
+    await page.getByTestId("nav-purchase-order").click();
+    await page.getByTestId("po-btn-search").click();
+    await page.getByTestId(`purchase-header-grid-row-1000::${number}`).click();
+    await page.getByTestId(`purchase-line-grid-cell-1000::${number}::1-QT_PO`).fill("4");
+
+    const conflict = async (route: import("@playwright/test").Route) => {
+      if (route.request().method() !== "PUT") return route.continue();
+      conflictCount += 1;
+      await route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "conflicting save request" }) });
+    };
+    await page.route(endpoint, conflict);
+    await page.getByTestId("po-btn-save").click();
+    await page.getByTestId("confirm-dialog-confirm").click();
+    await expect(page.getByTestId("confirm-dialog")).toHaveCount(0);
+    await expect(page.getByTestId("status-message")).toContainText("저장 중 오류가 발생했습니다.");
+    await expect(page.getByTestId("po-btn-save")).toBeEnabled();
+    expect(conflictCount).toBe(1);
+    await page.unroute(endpoint, conflict);
+
+    const recovered = page.waitForResponse((response) => response.url() === endpoint && response.request().method() === "PUT");
+    await page.getByTestId("po-btn-save").click();
+    await page.getByTestId("confirm-dialog-confirm").click();
+    expect((await recovered).status()).toBe(200);
+  } finally {
+    await request.delete(endpoint);
   }
 });
 

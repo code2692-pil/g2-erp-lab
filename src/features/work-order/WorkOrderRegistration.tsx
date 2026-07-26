@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Building2, ChevronRight, Plus, Rows3, Save, Search, Trash2 } from "lucide-react";
-import { ErpDataGrid } from "../../components/common/ErpDataGrid";
-import type { ErpDataGridCellValue, ErpDataGridColumn } from "../../components/common/ErpDataGrid";
+import { ErpDataGrid, registerErpDataGridPasteHandler } from "../../components/common/ErpDataGrid";
+import type { ErpDataGridCellValue, ErpDataGridColumn, ErpDataGridPasteRequest } from "../../components/common/ErpDataGrid";
+import { parseErpGridPasteNumber } from "../../components/common/erpGridPaste";
 import { ErpDialog } from "../../components/common/ErpDialog";
 import { ErpLookupDialog } from "../../components/common/ErpLookupDialog";
 import { PageToolbar } from "../../components/common/PageToolbar";
@@ -163,6 +164,8 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
   const [productionLineLookupOpen, setProductionLineLookupOpen] = useState(false);
   const [processLookupOpen, setProcessLookupOpen] = useState(false);
   const [equipmentLookupOpen, setEquipmentLookupOpen] = useState(false);
+  const headerLookupKeyRef = useRef<string | null>(null);
+  const processLookupKeyRef = useRef<string | null>(null);
   const [lookups, setLookups] = useState<WorkOrderLookups>({ items: [], productionLines: [], processes: [], equipment: [] });
   const [serverWarnings, setServerWarnings] = useState<string[]>([]);
   const {
@@ -313,6 +316,58 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
     ));
   };
 
+  const handleProcessPaste = (request: ErpDataGridPasteRequest<WorkOrderProcess>) => {
+    if (!selectedHeader) return { error: "작업지시를 먼저 선택하세요." };
+    const fields = request.columns.map((column) => column.field);
+    if (fields.some((field) => !isProcessEditableField(field))) return { error: "수정할 수 없는 열이 포함되어 있습니다." };
+    const draftProcesses = selectedProcesses.map((process) => ({ ...process }));
+    let nextNoProc = draftProcesses.length === 0 ? 10 : Math.max(...draftProcesses.map((process) => process.NO_PROC)) + 10;
+    while (draftProcesses.length < request.startRowIndex + request.matrix.length) {
+      draftProcesses.push(createEmptyProcess(selectedHeader, nextNoProc));
+      nextNoProc += 10;
+    }
+
+    try {
+      request.matrix.forEach((values, rowOffset) => {
+        let nextProcess = { ...draftProcesses[request.startRowIndex + rowOffset] };
+        let selectedProcessCode: ProductionProcess | undefined;
+        let selectedEquipment: Equipment | undefined;
+        values.forEach((value, columnOffset) => {
+          const column = request.columns[columnOffset];
+          const field = fields[columnOffset] as ProcessEditableField;
+          if (field === "CD_PROC") {
+            selectedProcessCode = lookups.processes.find((process) => process.CD_FIRM === nextProcess.CD_FIRM && process.CD_PROC === value.trim() && process.YN_USE === "Y");
+            if (!selectedProcessCode) throw new Error(`${rowOffset + 1}행 공정코드에 존재하지 않는 코드가 있습니다.`);
+            nextProcess.CD_PROC = selectedProcessCode.CD_PROC;
+            return;
+          }
+          if (field === "CD_EQUIP") {
+            selectedEquipment = lookups.equipment.find((equipment) => equipment.CD_FIRM === nextProcess.CD_FIRM && equipment.CD_EQUIP === value.trim() && equipment.YN_USE === "Y");
+            if (!selectedEquipment) throw new Error(`${rowOffset + 1}행 설비코드에 존재하지 않는 코드가 있습니다.`);
+            nextProcess.CD_EQUIP = selectedEquipment.CD_EQUIP;
+            return;
+          }
+          const nextValue = column.dataType === "number" ? parseErpGridPasteNumber(value) : value;
+          nextProcess = { ...nextProcess, [field]: nextValue };
+        });
+        if (selectedProcessCode) nextProcess = { ...nextProcess, CD_PROC: selectedProcessCode.CD_PROC, NM_PROC: selectedProcessCode.NM_PROC };
+        if (selectedEquipment) nextProcess = { ...nextProcess, CD_EQUIP: selectedEquipment.CD_EQUIP, NM_EQUIP: selectedEquipment.NM_EQUIP };
+        draftProcesses[request.startRowIndex + rowOffset] = nextProcess;
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "입력값을 확인하세요.";
+      return { error: errorMessage };
+    }
+
+    setProcesses((current) => [
+      ...current.filter((process) => process.CD_FIRM !== selectedHeader.CD_FIRM || process.NO_WO !== selectedHeader.NO_WO),
+      ...draftProcesses
+    ]);
+    markWorkOrderDirty();
+    return undefined;
+  };
+  useLayoutEffect(() => registerErpDataGridPasteHandler("work-order-process-grid", handleProcessPaste, (pasteMessage) => notify("error", pasteMessage)), [handleProcessPaste, notify]);
+
   const handleNew = async () => {
     if (!(await confirmDiscardChanges())) return;
     const header = createEmptyHeader(createTempWorkOrderNo(tempSequence));
@@ -453,6 +508,7 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
       notify("info", "선택된 항목이 없습니다.");
       return;
     }
+    headerLookupKeyRef.current = createWorkOrderHeaderKey(selectedHeader.CD_FIRM, selectedHeader.NO_WO);
     setItemLookupOpen(true);
   };
   const handleOpenProductionLineLookup = () => {
@@ -462,6 +518,7 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
       notify("info", "선택된 항목이 없습니다.");
       return;
     }
+    headerLookupKeyRef.current = createWorkOrderHeaderKey(selectedHeader.CD_FIRM, selectedHeader.NO_WO);
     setProductionLineLookupOpen(true);
   };
   const handleOpenProcessLookup = () => {
@@ -471,6 +528,7 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
       notify("info", "대상 상세행이 없습니다.");
       return;
     }
+    processLookupKeyRef.current = createWorkOrderProcessKey(selectedProcess.CD_FIRM, selectedProcess.NO_WO, selectedProcess.NO_PROC);
     setProcessLookupOpen(true);
   };
   const handleOpenEquipmentLookup = () => {
@@ -480,12 +538,37 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
       notify("info", "대상 상세행이 없습니다.");
       return;
     }
+    processLookupKeyRef.current = createWorkOrderProcessKey(selectedProcess.CD_FIRM, selectedProcess.NO_WO, selectedProcess.NO_PROC);
     setEquipmentLookupOpen(true);
   };
 
+  const handleLookupCellDoubleClick = (
+    row: WorkOrderHeader | WorkOrderProcess,
+    field: keyof WorkOrderHeader | keyof WorkOrderProcess
+  ) => {
+    if (processing || itemLookupOpen || productionLineLookupOpen || processLookupOpen || equipmentLookupOpen) return;
+    if (field === "CD_ITEM" && !("NO_PROC" in row)) {
+      headerLookupKeyRef.current = createWorkOrderHeaderKey(row.CD_FIRM, row.NO_WO);
+      void selectHeader(row);
+      setItemLookupOpen(true);
+    } else if (field === "CD_LINE" && !("NO_PROC" in row)) {
+      headerLookupKeyRef.current = createWorkOrderHeaderKey(row.CD_FIRM, row.NO_WO);
+      void selectHeader(row);
+      setProductionLineLookupOpen(true);
+    } else if (field === "CD_PROC" && "NO_PROC" in row) {
+      processLookupKeyRef.current = createWorkOrderProcessKey(row.CD_FIRM, row.NO_WO, row.NO_PROC);
+      selectDetail(row.NO_PROC);
+      setProcessLookupOpen(true);
+    } else if (field === "CD_EQUIP" && "NO_PROC" in row) {
+      processLookupKeyRef.current = createWorkOrderProcessKey(row.CD_FIRM, row.NO_WO, row.NO_PROC);
+      selectDetail(row.NO_PROC);
+      setEquipmentLookupOpen(true);
+    }
+  };
+
   const handleSelectItem = (item: Item) => {
-    if (!selectedHeader) return;
-    const targetKey = createWorkOrderHeaderKey(selectedHeader.CD_FIRM, selectedHeader.NO_WO);
+    const targetKey = headerLookupKeyRef.current;
+    if (!targetKey) return;
     setHeaders((current) => current.map((header) => createWorkOrderHeaderKey(header.CD_FIRM, header.NO_WO) === targetKey
       ? { ...header, CD_ITEM: item.CD_ITEM, NM_ITEM: item.NM_ITEM, STND_ITEM: item.STND_ITEM, UNIT_ITEM: item.UNIT_ITEM }
       : header));
@@ -493,8 +576,8 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
     notify("success", "생산품목 선택이 반영되었습니다.");
   };
   const handleSelectProductionLine = (line: ProductionLine) => {
-    if (!selectedHeader) return;
-    const targetKey = createWorkOrderHeaderKey(selectedHeader.CD_FIRM, selectedHeader.NO_WO);
+    const targetKey = headerLookupKeyRef.current;
+    if (!targetKey) return;
     setHeaders((current) => current.map((header) => createWorkOrderHeaderKey(header.CD_FIRM, header.NO_WO) === targetKey
       ? { ...header, CD_LINE: line.CD_LINE, NM_LINE: line.NM_LINE }
       : header));
@@ -502,8 +585,8 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
     notify("success", "생산라인 선택이 반영되었습니다.");
   };
   const handleSelectProcess = (processCode: ProductionProcess) => {
-    if (!selectedProcess) return;
-    const targetKey = createWorkOrderProcessKey(selectedProcess.CD_FIRM, selectedProcess.NO_WO, selectedProcess.NO_PROC);
+    const targetKey = processLookupKeyRef.current;
+    if (!targetKey) return;
     setProcesses((current) => current.map((process) => createWorkOrderProcessKey(process.CD_FIRM, process.NO_WO, process.NO_PROC) === targetKey
       ? { ...process, CD_PROC: processCode.CD_PROC, NM_PROC: processCode.NM_PROC }
       : process));
@@ -511,8 +594,8 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
     notify("success", "공정 선택이 반영되었습니다.");
   };
   const handleSelectEquipment = (equipment: Equipment) => {
-    if (!selectedProcess) return;
-    const targetKey = createWorkOrderProcessKey(selectedProcess.CD_FIRM, selectedProcess.NO_WO, selectedProcess.NO_PROC);
+    const targetKey = processLookupKeyRef.current;
+    if (!targetKey) return;
     setProcesses((current) => current.map((process) => createWorkOrderProcessKey(process.CD_FIRM, process.NO_WO, process.NO_PROC) === targetKey
       ? { ...process, CD_EQUIP: equipment.CD_EQUIP, NM_EQUIP: equipment.NM_EQUIP }
       : process));
@@ -530,7 +613,7 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
     { field: "CD_FIRM", headerName: "회사", width: 78, dataType: "code", editable: true, required: true },
     { field: "NO_WO", headerName: "작업지시번호", width: 140, dataType: "code", readOnly: true },
     { field: "DT_WO", headerName: "지시일자", width: 114, dataType: "date", editable: true, required: true },
-    { field: "CD_ITEM", headerName: "품목코드", width: 112, dataType: "code", editable: true, required: true },
+    { field: "CD_ITEM", headerName: "품목코드", width: 112, dataType: "code", editable: true, required: true, lookup: { instruction: "더블클릭하여 생산품목을 선택합니다." } },
     { field: "NM_ITEM", headerName: "품목명", width: 150, editable: true },
     { field: "STND_ITEM", headerName: "규격", width: 135, editable: true },
     { field: "UNIT_ITEM", headerName: "단위", width: 58, editable: true },
@@ -539,7 +622,7 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
     { field: "PROGRESS", headerName: "진척률", width: 80, readOnly: true, align: "right", formatter: (_value, row) => formatWorkOrderProgress(row) },
     { field: "DT_PLAN_START", headerName: "계획시작일", width: 114, dataType: "date", editable: true, required: true },
     { field: "DT_PLAN_END", headerName: "계획종료일", width: 114, dataType: "date", editable: true, required: true },
-    { field: "CD_LINE", headerName: "생산라인", width: 100, dataType: "code", editable: true, required: true },
+    { field: "CD_LINE", headerName: "생산라인", width: 100, dataType: "code", editable: true, required: true, lookup: { instruction: "더블클릭하여 생산라인을 선택합니다." } },
     { field: "NM_LINE", headerName: "생산라인명", width: 125, editable: true },
     { field: "ST_WO", headerName: "상태", width: 126, editable: true, editor: ({ value, onChange }) => <div className="erp-data-grid__status-editor"><select className="erp-data-grid__editor" onChange={(event) => onChange(event.target.value)} value={String(value)}>{workOrderStatuses.map((status) => <option key={status} value={status}>{status}</option>)}</select><span className={`badge ${statusClass(value as WorkOrderStatus)}`}>{String(value)}</span></div> },
     { field: "YN_URGENT", headerName: "긴급", width: 72, editable: true, editor: ({ value, onChange }) => <select className="erp-data-grid__editor" onChange={(event) => onChange(event.target.value)} value={String(value)}>{urgentOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select> },
@@ -547,9 +630,9 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
   ];
   const processColumns: readonly ErpDataGridColumn<WorkOrderProcess>[] = [
     { field: "NO_PROC", headerName: "공정순번", width: 78, dataType: "number", readOnly: true, align: "right" },
-    { field: "CD_PROC", headerName: "공정코드", width: 110, dataType: "code", editable: true, required: true },
+    { field: "CD_PROC", headerName: "공정코드", width: 110, dataType: "code", editable: true, required: true, lookup: { instruction: "더블클릭하여 공정을 선택합니다." } },
     { field: "NM_PROC", headerName: "공정명", width: 145, editable: true },
-    { field: "CD_EQUIP", headerName: "설비코드", width: 110, dataType: "code", editable: true },
+    { field: "CD_EQUIP", headerName: "설비코드", width: 110, dataType: "code", editable: true, lookup: { instruction: "더블클릭하여 설비를 선택합니다." } },
     { field: "NM_EQUIP", headerName: "설비명", width: 145, editable: true },
     { field: "QT_PLAN", headerName: "계획수량", width: 92, dataType: "number", editable: true, required: true, sum: true, align: "right" },
     { field: "QT_RESULT", headerName: "실적수량", width: 92, dataType: "number", editable: true, sum: true, align: "right" },
@@ -602,11 +685,11 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
         </SearchPanel>
         <section className="grid-section top-grid">
           <div className="section-title"><h2>작업지시</h2><div className="section-title-actions"><button className="section-lookup-button" data-testid="wo-btn-item-lookup" disabled={processing} onClick={handleOpenItemLookup} type="button"><Search size={14} />품목 도움</button><button className="section-lookup-button" data-testid="wo-btn-line-lookup" disabled={processing} onClick={handleOpenProductionLineLookup} type="button"><Search size={14} />라인 도움</button></div></div>
-          <ErpDataGrid<WorkOrderHeader> ariaLabel="작업지시 Header" cellErrors={validationCellErrors} className="work-order-header-grid" columns={headerColumns} dataTestId="work-order-header-grid" emptyMessage="조회된 작업지시가 없습니다." onCellValueChange={(row, field, value) => { if (isHeaderEditableField(field)) updateHeader(row, field, value); }} onRowClick={(header) => void selectHeader(header)} rowKey={(header) => createWorkOrderHeaderKey(header.CD_FIRM, header.NO_WO)} rows={headers} selectedRowKey={selectedHeader ? createWorkOrderHeaderKey(selectedHeader.CD_FIRM, selectedHeader.NO_WO) : undefined} selectionMode="single" showFooter showRowNumbers />
+          <ErpDataGrid<WorkOrderHeader> ariaLabel="작업지시 Header" cellErrors={validationCellErrors} className="work-order-header-grid" columns={headerColumns} dataTestId="work-order-header-grid" emptyMessage="조회된 작업지시가 없습니다." lookupDisabled={processing || itemLookupOpen || productionLineLookupOpen || processLookupOpen || equipmentLookupOpen} onCellValueChange={(row, field, value) => { if (isHeaderEditableField(field)) updateHeader(row, field, value); }} onLookupCellDoubleClick={(row, column) => handleLookupCellDoubleClick(row, column.field)} onRowClick={(header) => void selectHeader(header)} rowKey={(header) => createWorkOrderHeaderKey(header.CD_FIRM, header.NO_WO)} rows={headers} selectedRowKey={selectedHeader ? createWorkOrderHeaderKey(selectedHeader.CD_FIRM, selectedHeader.NO_WO) : undefined} selectionMode="single" showFooter showRowNumbers />
         </section>
         <section className="grid-section bottom-grid">
-          <div className="section-title"><h2>공정상세</h2><div className="section-title-actions"><button className="section-lookup-button" data-testid="wo-btn-process-lookup" disabled={processing} onClick={handleOpenProcessLookup} type="button"><Search size={14} />공정 도움</button><button className="section-lookup-button" data-testid="wo-btn-equipment-lookup" disabled={processing} onClick={handleOpenEquipmentLookup} type="button"><Search size={14} />설비 도움</button></div></div>
-          <ErpDataGrid<WorkOrderProcess> ariaLabel="공정상세" cellErrors={validationCellErrors} checkedRowKeys={checkedProcessKeys} className="work-order-process-grid" columns={processColumns} dataTestId="work-order-process-grid" emptyMessage="작업지시 행을 선택하면 공정상세가 표시됩니다." onCellValueChange={(row, field, value) => { if (isProcessEditableField(field)) updateProcess(row, field, value); }} onCheckedRowKeysChange={setCheckedProcessKeys} onRowClick={(process) => selectDetail(process.NO_PROC)} rowKey={(process) => createWorkOrderProcessKey(process.CD_FIRM, process.NO_WO, process.NO_PROC)} rows={selectedProcesses} selectedRowKey={selectedProcess ? createWorkOrderProcessKey(selectedProcess.CD_FIRM, selectedProcess.NO_WO, selectedProcess.NO_PROC) : undefined} selectionMode="multiple" showCheckboxes showFooter showRowNumbers />
+          <div className="section-title"><h2>공정상세</h2></div>
+          <ErpDataGrid<WorkOrderProcess> ariaLabel="공정상세" cellErrors={validationCellErrors} checkedRowKeys={checkedProcessKeys} className="work-order-process-grid" columns={processColumns} dataTestId="work-order-process-grid" emptyMessage="작업지시 행을 선택하면 공정상세가 표시됩니다." lookupDisabled={processing || itemLookupOpen || productionLineLookupOpen || processLookupOpen || equipmentLookupOpen} onCellValueChange={(row, field, value) => { if (isProcessEditableField(field)) updateProcess(row, field, value); }} onCheckedRowKeysChange={setCheckedProcessKeys} onLookupCellDoubleClick={(row, column) => handleLookupCellDoubleClick(row, column.field)} onRowClick={(process) => selectDetail(process.NO_PROC)} rowKey={(process) => createWorkOrderProcessKey(process.CD_FIRM, process.NO_WO, process.NO_PROC)} rows={selectedProcesses} selectedRowKey={selectedProcess ? createWorkOrderProcessKey(selectedProcess.CD_FIRM, selectedProcess.NO_WO, selectedProcess.NO_PROC) : undefined} selectionMode="multiple" showCheckboxes showFooter showRowNumbers />
         </section>
         <div className="sales-order-total-summary" data-testid="work-order-process-total-summary"><span>공정 건수 {quantity.format(selectedProcesses.length)}</span><span>계획수량 {quantity.format(processTotals.QT_PLAN)}</span><strong>실적수량 {quantity.format(processTotals.QT_RESULT)}</strong></div>
       </main>

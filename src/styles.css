@@ -703,6 +703,14 @@ tr.selected .grid-select,
   padding: 0;
 }
 
+.erp-data-grid__cell--lookup {
+  cursor: help;
+}
+
+.erp-data-grid__cell--lookup:focus-within .erp-data-grid__editor {
+  box-shadow: inset 0 -2px 0 #2b73b7;
+}
+
 .erp-data-grid__editor {
   width: 100%;
   height: 29px;
@@ -1381,6 +1389,8 @@ select:focus { border-color: #2b73b7; outline-color: #dceeff; }
 .erp-data-grid__editor:focus { border-color: #2b73b7; outline-color: #dceeff; }
 .erp-data-grid__empty-cell { color: #6b7b8c; background: #fbfcfd; }
 .erp-data-grid__status-bar { min-height: 28px; border: 0; border-top: 1px solid #dde4eb; }
+.erp-data-grid__document-status { margin-right: auto; color: #536d85; }
+.erp-data-grid__selection-status { color: #246fae; }
 
 .sales-order-total-summary { min-height: 34px; border-color: #d5dde6; background: #fbfcfd; }
 

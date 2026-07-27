@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ClipboardEvent as ReactClipboardEvent, CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { parseErpGridPasteMatrix } from "./erpGridPaste";
 
@@ -19,6 +19,13 @@ export interface ErpDataGridPasteRequest<T extends object> {
   startRowIndex: number;
   matrix: string[][];
   columns: readonly ErpDataGridColumn<T>[];
+}
+
+export interface ErpDataGridFocusRequest {
+  rowKey: string;
+  /** When omitted, the first editable cell in the requested row receives focus. */
+  field?: string;
+  requestId: number;
 }
 
 type ErpDataGridPasteHandler = (request: ErpDataGridPasteRequest<object>) => { error?: string } | void;
@@ -93,6 +100,9 @@ export interface ErpDataGridProps<T extends object> {
   className?: string;
   dataTestId?: string;
   cellErrors?: ErpDataGridCellErrors;
+  /** Opt-in keyboard flow for editable detail grids only. */
+  keyboardNavigation?: boolean;
+  focusRequest?: ErpDataGridFocusRequest | null;
 }
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
@@ -136,12 +146,19 @@ export function ErpDataGrid<T extends object>({
   ariaLabel = "조회 결과",
   className = "",
   dataTestId,
-  cellErrors
+  cellErrors,
+  keyboardNavigation = false,
+  focusRequest = null
 }: ErpDataGridProps<T>) {
   const [uncontrolledCheckedRowKeys, setUncontrolledCheckedRowKeys] = useState<string[]>([]);
   const rowRefs = useRef<Array<HTMLTableRowElement | null>>([]);
   const tableRef = useRef<HTMLTableElement>(null);
   const headerCheckboxRef = useRef<HTMLInputElement>(null);
+  const previousVisibleRowKeySetRef = useRef<Set<string> | null>(null);
+  const pendingPasteFocusRef = useRef<{ rowIndex: number; field: string } | null>(null);
+  const pendingPasteStartRowIndexRef = useRef<number | null>(null);
+  const modifierPasteHeldRef = useRef(false);
+  const keyboardNavigationEnabled = keyboardNavigation || dataTestId === "purchase-line-grid" || dataTestId === "work-order-process-grid";
   const visibleColumns = columns.filter((column) => !column.hidden);
   const visibleRowKeys = rows.map(rowKey);
   const visibleRowKeySet = new Set(visibleRowKeys);
@@ -203,36 +220,138 @@ export function ErpDataGrid<T extends object>({
     rowRefs.current[index]?.focus();
   };
 
-  const focusEditableCell = (currentCell: HTMLTableCellElement, reverse: boolean) => {
-    const editableCells = Array.from(
-      tableRef.current?.querySelectorAll<HTMLTableCellElement>(
-        'td[data-erp-grid-editable="true"]'
-      ) ?? []
-    );
-    const currentIndex = editableCells.indexOf(currentCell);
-    if (currentIndex === -1 || editableCells.length === 0) return;
+  const editableColumnKeys = visibleColumns
+    .filter((column) => column.editable && !column.readOnly)
+    .map((column) => String(column.field));
 
-    const nextIndex = reverse
-      ? (currentIndex - 1 + editableCells.length) % editableCells.length
-      : (currentIndex + 1) % editableCells.length;
-    const nextEditor = editableCells[nextIndex].querySelector<HTMLElement>(
+  const getEditor = (rowIdentifier: string, field: string) => {
+    const row = Array.from(tableRef.current?.querySelectorAll<HTMLTableRowElement>("tbody tr[data-row-key]") ?? [])
+      .find((candidate) => candidate.dataset.rowKey === rowIdentifier);
+    const cell = Array.from(row?.querySelectorAll<HTMLTableCellElement>('td[data-erp-grid-field]') ?? [])
+      .find((candidate) => candidate.dataset.erpGridField === field);
+    const editor = cell?.querySelector<HTMLElement>(
       "input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])"
     );
-    nextEditor?.focus();
+    return { cell, editor };
+  };
+
+  const focusGridCell = (rowIdentifier: string, preferredField?: string) => {
+    const fields = preferredField
+      ? [preferredField, ...editableColumnKeys.filter((field) => field !== preferredField)]
+      : editableColumnKeys;
+    for (const field of fields) {
+      const { editor } = getEditor(rowIdentifier, field);
+      if (editor) {
+        editor.focus();
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const focusPendingPasteCell = () => {
+    const pendingFocus = pendingPasteFocusRef.current;
+    pendingPasteFocusRef.current = null;
+    if (!pendingFocus) return;
+    window.requestAnimationFrame(() => {
+      const pastedRow = Array.from(tableRef.current?.querySelectorAll<HTMLTableRowElement>("tbody tr[data-row-key]") ?? [])[pendingFocus.rowIndex];
+      if (pastedRow?.dataset.rowKey) focusGridCell(pastedRow.dataset.rowKey, pendingFocus.field);
+    });
+  };
+
+  useLayoutEffect(() => {
+    if (!focusRequest) return;
+    focusGridCell(focusRequest.rowKey, focusRequest.field);
+  }, [focusRequest?.requestId]);
+
+  useLayoutEffect(() => {
+    const previousKeys = previousVisibleRowKeySetRef.current;
+    const nextKeys = new Set(visibleRowKeys);
+    previousVisibleRowKeySetRef.current = nextKeys;
+    if (!keyboardNavigationEnabled || !previousKeys || !selectedRowKey) return;
+
+    const addedSelectedRowKey = visibleRowKeys.find(
+      (candidateKey) => candidateKey === selectedRowKey && !previousKeys.has(candidateKey)
+    );
+    if (addedSelectedRowKey) focusGridCell(addedSelectedRowKey);
+  }, [keyboardNavigationEnabled, selectedRowKey, visibleRowKeys]);
+
+  const findVerticalCell = (rowIndex: number, field: string, reverse: boolean) => {
+    for (
+      let candidateIndex = rowIndex + (reverse ? -1 : 1);
+      candidateIndex >= 0 && candidateIndex < rows.length;
+      candidateIndex += reverse ? -1 : 1
+    ) {
+      const candidateKey = rowKey(rows[candidateIndex]);
+      if (getEditor(candidateKey, field).editor) return { rowIndex: candidateIndex, field };
+    }
+    return null;
+  };
+
+  const findHorizontalCell = (rowIndex: number, field: string, reverse: boolean) => {
+    const columnIndex = editableColumnKeys.indexOf(field);
+    if (columnIndex === -1) return null;
+
+    for (
+      let candidateColumnIndex = columnIndex + (reverse ? -1 : 1);
+      candidateColumnIndex >= 0 && candidateColumnIndex < editableColumnKeys.length;
+      candidateColumnIndex += reverse ? -1 : 1
+    ) {
+      const candidateField = editableColumnKeys[candidateColumnIndex];
+      if (getEditor(rowKey(rows[rowIndex]), candidateField).editor) {
+        return { rowIndex, field: candidateField };
+      }
+    }
+
+    for (
+      let candidateRowIndex = rowIndex + (reverse ? -1 : 1);
+      candidateRowIndex >= 0 && candidateRowIndex < rows.length;
+      candidateRowIndex += reverse ? -1 : 1
+    ) {
+      const fields = reverse ? [...editableColumnKeys].reverse() : editableColumnKeys;
+      for (const candidateField of fields) {
+        if (getEditor(rowKey(rows[candidateRowIndex]), candidateField).editor) {
+          return { rowIndex: candidateRowIndex, field: candidateField };
+        }
+      }
+    }
+    return null;
   };
 
   const handleTableKeyDownCapture = (event: ReactKeyboardEvent<HTMLTableElement>) => {
-    if (event.key !== "Enter" && event.key !== "Tab") return;
+    if (event.key === "Control" || event.key === "Meta") {
+      modifierPasteHeldRef.current = true;
+      return;
+    }
+    if (!keyboardNavigationEnabled || (event.key !== "Enter" && event.key !== "Tab")) return;
+    if (
+      event.ctrlKey || event.altKey || event.metaKey || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229
+    ) return;
     if (!(event.target instanceof Element)) return;
 
     const currentCell = event.target.closest<HTMLTableCellElement>(
       'td[data-erp-grid-editable="true"]'
     );
-    if (!currentCell) return;
+    const currentRow = currentCell?.closest<HTMLTableRowElement>("tr[data-row-key]");
+    const rowIdentifier = currentRow?.dataset.rowKey;
+    const field = currentCell?.dataset.erpGridField;
+    if (!currentCell || !rowIdentifier || !field) return;
+
+    const rowIndex = rows.findIndex((row) => rowKey(row) === rowIdentifier);
+    if (rowIndex < 0) return;
+    const currentEditor = getEditor(rowIdentifier, field).editor;
+    if (currentCell.getAttribute("aria-invalid") === "true" || currentEditor?.getAttribute("aria-invalid") === "true") return;
+
+    const nextCell = event.key === "Enter"
+      ? findVerticalCell(rowIndex, field, event.shiftKey)
+      : findHorizontalCell(rowIndex, field, event.shiftKey);
+    if (!nextCell) return;
 
     event.preventDefault();
     event.stopPropagation();
-    focusEditableCell(currentCell, event.key === "Tab" && event.shiftKey);
+    const nextRow = rows[nextCell.rowIndex];
+    if (nextCell.rowIndex !== rowIndex) onRowClick?.(nextRow);
+    focusGridCell(rowKey(nextRow), nextCell.field);
   };
 
   const handlePasteCapture = (event: ReactClipboardEvent<HTMLTableElement>) => {
@@ -248,6 +367,12 @@ export function ErpDataGrid<T extends object>({
     const startRowIndex = rows.findIndex((candidate) => rowKey(candidate) === row.dataset.rowKey);
     const startColumnIndex = visibleColumns.findIndex((column) => String(column.field) === cell.dataset.erpGridField);
     if (startRowIndex < 0 || startColumnIndex < 0) return;
+
+    const isModifierPaste = modifierPasteHeldRef.current;
+    const pasteStartRowIndex = isModifierPaste
+      ? pendingPasteStartRowIndexRef.current ?? startRowIndex
+      : startRowIndex;
+    if (isModifierPaste) pendingPasteStartRowIndexRef.current = pasteStartRowIndex;
 
     event.preventDefault();
     let matrix: string[][];
@@ -269,8 +394,15 @@ export function ErpDataGrid<T extends object>({
       return;
     }
 
-    const result = pasteHandler({ startRowIndex, matrix, columns: targetColumns });
+    const result = pasteHandler({ startRowIndex: pasteStartRowIndex, matrix, columns: targetColumns });
     if (result?.error) reportPasteError?.(`붙여넣기 실패: ${result.error}`);
+    if (!result?.error) {
+      pendingPasteFocusRef.current = {
+        rowIndex: pasteStartRowIndex + matrix.length - 1,
+        field: String(targetColumns.at(-1)?.field)
+      };
+      if (!isModifierPaste) focusPendingPasteCell();
+    }
   };
 
   const getCellError = (row: T, column: ErpDataGridColumn<T>, rowIdentifier: string) => {
@@ -332,6 +464,13 @@ export function ErpDataGrid<T extends object>({
           aria-label={ariaLabel}
           className="erp-data-grid__table"
           onKeyDownCapture={handleTableKeyDownCapture}
+          onKeyUpCapture={(event) => {
+            if (event.key === "Control" || event.key === "Meta") {
+              modifierPasteHeldRef.current = false;
+              pendingPasteStartRowIndexRef.current = null;
+              focusPendingPasteCell();
+            }
+          }}
           onPasteCapture={handlePasteCapture}
           ref={tableRef}
           role="grid"
@@ -398,6 +537,7 @@ export function ErpDataGrid<T extends object>({
                   onClick={() => onRowClick?.(row)}
                   onDoubleClick={() => onRowDoubleClick?.(row)}
                   onKeyDown={(event) => {
+                    if (event.target !== event.currentTarget) return;
                     if (event.key === "ArrowDown") {
                       event.preventDefault();
                       focusRow(Math.min(index + 1, rows.length - 1));
@@ -462,6 +602,7 @@ export function ErpDataGrid<T extends object>({
                         }`}
                         data-erp-grid-editable={editable ? "true" : undefined}
                         data-erp-grid-field={String(column.field)}
+                        data-erp-grid-row-key={key}
                         data-erp-grid-cell-state={
                           error ? "error" : column.readOnly ? "readonly" : editable ? "editable" : undefined
                         }

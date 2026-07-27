@@ -55,6 +55,43 @@ test("A: 기본 화면에서 조회 후 수주정보와 수주상세를 표시�
   await expect(lineRow(page, secondLineKey)).toBeVisible();
 });
 
+test("Gate 7: sales detail Enter and Tab follow editable cells without wrapping", async ({ page }) => {
+  await openSalesOrder(page);
+  await searchSalesOrders(page);
+
+  const firstQuantity = lineCell(page, firstLineKey, "QT_SO");
+  const secondQuantity = lineCell(page, secondLineKey, "QT_SO");
+  const firstPrice = lineCell(page, firstLineKey, "UM_SO");
+
+  await firstQuantity.fill("5");
+  await firstQuantity.press("Enter");
+  await expect(secondQuantity).toBeFocused();
+  await secondQuantity.press("Shift+Enter");
+  await expect(firstQuantity).toBeFocused();
+  await firstQuantity.press("Tab");
+  await expect(firstPrice).toBeFocused();
+  await firstPrice.press("Shift+Tab");
+  await expect(firstQuantity).toBeFocused();
+  await expect(page.getByTestId("sales-order-dirty-indicator")).toHaveText("수정됨");
+
+  await page.getByTestId("btn-add-line").click();
+  const newLineKey = "1000::SO2026070001::3";
+  await expect(lineCell(page, newLineKey, "CD_ITEM")).toBeFocused();
+});
+
+test("Gate 7: detail navigation alone does not mark the sales order as changed", async ({ page }) => {
+  await openSalesOrder(page);
+  await searchSalesOrders(page);
+
+  const quantity = lineCell(page, firstLineKey, "QT_SO");
+  const price = lineCell(page, firstLineKey, "UM_SO");
+  await quantity.focus();
+  await quantity.press("Tab");
+
+  await expect(price).toBeFocused();
+  await expect(page.getByTestId("sales-order-dirty-indicator")).toHaveCount(0);
+});
+
 test("B: 거래처 Lookup 선택값을 조회조건에 반영한다", async ({ page }) => {
   await openSalesOrder(page);
 

@@ -401,11 +401,6 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
     selectDetail(nextNoProc);
     setCheckedProcessKeys([]);
     markWorkOrderDirty();
-    window.requestAnimationFrame(() => {
-      document.querySelector<HTMLElement>(
-        `[data-testid="work-order-process-grid-cell-${createWorkOrderProcessKey(nextProcess.CD_FIRM, nextProcess.NO_WO, nextProcess.NO_PROC)}-CD_PROC"]`
-      )?.focus();
-    });
   };
 
   const handleDeleteProcess = async () => {

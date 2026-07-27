@@ -89,6 +89,28 @@ test("A: 생산관리 메뉴에서 작업지시 화면으로 이동하고 기존
   await expect(page.getByTestId("purchase-page-title")).toHaveText("발주등록");
 });
 
+test("Gate 7: process detail Enter follows the same editable column and focuses a new row", async ({ page }) => {
+  await openWorkOrder(page);
+  await searchWorkOrders(page);
+
+  const firstQuantity = processCell(page, firstProcessKey, "QT_PLAN");
+  const secondQuantity = processCell(page, secondProcessKey, "QT_PLAN");
+  const firstResult = processCell(page, firstProcessKey, "QT_RESULT");
+
+  await firstQuantity.fill("5");
+  await firstQuantity.press("Enter");
+  await expect(secondQuantity).toBeFocused();
+  await secondQuantity.press("Shift+Enter");
+  await expect(firstQuantity).toBeFocused();
+  await firstQuantity.press("Tab");
+  await expect(firstResult).toBeFocused();
+  await expect(page.getByTestId("work-order-dirty-indicator")).toHaveText("수정됨");
+
+  await page.getByTestId("wo-btn-add-process").click();
+  const newProcessKey = "1000::WO2026070001::30";
+  await expect(processCell(page, newProcessKey, "CD_PROC")).toBeFocused();
+});
+
 test("B: 조회 결과와 Header-공정상세 연결, 결과 없음 안내를 표시한다", async ({ page }) => {
   await openWorkOrder(page);
   await searchWorkOrders(page);

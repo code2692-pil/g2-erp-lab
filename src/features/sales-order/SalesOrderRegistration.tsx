@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { ErpDataGrid } from "../../components/common/ErpDataGrid";
 import { DirtyIndicator } from "../../components/common/DirtyIndicator";
-import type { ErpDataGridColumn, ErpDataGridCellValue, ErpDataGridPasteRequest } from "../../components/common/ErpDataGrid";
+import type { ErpDataGridColumn, ErpDataGridCellValue, ErpDataGridFocusRequest, ErpDataGridPasteRequest } from "../../components/common/ErpDataGrid";
 import { parseErpGridPasteDate, parseErpGridPasteNumber } from "../../components/common/erpGridPaste";
 import { ErpDialog } from "../../components/common/ErpDialog";
 import { ErpLookupDialog } from "../../components/common/ErpLookupDialog";
@@ -203,6 +203,8 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
     executeDelete
   } = useCrudPage();
   const [checkedLineKeys, setCheckedLineKeys] = useState<string[]>([]);
+  const [lineFocusRequest, setLineFocusRequest] = useState<ErpDataGridFocusRequest | null>(null);
+  const lineFocusRequestId = useRef(0);
   const [tempSeq, setTempSeq] = useState(1);
   const [partnerLookupOpen, setPartnerLookupOpen] = useState(false);
   const [itemLookupOpen, setItemLookupOpen] = useState(false);
@@ -575,6 +577,10 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
     selectDetail(nextNoLine);
     setCheckedLineKeys([]);
     markDirty();
+    setLineFocusRequest({
+      rowKey: createSalesOrderLineKey(nextLine.CD_FIRM, nextLine.NO_SO, nextLine.NO_LINE),
+      requestId: ++lineFocusRequestId.current
+    });
     setMessage("수주상세 행이 추가되었습니다");
   };
 
@@ -1077,6 +1083,8 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
               className="sales-order-line-grid"
               columns={lineGridColumns}
               dataTestId="sales-order-line-grid"
+              focusRequest={lineFocusRequest}
+              keyboardNavigation
               emptyMessage="수주정보 행을 선택하면 상세 목록이 표시됩니다."
               lookupDisabled={isLoading || isSaving || itemLookupOpen}
               onPaste={handleLinePaste}

@@ -29,6 +29,29 @@ test("A: 메뉴 전환 후 발주 조회와 Header-Line 표시", async ({ page }
   await expect(page.getByTestId("page-title")).toHaveText("수주등록");
 });
 
+test("Gate 7: purchase detail Tab skips calculated cells and focuses a new row", async ({ page }) => {
+  await openPurchaseOrder(page);
+  await page.getByTestId("po-btn-search").click();
+  await expect(page.getByTestId(`purchase-line-grid-row-${lineKey}`)).toBeVisible();
+
+  const quantity = page.getByTestId(`purchase-line-grid-cell-${lineKey}-QT_PO`);
+  const price = page.getByTestId(`purchase-line-grid-cell-${lineKey}-UM_PO`);
+  const deliveryDate = page.getByTestId(`purchase-line-grid-cell-${lineKey}-DT_DLV`);
+
+  await quantity.fill("5");
+  await quantity.press("Tab");
+  await expect(price).toBeFocused();
+  await price.press("Tab");
+  await expect(deliveryDate).toBeFocused();
+  await deliveryDate.press("Shift+Tab");
+  await expect(price).toBeFocused();
+  await expect(page.getByTestId("purchase-order-dirty-indicator")).toHaveText("수정됨");
+
+  await page.getByTestId("po-btn-add-line").click();
+  const newLineKey = "1000::PO2026070001::3";
+  await expect(page.getByTestId(`purchase-line-grid-cell-${newLineKey}-CD_ITEM`)).toBeFocused();
+});
+
 test("B: 신규 발주 Validation, Lookup, 금액 계산과 저장", async ({ page }) => {
   await openPurchaseOrder(page);
   await page.getByTestId("po-btn-new").click();

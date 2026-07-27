@@ -10,6 +10,7 @@ import {
   Trash2
 } from "lucide-react";
 import { ErpDataGrid } from "../../components/common/ErpDataGrid";
+import { DirtyIndicator } from "../../components/common/DirtyIndicator";
 import type { ErpDataGridColumn, ErpDataGridCellValue, ErpDataGridPasteRequest } from "../../components/common/ErpDataGrid";
 import { parseErpGridPasteDate, parseErpGridPasteNumber } from "../../components/common/erpGridPaste";
 import { ErpDialog } from "../../components/common/ErpDialog";
@@ -517,7 +518,7 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
         selectMaster(tempNo);
         setCheckedLineKeys([]);
         setTempSeq((seq) => seq + 1);
-        markDirty();
+        clearDirty();
         return nextHeader;
       },
       onSuccess: () => notify("success", "신규 수주가 추가되었습니다."),
@@ -951,6 +952,7 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
             <div>
               <h1 data-testid="page-title">수주등록</h1>
               <p>수주 정보를 조회하고 등록합니다.</p>
+              <DirtyIndicator dataTestId="sales-order-dirty-indicator" dirty={isDirty} />
             </div>
             <PageToolbar
               processing={isLoading || isSaving}

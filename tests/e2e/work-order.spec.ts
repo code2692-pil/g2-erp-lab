@@ -195,15 +195,19 @@ test("F: dirty 상태는 Header 선택과 메뉴 이동 전 변경사항 폐기�
   await openWorkOrder(page);
   await searchWorkOrders(page);
   await headerCell(page, firstHeaderKey, "QT_WO").fill("101");
+  await expect(page.getByTestId("work-order-dirty-indicator")).toHaveText("수정됨");
 
   await headerRow(page, secondHeaderKey).click();
   await expect(page.getByTestId("confirm-dialog")).toContainText("저장하지 않은 변경사항이 있습니다.");
   await page.getByTestId("confirm-dialog-cancel").click();
   await expect(processRow(page, firstProcessKey)).toBeVisible();
+  await expect(headerCell(page, firstHeaderKey, "QT_WO")).toHaveValue("101");
+  await expect(page.getByTestId("work-order-dirty-indicator")).toBeVisible();
 
   await headerRow(page, secondHeaderKey).click();
   await page.getByTestId("confirm-dialog-confirm").click();
   await expect(processRow(page, "1000::WO2026070002::10")).toBeVisible();
+  await expect(page.getByTestId("work-order-dirty-indicator")).toHaveCount(0);
   await headerCell(page, secondHeaderKey, "QT_WO").fill("241");
   await page.getByTestId("nav-sales-order").click();
   await expect(page.getByTestId("confirm-dialog")).toContainText("저장하지 않은 변경사항이 있습니다.");

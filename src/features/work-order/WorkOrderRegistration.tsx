@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Building2, ChevronRight, Plus, Rows3, Save, Search, Trash2 } from "lucide-react";
 import { ErpDataGrid, registerErpDataGridPasteHandler } from "../../components/common/ErpDataGrid";
+import { DirtyIndicator } from "../../components/common/DirtyIndicator";
 import type { ErpDataGridCellValue, ErpDataGridColumn, ErpDataGridPasteRequest } from "../../components/common/ErpDataGrid";
 import { parseErpGridPasteNumber } from "../../components/common/erpGridPaste";
 import { ErpDialog } from "../../components/common/ErpDialog";
@@ -278,10 +279,11 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
 
   const selectHeader = async (header: WorkOrderHeader) => {
     const nextKey = createWorkOrderHeaderKey(header.CD_FIRM, header.NO_WO);
-    if (nextKey !== selectedMasterKey && !(await confirmDiscardChanges())) return;
+    if (nextKey !== selectedMasterKey && !(await confirmDiscardChanges())) return false;
     if (nextKey !== selectedMasterKey) clearDirty();
     selectMaster(nextKey);
     setCheckedProcessKeys([]);
+    return true;
   };
 
   const updateHeader = (header: WorkOrderHeader, field: HeaderEditableField, value: ErpDataGridCellValue) => {
@@ -378,7 +380,7 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
         selectMaster(createWorkOrderHeaderKey(header.CD_FIRM, header.NO_WO));
         setCheckedProcessKeys([]);
         setTempSequence((sequence) => sequence + 1);
-        markWorkOrderDirty();
+        clearDirty();
         return header;
       },
       onSuccess: () => notify("success", "신규 작업지시가 추가되었습니다."),
@@ -542,18 +544,18 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
     setEquipmentLookupOpen(true);
   };
 
-  const handleLookupCellDoubleClick = (
+  const handleLookupCellDoubleClick = async (
     row: WorkOrderHeader | WorkOrderProcess,
     field: keyof WorkOrderHeader | keyof WorkOrderProcess
   ) => {
     if (processing || itemLookupOpen || productionLineLookupOpen || processLookupOpen || equipmentLookupOpen) return;
     if (field === "CD_ITEM" && !("NO_PROC" in row)) {
+      if (!(await selectHeader(row))) return;
       headerLookupKeyRef.current = createWorkOrderHeaderKey(row.CD_FIRM, row.NO_WO);
-      void selectHeader(row);
       setItemLookupOpen(true);
     } else if (field === "CD_LINE" && !("NO_PROC" in row)) {
+      if (!(await selectHeader(row))) return;
       headerLookupKeyRef.current = createWorkOrderHeaderKey(row.CD_FIRM, row.NO_WO);
-      void selectHeader(row);
       setProductionLineLookupOpen(true);
     } else if (field === "CD_PROC" && "NO_PROC" in row) {
       processLookupKeyRef.current = createWorkOrderProcessKey(row.CD_FIRM, row.NO_WO, row.NO_PROC);
@@ -661,7 +663,7 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
       </aside>
       <main aria-busy={processing} className="workbench">
         <header className="page-header">
-          <div><h1 data-testid="work-order-page-title">작업지시등록</h1><p>작업지시 정보를 조회하고 등록합니다.</p></div>
+          <div><h1 data-testid="work-order-page-title">작업지시등록</h1><p>작업지시 정보를 조회하고 등록합니다.</p><DirtyIndicator dataTestId="work-order-dirty-indicator" dirty={isDirty} /></div>
           <PageToolbar processing={processing} actions={[
             { dataTestId: "wo-btn-search", label: isLoading ? "조회 중..." : "조회", icon: <Search size={15} />, onClick: () => void handleSearch(), disabled: isLoading },
             { dataTestId: "wo-btn-new", label: "신규", icon: <Plus size={15} />, onClick: () => void handleNew(), disabled: isSaving },

@@ -313,6 +313,24 @@ test("UX B: 변경 중 Header 이동은 계속 편집 또는 폐기를 선택할
   await expect(lineRow(page, "1000::SO2026070002::1")).toBeVisible();
 });
 
+test("Dirty guard: sales search keeps edits on cancel and clears state after discard", async ({ page }) => {
+  await openSalesOrder(page);
+  await searchSalesOrders(page);
+  await lineCell(page, firstLineKey, "QT_SO").fill("3");
+
+  await expect(page.getByTestId("sales-order-dirty-indicator")).toHaveText("수정됨");
+  await page.getByTestId("btn-search").click();
+  await expect(page.getByTestId("confirm-dialog")).toBeVisible();
+  await page.getByTestId("confirm-dialog-cancel").click();
+  await expect(lineCell(page, firstLineKey, "QT_SO")).toHaveValue("3");
+  await expect(page.getByTestId("sales-order-dirty-indicator")).toBeVisible();
+
+  await page.getByTestId("btn-search").click();
+  await page.getByTestId("confirm-dialog-confirm").click();
+  await expect(headerRow(page)).toBeVisible();
+  await expect(page.getByTestId("sales-order-dirty-indicator")).toHaveCount(0);
+});
+
 async function openMailImport(page: Page) {
   await page.getByTestId("btn-mail-import").click();
   await expect(page.getByTestId("mail-order-import-dialog")).toBeVisible();

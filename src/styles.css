@@ -1677,6 +1677,20 @@ button:disabled {
   background: #fffafa;
 }
 
+.erp-dirty-indicator {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  margin-top: 4px;
+  padding: 1px 8px;
+  border: 1px solid #b8781b;
+  border-radius: 999px;
+  color: #714b10;
+  background: #fff6df;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 @media (max-width: 1366px) {
   .workbench {
     grid-template-rows: auto auto minmax(190px, 1fr) minmax(175px, 0.9fr) auto;

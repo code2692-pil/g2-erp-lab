@@ -150,3 +150,21 @@ test("Gate 3: invalid numeric and date cells remain atomic and recover on the ne
   await page.keyboard.press("Control+V");
   await expect(deliveryDate).toHaveValue("2026-12-31");
 });
+
+test("Dirty guard: purchase new keeps edits on cancel and starts clean after discard", async ({ page }) => {
+  await openPurchaseOrder(page);
+  await page.getByTestId("po-btn-search").click();
+  await page.getByTestId(`purchase-line-grid-cell-${lineKey}-QT_PO`).fill("3");
+
+  await expect(page.getByTestId("purchase-order-dirty-indicator")).toHaveText("수정됨");
+  await page.getByTestId("po-btn-new").click();
+  await expect(page.getByTestId("confirm-dialog")).toBeVisible();
+  await page.getByTestId("confirm-dialog-cancel").click();
+  await expect(page.getByTestId(`purchase-line-grid-cell-${lineKey}-QT_PO`)).toHaveValue("3");
+  await expect(page.getByTestId("purchase-order-dirty-indicator")).toBeVisible();
+
+  await page.getByTestId("po-btn-new").click();
+  await page.getByTestId("confirm-dialog-confirm").click();
+  await expect(page.getByTestId("purchase-header-grid-row-1000::TEMP_PO_001")).toBeVisible();
+  await expect(page.getByTestId("purchase-order-dirty-indicator")).toHaveCount(0);
+});

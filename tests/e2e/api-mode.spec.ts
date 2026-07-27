@@ -227,6 +227,7 @@ test("API UI: sales order shows 400 and network save errors, then recovers", asy
     await expect(page.getByTestId("confirm-dialog")).toHaveCount(0);
     await expect(page.getByTestId("status-message")).toContainText("저장 중 오류가 발생했습니다.");
     await expect(page.getByTestId("btn-save")).toBeEnabled();
+    await expect(page.getByTestId("sales-order-dirty-indicator")).toBeVisible();
     expect(badRequestCount).toBe(1);
     await page.unroute(endpoint, badRequest);
 
@@ -234,6 +235,7 @@ test("API UI: sales order shows 400 and network save errors, then recovers", asy
     await page.getByTestId("btn-save").click();
     await page.getByTestId("confirm-dialog-confirm").click();
     expect((await recoveredFrom400).status()).toBe(200);
+    await expect(page.getByTestId("sales-order-dirty-indicator")).toHaveCount(0);
 
     await quantity.fill("5");
     const networkFailure = async (route: import("@playwright/test").Route) => {
@@ -247,6 +249,7 @@ test("API UI: sales order shows 400 and network save errors, then recovers", asy
     await expect(page.getByTestId("confirm-dialog")).toHaveCount(0);
     await expect(page.getByTestId("status-message")).toContainText("저장 중 오류가 발생했습니다.");
     await expect(page.getByTestId("btn-save")).toBeEnabled();
+    await expect(page.getByTestId("sales-order-dirty-indicator")).toBeVisible();
     expect(networkFailureCount).toBe(1);
     await page.unroute(endpoint, networkFailure);
 
@@ -254,6 +257,7 @@ test("API UI: sales order shows 400 and network save errors, then recovers", asy
     await page.getByTestId("btn-save").click();
     await page.getByTestId("confirm-dialog-confirm").click();
     expect((await recoveredFromNetworkFailure).status()).toBe(200);
+    await expect(page.getByTestId("sales-order-dirty-indicator")).toHaveCount(0);
   } finally {
     await request.delete(endpoint);
   }

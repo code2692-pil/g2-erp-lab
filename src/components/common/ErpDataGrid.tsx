@@ -452,6 +452,7 @@ export function ErpDataGrid<T extends object>({
                       <td
                         aria-describedby={error ? errorId : undefined}
                         aria-invalid={Boolean(error)}
+                        aria-readonly={column.readOnly || undefined}
                         className={`erp-data-grid__cell erp-data-grid__cell--${align}${
                           column.readOnly ? " erp-data-grid__cell--readonly" : ""
                         }${editable ? " erp-data-grid__cell--editable" : ""}${
@@ -461,6 +462,9 @@ export function ErpDataGrid<T extends object>({
                         }`}
                         data-erp-grid-editable={editable ? "true" : undefined}
                         data-erp-grid-field={String(column.field)}
+                        data-erp-grid-cell-state={
+                          error ? "error" : column.readOnly ? "readonly" : editable ? "editable" : undefined
+                        }
                         data-testid={
                           dataTestId
                             ? `${dataTestId}-cell-container-${key}-${String(column.field)}`

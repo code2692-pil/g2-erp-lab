@@ -12,11 +12,16 @@ async function openPurchaseOrder(page: import("@playwright/test").Page) {
 
 test("A: 메뉴 전환 후 발주 조회와 Header-Line 표시", async ({ page }) => {
   await openPurchaseOrder(page);
+  await expect(page.getByTestId("po-btn-search")).toBeVisible();
+  await expect(page.getByTestId("po-btn-new")).toBeVisible();
+  await expect(page.getByTestId("po-btn-save")).toBeVisible();
+  await expect(page.getByTestId("po-btn-delete")).toBeVisible();
   await page.getByTestId("po-btn-search").click();
   await expect(page.getByTestId(`purchase-header-grid-row-${headerKey}`)).toBeVisible();
   const headerCount = await page.getByTestId("purchase-header-grid").locator("tbody tr[data-row-key]").count();
   await expect(page.getByTestId("purchase-header-grid-total-count")).toHaveText(`전체 ${headerCount}건`);
   await page.getByTestId(`purchase-header-grid-row-${headerKey}`).click();
+  await expect(page.getByTestId(`purchase-header-grid-row-${headerKey}`)).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId("purchase-header-grid-selected-document")).toHaveText("선택 문서 PO2026070001");
   await expect(page.getByTestId("purchase-line-grid-total-count")).toHaveText("전체 2건");
   await expect(page.getByTestId(`purchase-line-grid-row-${lineKey}`)).toBeVisible();

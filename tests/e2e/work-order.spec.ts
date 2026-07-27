@@ -77,6 +77,10 @@ async function getMockResponseStartedAt(page: Page) {
 
 test("A: 생산관리 메뉴에서 작업지시 화면으로 이동하고 기존 화면과 전환한다", async ({ page }) => {
   await openWorkOrder(page);
+  await expect(page.getByTestId("wo-btn-search")).toBeVisible();
+  await expect(page.getByTestId("wo-btn-new")).toBeVisible();
+  await expect(page.getByTestId("wo-btn-save")).toBeVisible();
+  await expect(page.getByTestId("wo-btn-delete")).toBeVisible();
   await page.getByTestId("nav-sales-order").click();
   await expect(page.getByTestId("page-title")).toHaveText("수주등록");
   await page.getByTestId("nav-work-order").click();

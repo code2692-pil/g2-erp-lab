@@ -43,8 +43,13 @@ test("A: 기본 화면에서 조회 후 수주정보와 수주상세를 표시�
   await searchSalesOrders(page);
   await expect(page.getByTestId("sales-order-header-grid-total-count")).toHaveText("전체 2건");
   await headerRow(page).click();
+  await expect(headerRow(page)).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId("sales-order-header-grid-selected-document")).toHaveText("선택 문서 SO2026070001");
   await expect(page.getByTestId("sales-order-line-grid-total-count")).toHaveText("전체 2건");
+  const quantity = lineCell(page, firstLineKey, "QT_SO");
+  await quantity.focus();
+  await expect(quantity).toBeFocused();
+  await expect(page.getByTestId(`sales-order-line-grid-cell-container-${firstLineKey}-AM_TOTAL`)).toHaveAttribute("aria-readonly", "true");
 
   await expect(lineRow(page, firstLineKey)).toBeVisible();
   await expect(lineRow(page, secondLineKey)).toBeVisible();

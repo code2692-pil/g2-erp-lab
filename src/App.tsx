@@ -7,9 +7,12 @@ import { WorkOrderRegistration } from "./features/work-order/WorkOrderRegistrati
 import { isApiMode } from "./api/apiClient";
 import { canShowDevelopmentDataManagerClient, developmentDataApi } from "./api/developmentDataApi";
 import { DevelopmentDataManager } from "./features/development-data/DevelopmentDataManager";
+import { AiSolutionCenterPage } from "./features/ai-solution-center/AiSolutionCenterPage";
+
+type AppPage = "sales" | "purchase" | "work" | "development" | "ai";
 
 export default function App() {
-  const [page, setPage] = useState<"sales" | "purchase" | "work" | "development">("sales");
+  const [page, setPage] = useState<AppPage>("sales");
   const [showDevelopmentDataManager, setShowDevelopmentDataManager] = useState(false);
   const purchaseOrderAdapter = isApiMode() ? apiPurchaseOrderAdapter : mockPurchaseOrderAdapter;
 
@@ -22,6 +25,7 @@ export default function App() {
   }, []);
 
   if (page === "development" && showDevelopmentDataManager) return <DevelopmentDataManager onNavigate={setPage} />;
+  if (page === "ai") return <AiSolutionCenterPage onNavigate={setPage} />;
   return page === "sales"
     ? <SalesOrderRegistration onNavigate={setPage} showDevelopmentDataManager={showDevelopmentDataManager} />
     : page === "purchase"

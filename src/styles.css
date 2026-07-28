@@ -18,8 +18,316 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
+}
+
+.ai-solution-center {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+}
+
+.ai-solution-center__top-note,
+.ai-solution-center__form-card,
+.ai-solution-center__result,
+.ai-solution-center__security {
+  border: 1px solid #cfd8e3;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.ai-solution-center__top-note {
+  border-left: 4px solid #1d75d8;
+  padding: 10px 12px;
+  color: #405a72;
+  background: #edf5ff;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.ai-solution-center__tabs,
+.ai-solution-center__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ai-solution-center__tabs button,
+.ai-solution-center__actions button,
+.ai-solution-center__primary-button,
+.ai-solution-center__file-list button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 32px;
+  border: 1px solid #aebac6;
+  border-radius: 4px;
+  padding: 0 11px;
+  color: #2d4156;
+  background: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ai-solution-center__tabs button.is-active,
+.ai-solution-center__primary-button {
+  border-color: #1766bd;
+  color: #ffffff;
+  background: #1d75d8;
+}
+
+.ai-solution-center__tabs button:focus-visible,
+.ai-solution-center__actions button:focus-visible,
+.ai-solution-center__primary-button:focus-visible,
+.ai-solution-center__file-label:focus-within,
+.ai-solution-center__file-list button:focus-visible {
+  outline: 2px solid #8fc3ff;
+  outline-offset: 2px;
+}
+
+.ai-solution-center__tabs button:disabled,
+.ai-solution-center__actions button:disabled,
+.ai-solution-center__primary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.ai-solution-center__panel {
+  display: grid;
+  gap: 12px;
+}
+
+.ai-solution-center__form-card,
+.ai-solution-center__result,
+.ai-solution-center__security {
+  padding: 14px;
+}
+
+.ai-solution-center__form-card h2,
+.ai-solution-center__result h2,
+.ai-solution-center__security h2,
+.ai-solution-center__result h3 {
+  margin: 0;
+  color: #263442;
+}
+
+.ai-solution-center__form-card {
+  display: grid;
+  gap: 12px;
+}
+
+.ai-solution-center__file-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: fit-content;
+  min-height: 34px;
+  border: 1px dashed #6587aa;
+  border-radius: 4px;
+  padding: 0 12px;
+  color: #1c568f;
+  background: #f6faff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ai-solution-center__file-label input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.ai-solution-center__muted,
+.ai-solution-center__file-status,
+.ai-solution-center__guide-notice {
+  margin: 0;
+  color: #617287;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ai-solution-center__file-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ai-solution-center__file-list li {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #d7e0e8;
+  border-radius: 4px;
+  padding: 8px 10px;
+  background: #fafbfd;
+}
+
+.ai-solution-center__file-list li > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ai-solution-center__file-list strong,
+.ai-solution-center__file-list span,
+.ai-solution-center__file-list p {
+  overflow-wrap: anywhere;
+}
+
+.ai-solution-center__file-list span {
+  color: #607185;
+  font-size: 12px;
+}
+
+.ai-solution-center__file-list p {
+  margin: 3px 0 0;
+  color: #95651a;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.ai-solution-center__file-list button {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 0 8px;
+  color: #8a3e3e;
+}
+
+.ai-solution-center__fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ai-solution-center__fields label:first-child:last-child,
+.ai-solution-center__fields label:has(textarea) {
+  grid-column: 1 / -1;
+}
+
+.ai-solution-center textarea {
+  width: 100%;
+  min-height: 76px;
+  resize: vertical;
+  border: 1px solid #b8c5d1;
+  border-radius: 4px;
+  padding: 8px;
+  color: #1d2733;
+  background: #ffffff;
+  line-height: 1.45;
+}
+
+.ai-solution-center textarea:focus {
+  border-color: #1d75d8;
+  outline: 2px solid #d7e9ff;
+}
+
+.ai-solution-center textarea[aria-invalid="true"] {
+  border-color: #c24d4d;
+  background: #fff7f7;
+}
+
+.ai-solution-center__error {
+  margin: 0;
+  color: #bd3333;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ai-solution-center__result {
+  display: grid;
+  gap: 14px;
+}
+
+.ai-solution-center__result section {
+  display: grid;
+  gap: 7px;
+}
+
+.ai-solution-center__result h3 {
+  font-size: 15px;
+}
+
+.ai-solution-center__result p,
+.ai-solution-center__result ul,
+.ai-solution-center__security ul {
+  margin: 0;
+  padding-left: 20px;
+  color: #415468;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.ai-solution-center__result p {
+  padding-left: 0;
+}
+
+.ai-solution-center__result-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin: 0;
+}
+
+.ai-solution-center__result-summary div {
+  display: grid;
+  gap: 2px;
+  border: 1px solid #dce4eb;
+  border-radius: 4px;
+  padding: 7px 9px;
+  background: #fafbfd;
+}
+
+.ai-solution-center__result-summary dt {
+  color: #5f7183;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ai-solution-center__result-summary dd {
+  margin: 0;
+  color: #263442;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: pre-wrap;
+}
+
+.ai-solution-center__result-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ai-solution-center__security {
+  border-color: #d7c993;
+  background: #fffdf6;
+}
+
+.ai-solution-center__security ul {
+  display: grid;
+  gap: 3px;
+  margin-top: 8px;
+}
+
+@media (max-width: 900px) {
+  .ai-solution-center__fields,
+  .ai-solution-center__result-summary,
+  .ai-solution-center__result-columns {
+    grid-template-columns: 1fr;
+  }
 }
 
 .erp-shell {

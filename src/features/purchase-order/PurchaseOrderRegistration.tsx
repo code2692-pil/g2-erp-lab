@@ -23,7 +23,7 @@ import { calculatePurchaseOrderLineAmounts, calculatePurchaseOrderTotals, create
 import { validatePurchaseOrders } from "./validation";
 interface PurchaseOrderRegistrationProps {
     adapter: PurchaseOrderDataAdapter;
-    onNavigate: (page: "sales" | "purchase" | "work" | "development") => void;
+    onNavigate: (page: "sales" | "purchase" | "work" | "development" | "ai") => void;
     showDevelopmentDataManager?: boolean;
 }
 type HeaderField = Exclude<keyof PurchaseOrderHeader, "NO_PO">;
@@ -183,8 +183,10 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, showDevelopment
                 ? "sales"
                 : button?.dataset.testid === "nav-work-order"
                     ? "work"
-                    : button?.dataset.testid === "nav-development-data"
-                        ? "development"
+                : button?.dataset.testid === "nav-development-data"
+                    ? "development"
+                    : button?.dataset.testid === "nav-ai-solution-center"
+                        ? "ai"
                         : null;
             if (!nextPage || !isDirty)
                 return;
@@ -332,6 +334,8 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, showDevelopment
         }); };
     const navigateWorkOrder = async () => { if (!(await confirmDiscardChanges()))
         return; setValidationAttempted(false); clearDirty(); onNavigate("work"); };
+    const navigateAiSolutionCenter = async () => { if (!(await confirmDiscardChanges()))
+        return; setValidationAttempted(false); clearDirty(); onNavigate("ai"); };
     const handleDelete = async () => { if (!selectedNoPo || !selectedHeader) {
         setMessage("선택된 항목이 없습니다.");
         notify("info", "선택된 항목이 없습니다.");
@@ -379,7 +383,7 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, showDevelopment
     const lineColumns: readonly ErpDataGridColumn<PurchaseOrderLine>[] = [{ field: "NO_LINE", headerName: "행", width: 55, readOnly: true }, { field: "CD_ITEM", headerName: "품목코드", width: 110, editable: true, lookup: { instruction: "더블클릭하여 품목을 선택합니다." } }, { field: "NM_ITEM", headerName: "품목명", width: 150, editable: true }, { field: "STND_ITEM", headerName: "규격", width: 130, editable: true }, { field: "UNIT_ITEM", headerName: "단위", width: 60, editable: true }, { field: "QT_PO", headerName: "수량", width: 85, editable: true, dataType: "number", sum: true }, { field: "UM_PO", headerName: "단가", width: 100, editable: true, dataType: "number" }, { field: "AM_SUPPLY", headerName: "공급가", width: 105, readOnly: true, dataType: "number", sum: true, formatter: (value) => money.format(Number(value)) }, { field: "AM_VAT", headerName: "부가세", width: 95, readOnly: true, dataType: "number", sum: true, formatter: (value) => money.format(Number(value)) }, { field: "AM_TOTAL", headerName: "합계", width: 110, readOnly: true, dataType: "number", sum: true, formatter: (value) => money.format(Number(value)) }, { field: "DT_DLV", headerName: "납기일", width: 115, editable: true, dataType: "date" }, { field: "CD_WH", headerName: "창고", width: 100, editable: true, lookup: { instruction: "더블클릭하여 창고를 선택합니다." } }, { field: "NM_WH", headerName: "창고명", width: 130, editable: true }, { field: "DC_RMK", headerName: "비고", width: 140, editable: true }];
     return <>
       <div className="erp-shell">
-        <aside className="side-nav"><div className="brand"><Building2 size={20}/><strong>SMART ERP</strong></div><nav><div className="menu-title">영업관리</div><button className="menu-item" data-testid="nav-sales-order" onClick={() => onNavigate("sales")}>수주등록</button><div className="menu-title">구매관리</div><div className="menu-group"><ChevronRight size={14}/><span>발주관리</span></div><button className="menu-item active" data-testid="nav-purchase-order">발주등록</button><div className="menu-title">생산관리</div><div className="menu-group"><ChevronRight size={14}/><span>작업지시관리</span></div><button className="menu-item" data-testid="nav-work-order" onClick={() => void navigateWorkOrder()} type="button">작업지시등록</button>{showDevelopmentDataManager && <><div className="menu-title">개발 도구</div><button className="menu-item" data-testid="nav-development-data" onClick={() => onNavigate("development")} type="button">테스트 데이터 관리</button></>}</nav></aside>
+        <aside className="side-nav"><div className="brand"><Building2 size={20}/><strong>SMART ERP</strong></div><nav><div className="menu-title">영업관리</div><button className="menu-item" data-testid="nav-sales-order" onClick={() => onNavigate("sales")}>수주등록</button><div className="menu-title">구매관리</div><div className="menu-group"><ChevronRight size={14}/><span>발주관리</span></div><button className="menu-item active" data-testid="nav-purchase-order">발주등록</button><div className="menu-title">생산관리</div><div className="menu-group"><ChevronRight size={14}/><span>작업지시관리</span></div><button className="menu-item" data-testid="nav-work-order" onClick={() => void navigateWorkOrder()} type="button">작업지시등록</button><div className="menu-title">AI 솔루션</div><button className="menu-item" data-testid="nav-ai-solution-center" onClick={() => void navigateAiSolutionCenter()} type="button">AI 솔루션 센터</button>{showDevelopmentDataManager && <><div className="menu-title">개발 도구</div><button className="menu-item" data-testid="nav-development-data" onClick={() => onNavigate("development")} type="button">테스트 데이터 관리</button></>}</nav></aside>
         <main aria-busy={isLoading || isSaving} className="workbench" data-processing-state={operation}>
           <header className="page-header"><div><h1 data-testid="purchase-page-title">발주등록</h1><p>PUR_POH / PUR_POL mock 입력 샘플</p><DirtyIndicator dataTestId="purchase-order-dirty-indicator" dirty={isDirty} /></div><PageToolbar actions={[{ dataTestId: "po-btn-search", label: isLoading ? "조회 중..." : "조회", icon: <Search size={15}/>, onClick: handleSearch, disabled: isSaving }, { dataTestId: "po-btn-new", label: "신규", icon: <Plus size={15}/>, onClick: handleNew, disabled: isLoading || isSaving }, { dataTestId: "po-btn-add-line", label: "행추가", icon: <Rows3 size={15}/>, onClick: handleAddLine, disabled: isLoading || isSaving }, { dataTestId: "po-btn-delete-line", label: "행삭제", icon: <Trash2 size={15}/>, onClick: handleDeleteLine, disabled: isLoading || isSaving }, { dataTestId: "po-btn-save", label: operation === "saving" ? "저장 중..." : "저장", icon: <Save size={15}/>, onClick: handleSave, disabled: isLoading || isSaving, variant: "primary" }, { dataTestId: "po-btn-delete", label: operation === "deleting" ? "삭제 중..." : "삭제", icon: <Trash2 size={15}/>, onClick: handleDelete, disabled: isLoading || isSaving, variant: "danger" }]}/></header>
           <SearchPanel message={message}><label>회사<input data-testid="po-filter-firm" value={filters.firm} onChange={(event) => setFilters({ ...filters, firm: event.target.value })}/></label><label>발주일 From<input type="date" value={filters.from} onChange={(event) => setFilters({ ...filters, from: event.target.value })}/></label><label>발주일 To<input type="date" value={filters.to} onChange={(event) => setFilters({ ...filters, to: event.target.value })}/></label><label>발주번호<input data-testid="po-filter-no" value={filters.no} onChange={(event) => setFilters({ ...filters, no: event.target.value })}/></label><label>거래처<input data-testid="po-filter-partner" value={filters.partner} onChange={(event) => setFilters({ ...filters, partner: event.target.value })}/></label><label>상태<select data-testid="po-filter-status" value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">전체</option>{statuses.map((status) => <option key={status}>{status}</option>)}</select></label></SearchPanel>

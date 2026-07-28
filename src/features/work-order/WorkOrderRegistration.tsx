@@ -28,7 +28,7 @@ import {
 } from "./utils";
 import { getWorkOrderWarnings, validateWorkOrders } from "./validation";
 
-type NavigationPage = "sales" | "purchase" | "work" | "development";
+type NavigationPage = "sales" | "purchase" | "work" | "development" | "ai";
 type HeaderEditableField = Exclude<keyof WorkOrderHeader, "NO_WO">;
 type ProcessEditableField = Exclude<keyof WorkOrderProcess, "CD_FIRM" | "NO_WO" | "NO_PROC">;
 
@@ -667,6 +667,8 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
           <div className="menu-title">생산관리</div>
           <div className="menu-group"><ChevronRight size={14} /><span>작업지시관리</span></div>
           <button className="menu-item active" data-testid="nav-work-order" type="button">작업지시등록</button>
+          <div className="menu-title">AI 솔루션</div>
+          <button className="menu-item" data-testid="nav-ai-solution-center" onClick={() => void handleNavigate("ai")} type="button">AI 솔루션 센터</button>
           {showDevelopmentDataManager && <><div className="menu-title">개발 도구</div><button className="menu-item" data-testid="nav-development-data" onClick={() => void handleNavigate("development")} type="button">테스트 데이터 관리</button></>}
         </nav>
       </aside>

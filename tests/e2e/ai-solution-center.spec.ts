@@ -349,6 +349,87 @@ test("Gate 12-4 D: customer analysis exposes and copies a consultant handover su
   expectNoBrowserProblems(problems);
 });
 
+test("Gate 12-5 A: balanced priorities compare four traceability options with a roadmap", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await openCenter(page);
+  await page.getByTestId("priority-preset-balanced").focus();
+  await expect(page.getByTestId("priority-preset-balanced")).toBeFocused();
+  await page.getByTestId("priority-preset-balanced").click();
+  await expect(page.getByTestId("priority-value-traceability")).toContainText("3 / 5");
+  await openCustomerAnalysis(page);
+  await expect(page.getByTestId("option-comparison")).toBeVisible();
+  await expect(page.locator("[data-testid^='option-trace-']")).toHaveCount(4);
+  await expect(page.getByTestId("option-trace-integrated-lot")).toContainText("1순위");
+  await expect(page.getByTestId("option-recommended-trace-integrated-lot")).toHaveText("추천 1순위");
+  await expect(page.getByTestId("option-roadmap").locator("article")).toHaveCount(3);
+  await expect(page.getByTestId("option-reconsideration")).toBeVisible();
+  expectNoBrowserProblems(problems);
+});
+
+test("Gate 12-5 B: traceability re-comparison preserves the analysis revision and company snapshot", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  await applyCompanyKnowledgeSample(page);
+  await openCustomerAnalysis(page);
+  await expect(page.getByTestId("analysis-revision-status")).toContainText("1 / 3");
+  await expect(page.getByTestId("company-knowledge-reference")).toBeVisible();
+  await page.getByTestId("priority-preset-traceability").click();
+  await page.getByTestId("recompare-options").click();
+  await expect(page.getByTestId("comparison-status")).toHaveText("비교 기준이 변경되었습니다.");
+  await expect(page.getByTestId("analysis-revision-status")).toContainText("1 / 3");
+  await expect(page.getByTestId("company-knowledge-reference")).toBeVisible();
+  await expect(page.getByTestId("option-trace-integrated-lot")).toContainText("1순위");
+  expectNoBrowserProblems(problems);
+});
+
+test("Gate 12-5 C: field-burden priority changes the baseline to the low-burden option", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  await page.getByTestId("priority-preset-field-burden").click();
+  await expect(page.getByTestId("priority-value-fieldBurden")).toContainText("5 / 5");
+  await openCustomerAnalysis(page);
+  await expect(page.getByTestId("option-trace-lot-centered")).toContainText("1순위");
+  await expect(page.getByTestId("ai-result-recommendation")).toHaveText("LOT 중심 관리");
+  expectNoBrowserProblems(problems);
+});
+
+test("Gate 12-5 D: scalability priority exposes a staged serial expansion roadmap", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  await page.getByTestId("priority-preset-scalability").click();
+  await openCustomerAnalysis(page);
+  await expect(page.getByTestId("option-trace-staged-serial")).toContainText("1순위");
+  await expect(page.getByTestId("option-roadmap")).toContainText("시범 품목");
+  await expect(page.getByTestId("option-roadmap")).toContainText("시범 공정");
+  await expect(page.getByTestId("option-reconsideration")).toBeVisible();
+  expectNoBrowserProblems(problems);
+});
+
+test("Gate 12-5 E: handover and Markdown include priorities, comparison, and roadmap without estimates", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://127.0.0.1:5173" });
+  await openCustomerAnalysis(page);
+  await fillTwoFollowupAnswers(page);
+  await page.getByTestId("followup-refine").click();
+  await expect(page.getByTestId("analysis-revision-status")).toContainText("2 / 3");
+  await page.getByTestId("priority-preset-scalability").click();
+  await page.getByTestId("recompare-options").click();
+  await page.getByTestId("handover-copy").click();
+  const handover = await page.evaluate(() => navigator.clipboard.readText());
+  expect(handover).toContain("선택 우선순위");
+  expect(handover).toContain("추천 1순위");
+  expect(handover).toContain("3단계 로드맵");
+  await page.getByTestId("result-copy").click();
+  const markdown = await page.evaluate(() => navigator.clipboard.readText());
+  expect(markdown).toContain("## 솔루션 대안 비교");
+  expect(markdown).toContain("## 적용 로드맵");
+  expect(markdown).toContain("비교 점수는 PoC의 상대 우선순위");
+  expect(markdown).not.toMatch(/\b\d+\s*(원|일|개월|주)\b/);
+  expectNoBrowserProblems(problems);
+});
+
 test("Gate 12-4 E: full Markdown includes evidence and handover without copying the whole inquiry", async ({ page }) => {
   const problems = collectBrowserProblems(page);
   await openCenter(page);

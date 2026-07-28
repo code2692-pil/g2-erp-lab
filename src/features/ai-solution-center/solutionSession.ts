@@ -1,4 +1,4 @@
-import type { ClarificationAnswer, CompanyKnowledgeArticle, InputEvidence, SolutionResult, SolutionRevision, SolutionSession, SolutionSource } from "./solutionTypes";
+import type { ClarificationAnswer, CompanyKnowledgeArticle, InputEvidence, SolutionOptionComparison, SolutionResult, SolutionRevision, SolutionSession, SolutionSource } from "./solutionTypes";
 
 const maximumAnalysisRevision = 3;
 
@@ -31,12 +31,12 @@ function firstEvidenceValue(result: SolutionResult, sourceTypes: readonly InputE
   return item.fileName ? `${item.fileName}: ${item.excerpt}` : item.excerpt;
 }
 
-export function createSolutionSession(mode: SolutionSource, originalRequest: SolutionSession["originalRequest"], result: SolutionResult, companyKnowledgeSnapshot: readonly CompanyKnowledgeArticle[] = [], createdAt = new Date().toISOString()): SolutionSession {
+export function createSolutionSession(mode: SolutionSource, originalRequest: SolutionSession["originalRequest"], result: SolutionResult, companyKnowledgeSnapshot: readonly CompanyKnowledgeArticle[] = [], createdAt = new Date().toISOString(), optionComparison?: SolutionOptionComparison): SolutionSession {
   const revision: SolutionRevision = { revision: 1, createdAt, result, clarificationAnswers: [], currentConfidence: result.confidence };
-  return { mode, originalRequest, companyKnowledgeSnapshot, revisions: [revision], activeResult: result };
+  return { mode, originalRequest, companyKnowledgeSnapshot, revisions: [revision], activeResult: result, optionComparison };
 }
 
-export function appendSolutionRevision(session: SolutionSession, result: SolutionResult, clarificationAnswers: readonly ClarificationAnswer[], createdAt = new Date().toISOString()): SolutionSession {
+export function appendSolutionRevision(session: SolutionSession, result: SolutionResult, clarificationAnswers: readonly ClarificationAnswer[], createdAt = new Date().toISOString(), optionComparison?: SolutionOptionComparison): SolutionSession {
   const previous = session.revisions.at(-1);
   const revision: SolutionRevision = {
     revision: (previous?.revision ?? 0) + 1,
@@ -46,7 +46,11 @@ export function appendSolutionRevision(session: SolutionSession, result: Solutio
     previousConfidence: previous?.currentConfidence,
     currentConfidence: result.confidence
   };
-  return { ...session, revisions: [...session.revisions, revision], activeResult: result };
+  return { ...session, revisions: [...session.revisions, revision], activeResult: result, optionComparison: optionComparison ?? session.optionComparison };
+}
+
+export function updateSolutionOptionComparison(session: SolutionSession, optionComparison: SolutionOptionComparison): SolutionSession {
+  return { ...session, optionComparison };
 }
 
 export function activeRevision(session: SolutionSession) {
@@ -81,6 +85,18 @@ export function analysisModeLabel(mode: SolutionSource) {
   return mode === "consultant-file" ? "컨설턴트 파일 분석" : "고객 업무 Q&A";
 }
 
+function priorityLabel(key: string) {
+  const labels: Record<string, string> = {
+    traceability: "추적성",
+    fieldBurden: "현장 부담",
+    implementationEase: "구현 용이성",
+    costEfficiency: "비용 부담",
+    deploymentSpeed: "도입 속도",
+    scalability: "확장성"
+  };
+  return labels[key] ?? key;
+}
+
 export function consultantHandoverDetails(session: SolutionSession, unresolved: readonly string[]): readonly ConsultantHandoverDetail[] {
   const revision = activeRevision(session);
   const result = session.activeResult;
@@ -93,12 +109,28 @@ export function consultantHandoverDetails(session: SolutionSession, unresolved: 
     ? [request.currentManagement, request.desiredStandard].filter((item): item is string => Boolean(item?.trim())).map((item) => item.trim()).join(" / ")
     : firstEvidenceValue(result, ["FILE_NOTE", "COMMON_CONTEXT"], "정보 미입력으로 컨설턴트 확인 필요");
 
+  const comparison = session.optionComparison;
+  const top = comparison?.options[0];
+  const second = comparison?.options[1];
+  const comparisonDetails: readonly ConsultantHandoverDetail[] = comparison && top ? [
+    { label: "선택 우선순위", value: Object.entries(comparison.priorities).map(([key, value]) => `${priorityLabel(key)} ${value}/5`).join(" / ") },
+    { label: "비교 대안 수", value: `${comparison.options.length}개` },
+    { label: "추천 1순위", value: top.title },
+    { label: "추천 2순위", value: second?.title ?? "없음" },
+    { label: "1순위 선정 이유", value: comparison.recommendationReason },
+    { label: "1순위 주요 강점", value: top.strengths.join(" / ") },
+    { label: "1순위 주요 유의점", value: top.weaknesses.join(" / ") },
+    { label: "1순위 적용 전제", value: top.prerequisites.join(" / ") },
+    { label: "1순위 3단계 로드맵", value: top.roadmap.map((phase) => phase.title).join(" / ") },
+    { label: "적용 중 재검토 조건", value: top.reconsiderationConditions.join(" / ") }
+  ] : [];
+
   return [
     { label: "문의 유형", value: analysisModeLabel(session.mode) },
     { label: "현재 상황", value: currentSituation },
     { label: "고객·현장 요구", value: needs || "정보 미입력으로 컨설턴트 확인 필요" },
     { label: "주요 제약사항", value: request.fieldConstraints?.trim() || "정보 미입력으로 컨설턴트 확인 필요" },
-    { label: "추천 기본 방향", value: result.recommendation.title },
+    { label: "추천 기본 방향", value: top?.title ?? result.recommendation.title },
     { label: "대안", value: result.alternatives.join(" / ") || "정보 미입력으로 컨설턴트 확인 필요" },
     { label: "관련 업무영역", value: result.inferredDomain },
     { label: "관련 부서", value: "정보 미입력으로 컨설턴트 확인 필요" },
@@ -110,6 +142,7 @@ export function consultantHandoverDetails(session: SolutionSession, unresolved: 
     { label: "회사 지식 사용", value: result.companyKnowledgeUsed ? "사용" : "미사용" },
     { label: "현재 신뢰도", value: result.confidence },
     { label: "분석 차수", value: `${revision?.revision ?? 1}차 분석` },
+    ...comparisonDetails,
     { label: "PoC 범위", value: "로컬 템플릿 기반 검토 요약이며 확정 업무 규칙 또는 실제 운영 판단이 아닙니다." }
   ];
 }
@@ -127,6 +160,26 @@ export function buildSolutionMarkdown(session: SolutionSession, unresolved: read
   const result = session.activeResult;
   const answers = revision?.clarificationAnswers ?? [];
   const knowledgeEvidence = result.evidence.map((item) => `${item.title} (${item.category}, ${item.sourceType === "COMPANY" ? "회사 지식" : "일반 지식"}) · ${item.reason}`);
+  const comparison = session.optionComparison;
+  const top = comparison?.options[0];
+  const comparisonMarkdown = comparison ? [
+    "## 솔루션 선택 우선순위",
+    Object.entries(comparison.priorities).map(([key, value]) => `- ${priorityLabel(key)}: ${value}/5`).join("\n"),
+    "\n## 솔루션 대안 비교",
+    ...comparison.options.map((option) => [
+      `### ${option.rank}순위 · ${escapeMarkdownText(option.title)}${option.recommended ? " (추천 1순위)" : ""}`,
+      escapeMarkdownText(option.summary),
+      `- 강점: ${option.strengths.map(escapeMarkdownText).join(" / ")}`,
+      `- 유의점: ${option.weaknesses.map(escapeMarkdownText).join(" / ")}`,
+      `- 적합한 상황: ${option.suitableWhen.map(escapeMarkdownText).join(" / ")}`,
+      `- 부적합한 상황: ${option.unsuitableWhen.map(escapeMarkdownText).join(" / ")}`,
+      `- 적용 전제: ${option.prerequisites.map(escapeMarkdownText).join(" / ")}`
+    ].join("\n")),
+    `\n## 추천 1순위 선정 이유\n${escapeMarkdownText(comparison.recommendationReason)}`,
+    top ? `\n## 적용 로드맵 · ${escapeMarkdownText(top.title)}\n${top.roadmap.map((phase) => `### ${escapeMarkdownText(phase.title)}\n${phase.steps.map((step) => `- ${escapeMarkdownText(step)}`).join("\n")}`).join("\n\n")}` : "",
+    top ? bulletSection("적용 중 재검토가 필요한 조건", top.reconsiderationConditions) : "",
+    `\n## 비교 점수 안내\n${escapeMarkdownText(comparison.scoreNotice)}`
+  ] : [];
   return [
     "# AI 솔루션 센터 분석 결과",
     `- 생성 시각: ${revision?.createdAt ?? ""}`,
@@ -139,7 +192,8 @@ export function buildSolutionMarkdown(session: SolutionSession, unresolved: read
     bulletSection("추가 답변", answers.map((answer) => `${answer.question}: ${answer.answer}`)),
     `\n## 감지 업무영역\n${escapeMarkdownText(result.inferredDomain)}`,
     `\n## 핵심 문제\n${escapeMarkdownText(result.mainProblem)}`,
-    `\n## 추천 기본안\n### ${escapeMarkdownText(result.recommendation.title)}\n${escapeMarkdownText(result.recommendation.rationale)}\n${result.recommendation.actions.map((item) => `- ${escapeMarkdownText(item)}`).join("\n")}`,
+    `\n## 추천 기본안\n### ${escapeMarkdownText(top?.title ?? result.recommendation.title)}\n${escapeMarkdownText(top?.summary ?? result.recommendation.rationale)}\n${(top?.prerequisites ?? result.recommendation.actions).map((item) => `- ${escapeMarkdownText(item)}`).join("\n")}`,
+    ...comparisonMarkdown,
     bulletSection("적용 단계", result.phasedPlan),
     bulletSection("대안", result.alternatives),
     bulletSection("필요한 추가 정보", result.additionalInfo),

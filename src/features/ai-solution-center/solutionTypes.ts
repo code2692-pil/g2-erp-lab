@@ -50,6 +50,51 @@ export interface SolutionRecommendation {
   actions: readonly string[];
 }
 
+export const solutionPriorityKeys = ["traceability", "fieldBurden", "implementationEase", "costEfficiency", "deploymentSpeed", "scalability"] as const;
+
+export type SolutionPriorityKey = (typeof solutionPriorityKeys)[number];
+
+export interface SolutionPriorities {
+  traceability: number;
+  fieldBurden: number;
+  implementationEase: number;
+  costEfficiency: number;
+  deploymentSpeed: number;
+  scalability: number;
+}
+
+export interface SolutionOptionRoadmapPhase {
+  title: string;
+  steps: readonly string[];
+}
+
+export interface SolutionOption {
+  id: string;
+  title: string;
+  summary: string;
+  description: string;
+  strengths: readonly string[];
+  weaknesses: readonly string[];
+  suitableWhen: readonly string[];
+  unsuitableWhen: readonly string[];
+  prerequisites: readonly string[];
+  risks: readonly string[];
+  dimensionScores: SolutionPriorities;
+  weightedScore: number;
+  rank: number;
+  recommended: boolean;
+  humanReviewRequired: true;
+  roadmap: readonly SolutionOptionRoadmapPhase[];
+  reconsiderationConditions: readonly string[];
+}
+
+export interface SolutionOptionComparison {
+  priorities: SolutionPriorities;
+  options: readonly SolutionOption[];
+  recommendationReason: string;
+  scoreNotice: string;
+}
+
 export interface ClarifyingQuestion {
   id: string;
   audience: "컨설턴트" | "개발 담당자";
@@ -151,4 +196,5 @@ export interface SolutionSession {
   companyKnowledgeSnapshot: readonly CompanyKnowledgeArticle[];
   revisions: readonly SolutionRevision[];
   activeResult: SolutionResult;
+  optionComparison?: SolutionOptionComparison;
 }

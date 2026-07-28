@@ -675,6 +675,170 @@ textarea {
   font-weight: 700;
 }
 
+.ai-solution-center__priority-card,
+.ai-solution-center__option-comparison {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #a9c4dc;
+  border-radius: 6px;
+  padding: 14px;
+  background: #f6faff;
+}
+
+.ai-solution-center__priority-card h2,
+.ai-solution-center__option-comparison h3,
+.ai-solution-center__option-comparison h4 {
+  margin: 0;
+  color: #284b6c;
+}
+
+.ai-solution-center__priority-card p,
+.ai-solution-center__option-comparison-heading p,
+.ai-solution-center__option-reason,
+.ai-solution-center__reconsideration p {
+  margin: 4px 0 0;
+  color: #526b83;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ai-solution-center__priority-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.ai-solution-center__priority-presets button,
+.ai-solution-center__option-comparison-heading button {
+  min-height: 32px;
+  border: 1px solid #7ea5c8;
+  border-radius: 4px;
+  padding: 0 9px;
+  color: #174d7e;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ai-solution-center__priority-presets button:focus-visible,
+.ai-solution-center__option-comparison-heading button:focus-visible {
+  outline: 2px solid #8fc3ff;
+  outline-offset: 2px;
+}
+
+.ai-solution-center__priority-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 16px;
+}
+
+.ai-solution-center__priority-fields label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: #324f69;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ai-solution-center__priority-fields label span {
+  display: flex;
+  justify-content: space-between;
+  gap: 7px;
+}
+
+.ai-solution-center__priority-fields input {
+  width: 100%;
+  accent-color: #1d75d8;
+}
+
+.ai-solution-center__option-comparison-heading,
+.ai-solution-center__option-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ai-solution-center__option-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ai-solution-center__option-card,
+.ai-solution-center__option-roadmap article,
+.ai-solution-center__reconsideration {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  border: 1px solid #c6d7e7;
+  border-radius: 5px;
+  padding: 10px;
+  background: #ffffff;
+}
+
+.ai-solution-center__option-card > p,
+.ai-solution-center__option-card-heading p {
+  margin: 0;
+  color: #526b83;
+  font-size: 12px;
+}
+
+.ai-solution-center__option-card-heading strong {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: #114d2f;
+  background: #d9f1e2;
+  font-size: 11px;
+}
+
+.ai-solution-center__option-card dl {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+}
+
+.ai-solution-center__option-card dl > div {
+  display: grid;
+  gap: 1px;
+}
+
+.ai-solution-center__option-card dt {
+  color: #5f7183;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ai-solution-center__option-card dd {
+  margin: 0;
+  color: #35495c;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.ai-solution-center__dimension-scores {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: #3d586f;
+  font-size: 11px;
+}
+
+.ai-solution-center__option-roadmap {
+  display: grid;
+  gap: 8px;
+}
+
+.ai-solution-center__option-roadmap article ul,
+.ai-solution-center__reconsideration ul {
+  margin: 0;
+}
+
 .ai-solution-center__security {
   border-color: #d7c993;
   background: #fffdf6;
@@ -694,7 +858,10 @@ textarea {
   .ai-solution-center__knowledge-list ul,
   .ai-solution-center__evidence > ul,
   .ai-solution-center__input-evidence > ul,
-  .ai-solution-center__handover dl {
+  .ai-solution-center__handover dl,
+  .ai-solution-center__priority-fields,
+  .ai-solution-center__option-grid,
+  .ai-solution-center__dimension-scores {
     grid-template-columns: 1fr;
   }
 

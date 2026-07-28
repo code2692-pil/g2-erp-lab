@@ -3,8 +3,9 @@ import { Building2, ChevronRight, ClipboardCopy, Download, FileText, RotateCcw, 
 import { CompanyKnowledgeSettings } from "./CompanyKnowledgeSettings";
 import { buildSolutionResult } from "./solutionEngine";
 import { solutionKnowledge } from "./solutionKnowledge";
-import { activeRevision, analysisRevision, appendSolutionRevision, buildConsultantHandoverMarkdown, buildExportFilename, buildSolutionMarkdown, canRefineSession, clarificationAnswersFor, consultantHandoverDetails, createSolutionSession, maximumAnalysisRevision, unresolvedItems } from "./solutionSession";
-import { businessDomains, type BusinessDomain, type CompanyKnowledgeArticle, type SolutionRequest, type SolutionSession, type SolutionSource } from "./solutionTypes";
+import { buildSolutionOptionComparison, defaultSolutionPriorities, solutionPriorityLabels, solutionPriorityPresets } from "./solutionOptions";
+import { activeRevision, analysisRevision, appendSolutionRevision, buildConsultantHandoverMarkdown, buildExportFilename, buildSolutionMarkdown, canRefineSession, clarificationAnswersFor, consultantHandoverDetails, createSolutionSession, maximumAnalysisRevision, unresolvedItems, updateSolutionOptionComparison } from "./solutionSession";
+import { businessDomains, solutionPriorityKeys, type BusinessDomain, type CompanyKnowledgeArticle, type SolutionPriorities, type SolutionRequest, type SolutionSession, type SolutionSource } from "./solutionTypes";
 
 type NavigationPage = "sales" | "purchase" | "work" | "development" | "ai";
 type ActiveTab = "consultant" | "customer";
@@ -31,11 +32,14 @@ interface ResultPanelProps {
   refining: boolean;
   exportStatus: string;
   handoverStatus: string;
+  comparisonStatus: string;
+  comparing: boolean;
   onAnswerChange: (questionId: string, answer: string) => void;
   onRefine: () => void;
   onCopy: () => void;
   onDownload: () => void;
   onHandoverCopy: () => void;
+  onRecompare: () => void;
 }
 
 const automaticTextLimit = 512 * 1024;
@@ -69,13 +73,23 @@ function List({ items, dataTestId }: { items: readonly string[]; dataTestId?: st
   return <ul data-testid={dataTestId}>{items.map((item) => <li key={item}>{item}</li>)}</ul>;
 }
 
-function ResultPanel({ session, answerMap, answerError, refining, exportStatus, handoverStatus, onAnswerChange, onRefine, onCopy, onDownload, onHandoverCopy }: ResultPanelProps) {
+function PriorityCard({ priorities, onChange, onPreset }: { priorities: SolutionPriorities; onChange: (key: keyof SolutionPriorities, value: number) => void; onPreset: (priorities: SolutionPriorities) => void }) {
+  return <section className="ai-solution-center__priority-card" data-testid="priority-card" aria-labelledby="priority-card-heading">
+    <div><h2 id="priority-card-heading">솔루션 선택 우선순위</h2><p>중요하게 생각하는 기준에 따라 추천 대안의 순서와 적용 방향이 달라집니다. 1은 중요도가 낮고 5는 매우 중요합니다.</p></div>
+    <div className="ai-solution-center__priority-presets" aria-label="우선순위 미리 설정">{solutionPriorityPresets.map((preset) => <button key={preset.id} type="button" data-testid={`priority-preset-${preset.id}`} onClick={() => onPreset({ ...preset.priorities })}>{preset.label}</button>)}</div>
+    <div className="ai-solution-center__priority-fields">{solutionPriorityKeys.map((key) => <label key={key} htmlFor={`priority-${key}`}><span>{solutionPriorityLabels[key]} <strong data-testid={`priority-value-${key}`}>{priorities[key]} / 5</strong></span><input id={`priority-${key}`} data-testid={`priority-${key}`} type="range" min="1" max="5" step="1" value={priorities[key]} aria-valuetext={`${solutionPriorityLabels[key]} ${priorities[key]} / 5`} onChange={(event) => onChange(key, Number(event.target.value))} /></label>)}</div>
+  </section>;
+}
+
+function ResultPanel({ session, answerMap, answerError, refining, exportStatus, handoverStatus, comparisonStatus, comparing, onAnswerChange, onRefine, onCopy, onDownload, onHandoverCopy, onRecompare }: ResultPanelProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const revision = activeRevision(session);
   const result = session.activeResult;
   const unresolved = unresolvedItems(result, answerMap);
   const canRefine = canRefineSession(session);
   const handover = consultantHandoverDetails(session, unresolved);
+  const comparison = session.optionComparison;
+  const recommendedOption = comparison?.options[0];
 
   useEffect(() => { headingRef.current?.focus(); }, [revision?.revision]);
 
@@ -99,8 +113,17 @@ function ResultPanel({ session, answerMap, answerError, refining, exportStatus, 
       <div><dt>주요 문제</dt><dd>{result.mainProblem}</dd></div>
       <div><dt>신뢰도</dt><dd data-testid="ai-result-confidence">{result.confidence}</dd></div>
     </dl>
-    <section><h3 data-testid="ai-result-recommendation">{result.recommendation.title}</h3><p>{result.recommendation.rationale}</p><List items={result.recommendation.actions} /></section>
-    <section><h3>단계별 적용 방법</h3><List dataTestId="ai-result-phased-plan" items={result.phasedPlan} /></section>
+    <section className="ai-solution-center__recommendation-baseline"><h3 data-testid="ai-result-recommendation">{recommendedOption?.title ?? result.recommendation.title}</h3><p>{recommendedOption?.summary ?? result.recommendation.rationale}</p><List items={recommendedOption?.prerequisites ?? result.recommendation.actions} /></section>
+    {comparison && recommendedOption && <section className="ai-solution-center__option-comparison" data-testid="option-comparison" aria-busy={comparing}>
+      <div className="ai-solution-center__option-comparison-heading"><div><h3>솔루션 대안 비교</h3><p>현재 입력과 선택한 우선순위를 기준으로 한 추천 1순위입니다. 실제 적용은 컨설턴트·개발 담당자와 회사 업무 규칙·기술 조건을 확인해 결정해야 합니다.</p></div><button type="button" data-testid="recompare-options" disabled={comparing} onClick={onRecompare}>{comparing ? "다시 비교 중..." : "현재 우선순위로 다시 비교"}</button></div>
+      {comparisonStatus && <p className="ai-solution-center__file-status" data-testid="comparison-status" role="status" aria-live="polite">{comparisonStatus}</p>}
+      <p className="ai-solution-center__guide-notice" data-testid="comparison-score-notice">{comparison.scoreNotice}</p>
+      <p className="ai-solution-center__option-reason" data-testid="comparison-reason">{comparison.recommendationReason}</p>
+      <div className="ai-solution-center__option-grid">{comparison.options.map((option) => <article key={option.id} className="ai-solution-center__option-card" data-testid={`option-${option.id}`}><div className="ai-solution-center__option-card-heading"><p>{option.rank}순위 · 비교 점수 {option.weightedScore}</p>{option.recommended && <strong data-testid={`option-recommended-${option.id}`}>추천 1순위</strong>}</div><h4>{option.title}</h4><p>{option.summary}</p><dl><div><dt>강점</dt><dd>{option.strengths.join(" / ")}</dd></div><div><dt>유의점</dt><dd>{option.weaknesses.join(" / ")}</dd></div><div><dt>적합한 상황</dt><dd>{option.suitableWhen.join(" / ")}</dd></div><div><dt>부적합한 상황</dt><dd>{option.unsuitableWhen.join(" / ")}</dd></div><div><dt>적용 전제</dt><dd>{option.prerequisites.join(" / ")}</dd></div><div><dt>위험·주의사항</dt><dd>{option.risks.join(" / ")}</dd></div></dl><ul className="ai-solution-center__dimension-scores">{solutionPriorityKeys.map((key) => <li key={key}>{solutionPriorityLabels[key]}: {option.dimensionScores[key]} / 5</li>)}</ul></article>)}</div>
+      <section className="ai-solution-center__option-roadmap" data-testid="option-roadmap"><h3>적용 로드맵 · {recommendedOption.title}</h3>{recommendedOption.roadmap.map((phase) => <article key={phase.title}><h4>{phase.title}</h4><List items={phase.steps} /></article>)}</section>
+      <section className="ai-solution-center__reconsideration" data-testid="option-reconsideration"><h3>적용 중 재검토가 필요한 조건</h3><p>아래 항목은 자동 실패 판정이나 확정 업무 규칙이 아니라, 담당자의 재검토를 돕는 체크 항목입니다.</p><List items={recommendedOption.reconsiderationConditions.slice(0, 5)} /></section>
+    </section>}
+    <section><h3>분석에서 참고한 적용 방법</h3><List dataTestId="ai-result-phased-plan" items={result.phasedPlan} /></section>
     <section className="ai-solution-center__input-evidence" data-testid="input-evidence"><h3>분석에 사용한 입력 근거</h3><ul>{result.inputEvidence.map((evidence) => <li key={evidence.id} data-testid={`input-evidence-${evidence.id}`}><strong>{evidence.sourceLabel}</strong><span>{evidence.fileName ? `파일: ${evidence.fileName}` : "입력 구역"}</span><p>발췌: {evidence.excerpt}</p><p>관련 키워드: {evidence.relatedKeywords.length > 0 ? evidence.relatedKeywords.join(", ") : "업무영역 기준"}</p><p>추천 반영: {evidence.usedInRecommendation ? "사용됨" : "참고"}</p></li>)}</ul></section>
     <section className="ai-solution-center__evidence" data-testid="ai-result-evidence"><h3>참고한 지식 근거</h3><ul>{result.evidence.map((evidence) => <li key={evidence.id} data-testid={`ai-evidence-${evidence.id}`}><strong>{evidence.title}</strong><span>{evidence.category} · {evidence.sourceType === "COMPANY" ? "회사 지식" : "일반 지식"}</span><p>일치 주요 키워드: {evidence.matchedKeywords.length > 0 ? evidence.matchedKeywords.join(", ") : "업무영역 기준"}</p><p>{evidence.reason} (신뢰 가중치 {evidence.confidenceWeight.toFixed(2)})</p></li>)}</ul>{result.companyKnowledgeUsed && <p className="ai-solution-center__company-reference" data-testid="company-knowledge-reference">회사 지식도 실제 업무 적용 전 해당 컨설턴트와 개발자의 검토가 필요합니다.</p>}</section>
     <section className="ai-solution-center__unresolved" data-testid="unresolved-items"><h3>아직 확인이 필요한 사항</h3>{unresolved.length > 0 ? <List items={unresolved} /> : <p>현재 입력 범위에서 주요 확인사항은 충분히 답변되었습니다. 실제 적용 전 최종 검토는 필요합니다.</p>}</section>
@@ -136,6 +159,10 @@ export function AiSolutionCenterPage({ onNavigate }: AiSolutionCenterPageProps) 
   const [customerRefining, setCustomerRefining] = useState(false);
   const [exportStatus, setExportStatus] = useState("");
   const [handoverStatus, setHandoverStatus] = useState("");
+  const [priorities, setPriorities] = useState<SolutionPriorities>({ ...defaultSolutionPriorities });
+  const [comparisonStatus, setComparisonStatus] = useState("");
+  const [comparing, setComparing] = useState(false);
+  const comparisonLock = useRef(false);
 
   const hasExtractedText = useMemo(() => attachments.some((attachment) => Boolean(attachment.text?.trim())), [attachments]);
   const hasFileNote = useMemo(() => attachments.some((attachment) => attachment.note.trim().length > 0), [attachments]);
@@ -169,7 +196,7 @@ export function AiSolutionCenterPage({ onNavigate }: AiSolutionCenterPageProps) 
     try {
       const request = consultantRequest();
       const result = buildSolutionResult(request, companyKnowledge);
-      setConsultantSession(createSolutionSession("consultant-file", request, result, companyKnowledge));
+      setConsultantSession(createSolutionSession("consultant-file", request, result, companyKnowledge, undefined, buildSolutionOptionComparison(request, result, priorities)));
       setConsultantAnswers({}); setConsultantFollowupError("");
     } catch { setConsultantError("기본 검토 가이드를 만들지 못했습니다. 입력을 확인한 뒤 다시 시도해 주세요."); } finally { setConsultantProcessing(false); }
   };
@@ -189,7 +216,7 @@ export function AiSolutionCenterPage({ onNavigate }: AiSolutionCenterPageProps) 
     try {
       const request: SolutionRequest = { source: "customer-qa", domain: "", situation: inquiry, currentManagement, desiredStandard, fieldConstraints };
       const result = buildSolutionResult(request, companyKnowledge);
-      setCustomerSession(createSolutionSession("customer-qa", request, result, companyKnowledge));
+      setCustomerSession(createSolutionSession("customer-qa", request, result, companyKnowledge, undefined, buildSolutionOptionComparison(request, result, priorities)));
       setCustomerAnswers({}); setCustomerFollowupError("");
     } catch { setCustomerError("기본 검토 가이드를 만들지 못했습니다. 입력을 확인한 뒤 다시 시도해 주세요."); } finally { setCustomerProcessing(false); }
   };
@@ -216,7 +243,7 @@ export function AiSolutionCenterPage({ onNavigate }: AiSolutionCenterPageProps) 
     try {
       const request: SolutionRequest = { ...session.originalRequest, clarificationAnswers: validation.answers };
       const result = buildSolutionResult(request, session.companyKnowledgeSnapshot);
-      setSession(appendSolutionRevision(session, result, validation.answers));
+      setSession(appendSolutionRevision(session, result, validation.answers, undefined, buildSolutionOptionComparison(request, result, priorities)));
     } catch { setError("추천 보완 중 오류가 발생했습니다. 기존 결과와 입력은 유지하고 다시 시도할 수 있습니다."); } finally { setRefining(false); }
   };
 
@@ -224,6 +251,24 @@ export function AiSolutionCenterPage({ onNavigate }: AiSolutionCenterPageProps) 
     setAttachments([]); setDomain(""); setSituation(""); setInquiry(""); setCurrentManagement(""); setDesiredStandard(""); setFieldConstraints("");
     setConsultantError(""); setCustomerError(""); setConsultantFollowupError(""); setCustomerFollowupError("");
     setConsultantSession(undefined); setCustomerSession(undefined); setConsultantAnswers({}); setCustomerAnswers({}); setExportStatus(""); setHandoverStatus(""); setActiveTab("consultant");
+    setPriorities({ ...defaultSolutionPriorities }); setComparisonStatus("");
+  };
+
+  const recompare = (mode: SolutionSource) => {
+    const session = mode === "consultant-file" ? consultantSession : customerSession;
+    const setSession = mode === "consultant-file" ? setConsultantSession : setCustomerSession;
+    if (!session || comparisonLock.current) return;
+    comparisonLock.current = true;
+    setComparing(true); setComparisonStatus(""); setExportStatus(""); setHandoverStatus("");
+    try {
+      const request: SolutionRequest = { ...session.originalRequest, clarificationAnswers: activeRevision(session)?.clarificationAnswers ?? [] };
+      const comparison = buildSolutionOptionComparison(request, session.activeResult, priorities);
+      setSession(updateSolutionOptionComparison(session, comparison));
+      setComparisonStatus("비교 기준이 변경되었습니다.");
+    } finally {
+      comparisonLock.current = false;
+      setComparing(false);
+    }
   };
 
   const copyResultMarkdown = async (session: SolutionSession, answerMap: Readonly<Record<string, string>>) => {
@@ -241,7 +286,7 @@ export function AiSolutionCenterPage({ onNavigate }: AiSolutionCenterPageProps) 
 
   const consultantBusy = consultantProcessing || consultantRefining;
   const customerBusy = customerProcessing || customerRefining;
-  const renderResult = (session: SolutionSession, answerMap: Record<string, string>, answerError: string, refining: boolean, mode: SolutionSource) => <ResultPanel session={session} answerMap={answerMap} answerError={answerError} refining={refining} exportStatus={exportStatus} handoverStatus={handoverStatus} onAnswerChange={(id, answer) => { if (mode === "consultant-file") { setConsultantAnswers((current) => ({ ...current, [id]: answer })); setConsultantFollowupError(""); } else { setCustomerAnswers((current) => ({ ...current, [id]: answer })); setCustomerFollowupError(""); } }} onRefine={() => refine(mode)} onCopy={() => void copyResultMarkdown(session, answerMap)} onDownload={() => downloadMarkdown(session, answerMap)} onHandoverCopy={() => void copyHandoverMarkdown(session, answerMap)} />;
+  const renderResult = (session: SolutionSession, answerMap: Record<string, string>, answerError: string, refining: boolean, mode: SolutionSource) => <ResultPanel session={session} answerMap={answerMap} answerError={answerError} refining={refining} exportStatus={exportStatus} handoverStatus={handoverStatus} comparisonStatus={comparisonStatus} comparing={comparing} onAnswerChange={(id, answer) => { if (mode === "consultant-file") { setConsultantAnswers((current) => ({ ...current, [id]: answer })); setConsultantFollowupError(""); } else { setCustomerAnswers((current) => ({ ...current, [id]: answer })); setCustomerFollowupError(""); } }} onRefine={() => refine(mode)} onCopy={() => void copyResultMarkdown(session, answerMap)} onDownload={() => downloadMarkdown(session, answerMap)} onHandoverCopy={() => void copyHandoverMarkdown(session, answerMap)} onRecompare={() => recompare(mode)} />;
 
   return <div className="erp-shell">
     <aside className="side-nav"><div className="brand"><Building2 size={20} /><strong>SMART ERP</strong></div><nav><div className="menu-title">영업관리</div><button className="menu-item" data-testid="nav-sales-order" onClick={() => onNavigate("sales")} type="button">수주등록</button><div className="menu-title">구매관리</div><div className="menu-group"><ChevronRight size={14} /><span>발주관리</span></div><button className="menu-item" data-testid="nav-purchase-order" onClick={() => onNavigate("purchase")} type="button">발주등록</button><div className="menu-title">생산관리</div><div className="menu-group"><ChevronRight size={14} /><span>작업지시관리</span></div><button className="menu-item" data-testid="nav-work-order" onClick={() => onNavigate("work")} type="button">작업지시등록</button><div className="menu-title">AI 도구</div><button className="menu-item active" data-testid="nav-ai-solution-center" type="button">AI 솔루션 센터</button></nav></aside>
@@ -249,6 +294,7 @@ export function AiSolutionCenterPage({ onNavigate }: AiSolutionCenterPageProps) 
       <header className="page-header"><div><h1 data-testid="ai-solution-center-title">AI 솔루션 센터</h1><p>ERP·MES 업무 상황을 정리하고 검토 가능한 기본 가이드와 추가 확인사항을 제공합니다.</p></div><button className="ai-solution-center__reset-button" data-testid="analysis-session-reset" type="button" onClick={resetAnalysisSession}><RotateCcw size={15} />분석 세션 초기화</button></header>
       <aside className="ai-solution-center__top-note" aria-label="PoC 안내">현재 버전은 로컬 지식 템플릿 기반 PoC입니다.<br />실제 회사 지식과 보안 확인 후 AI를 연결하면 확장할 수 있습니다.</aside>
       <CompanyKnowledgeSettings companyKnowledge={companyKnowledge} generalKnowledgeCount={solutionKnowledge.length} onApply={setCompanyKnowledge} onReset={() => setCompanyKnowledge([])} />
+      <PriorityCard priorities={priorities} onChange={(key, value) => { setPriorities((current) => ({ ...current, [key]: value })); setComparisonStatus(""); }} onPreset={(preset) => { setPriorities(preset); setComparisonStatus(""); }} />
       <div className="ai-solution-center__tabs" role="tablist" aria-label="AI 솔루션 방식"><button type="button" role="tab" id="consultant-tab" aria-controls="consultant-panel" aria-selected={activeTab === "consultant"} className={activeTab === "consultant" ? "is-active" : ""} onClick={() => setActiveTab("consultant")}>컨설턴트 파일 분석</button><button type="button" role="tab" id="customer-tab" aria-controls="customer-panel" aria-selected={activeTab === "customer"} className={activeTab === "customer" ? "is-active" : ""} onClick={() => setActiveTab("customer")}>고객 업무 Q&amp;A</button></div>
       {activeTab === "consultant" ? <section id="consultant-panel" role="tabpanel" aria-labelledby="consultant-tab" className="ai-solution-center__panel"><div className="ai-solution-center__form-card"><h2>컨설턴트 파일 분석</h2><label className="ai-solution-center__file-label" htmlFor="ai-file-input"><FileText size={16} />파일 선택 또는 추가<input id="ai-file-input" data-testid="ai-file-input" type="file" multiple onChange={(event) => void handleFiles(event)} /></label><p className="ai-solution-center__muted">선택한 파일은 서버로 업로드하지 않으며 브라우저 메모리에서만 처리합니다.</p>{attachments.length > 0 && <ul className="ai-solution-center__file-list" data-testid="ai-file-list">{attachments.map((attachment) => <li key={attachment.id}><div><strong>{attachment.name}</strong><span>{attachment.extension.toUpperCase()} · {formatBytes(attachment.size)} · {fileStatusMessage(attachment.status)}</span>{attachment.status === "text-ready" ? <p className="ai-solution-center__file-note-guide">자동 추출 내용을 추가 설명이나 파일별 메모와 함께 분석에 반영합니다.</p> : <p>현재 PoC에서는 내용을 자동 추출하지 않습니다. 이 파일의 내용은 자동 분석도 하지 않습니다.<br />요약·주요 의사결정·업무 상황을 직접 입력해 주세요.</p>}<label className="ai-solution-center__file-note-label" htmlFor={`file-note-${attachment.id}`}>파일별 주요 내용·의사결정<textarea id={`file-note-${attachment.id}`} data-testid={`file-note-${attachment.id}`} value={attachment.note} maxLength={fileNoteLimit} aria-invalid={attachment.note.length > fileNoteLimit} onChange={(event) => updateAttachmentNote(attachment.id, event.target.value)} rows={3} /></label><span className="ai-solution-center__file-note-count">{attachment.note.length.toLocaleString()} / {fileNoteLimit.toLocaleString()}자</span>{attachment.note.length > fileNoteLimit && <p className="ai-solution-center__error" role="alert" aria-live="assertive">파일별 메모는 최대 2,000자까지 입력할 수 있습니다.</p>}</div><button type="button" aria-label={`${attachment.name} 제거`} onClick={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))}><Trash2 size={15} />제거</button></li>)}</ul>}<p className="ai-solution-center__file-status" data-testid="ai-file-status" aria-live="polite">{attachments.length === 0 ? "파일을 선택하면 자동 추출 가능 여부를 안내합니다." : `첨부 파일 ${attachments.length}건`}</p><div className="ai-solution-center__fields"><label>업무영역<select data-testid="ai-domain-select" value={domain} onChange={(event) => setDomain(event.target.value as BusinessDomain)}><option value="">자동 추정</option>{businessDomains.map((item) => <option key={item} value={item}>{item}</option>)}</select></label><label>공통 상황 설명<textarea data-testid="ai-situation-input" value={situation} aria-invalid={Boolean(consultantError) && !canAnalyzeFiles} onChange={(event) => { setSituation(event.target.value); setConsultantError(""); }} placeholder="업무 상황, 현재 문제, 확인하고 싶은 기준을 적어 주세요." rows={6} /></label></div>{consultantError && <p className="ai-solution-center__error" role="alert">{consultantError}</p>}<button className="ai-solution-center__primary-button" data-testid="ai-consultant-analyze" type="button" disabled={consultantBusy} onClick={analyzeConsultant}>{consultantProcessing ? "분석 중..." : "기본 가이드 분석"}</button></div>{consultantSession && renderResult(consultantSession, consultantAnswers, consultantFollowupError, consultantRefining, "consultant-file")}</section> : <section id="customer-panel" role="tabpanel" aria-labelledby="customer-tab" className="ai-solution-center__panel"><div className="ai-solution-center__form-card"><h2>고객 업무 Q&amp;A</h2><div className="ai-solution-center__fields"><label>문의 또는 문제<textarea data-testid="ai-customer-inquiry" value={inquiry} aria-invalid={Boolean(customerError)} onChange={(event) => { setInquiry(event.target.value); setCustomerError(""); }} rows={4} /></label><label>현재 관리 방식<textarea data-testid="ai-customer-current-management" value={currentManagement} onChange={(event) => setCurrentManagement(event.target.value)} rows={3} /></label><label>희망하는 기준<textarea data-testid="ai-customer-desired-standard" value={desiredStandard} onChange={(event) => setDesiredStandard(event.target.value)} rows={3} /></label><label>현장 제약<textarea data-testid="ai-customer-field-constraints" value={fieldConstraints} onChange={(event) => setFieldConstraints(event.target.value)} rows={3} /></label></div>{customerError && <p className="ai-solution-center__error" role="alert">{customerError}</p>}<div className="ai-solution-center__actions"><button type="button" onClick={fillExample}>예시 질문 넣기</button><button className="ai-solution-center__primary-button" data-testid="ai-customer-guide" type="button" disabled={customerBusy} onClick={guideCustomer}>{customerProcessing ? "가이드 작성 중..." : "기본 가이드 받기"}</button></div></div>{customerSession && renderResult(customerSession, customerAnswers, customerFollowupError, customerRefining, "customer-qa")}</section>}
       <section className="ai-solution-center__security" aria-label="보안 안내"><h2>보안 및 사용 안내</h2><ul><li>선택한 파일은 서버로 업로드하지 않습니다.</li><li>파일 내용과 분석 세션은 브라우저 메모리에서만 처리합니다.</li><li>개인정보, 비밀번호, 고객 실무정보를 첨부하거나 질문에 입력하지 마세요.</li><li>실제 도입 전에는 회사 보안 검토가 필요합니다.</li><li>현재 출력은 기본 검토 가이드이므로 해당 담당자 확인이 필요합니다.</li></ul></section>

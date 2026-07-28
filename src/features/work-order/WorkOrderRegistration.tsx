@@ -183,6 +183,7 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
   const {
     isLoading,
     isSaving,
+    operation,
     message,
     setMessage,
     setFeatureMessage,
@@ -669,16 +670,16 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
           {showDevelopmentDataManager && <><div className="menu-title">개발 도구</div><button className="menu-item" data-testid="nav-development-data" onClick={() => void handleNavigate("development")} type="button">테스트 데이터 관리</button></>}
         </nav>
       </aside>
-      <main aria-busy={processing} className="workbench">
+      <main aria-busy={processing} className="workbench" data-processing-state={operation}>
         <header className="page-header">
           <div><h1 data-testid="work-order-page-title">작업지시등록</h1><p>작업지시 정보를 조회하고 등록합니다.</p><DirtyIndicator dataTestId="work-order-dirty-indicator" dirty={isDirty} /></div>
           <PageToolbar processing={processing} actions={[
-            { dataTestId: "wo-btn-search", label: isLoading ? "조회 중..." : "조회", icon: <Search size={15} />, onClick: () => void handleSearch(), disabled: isLoading },
-            { dataTestId: "wo-btn-new", label: "신규", icon: <Plus size={15} />, onClick: () => void handleNew(), disabled: isSaving },
-            { dataTestId: "wo-btn-add-process", label: "행추가", icon: <Rows3 size={15} />, onClick: handleAddProcess, disabled: isSaving },
-            { dataTestId: "wo-btn-delete-process", label: "행삭제", icon: <Trash2 size={15} />, onClick: () => void handleDeleteProcess(), disabled: isSaving },
-            { dataTestId: "wo-btn-save", label: isSaving ? "저장 중..." : "저장", icon: <Save size={15} />, onClick: () => void handleSave(), disabled: isSaving, variant: "primary" },
-            { dataTestId: "wo-btn-delete", label: isSaving ? "삭제 중..." : "삭제", icon: <Trash2 size={15} />, onClick: () => void handleDeleteWorkOrder(), disabled: isSaving, variant: "danger" }
+            { dataTestId: "wo-btn-search", label: isLoading ? "조회 중..." : "조회", icon: <Search size={15} />, onClick: () => void handleSearch(), disabled: isSaving },
+            { dataTestId: "wo-btn-new", label: "신규", icon: <Plus size={15} />, onClick: () => void handleNew(), disabled: processing },
+            { dataTestId: "wo-btn-add-process", label: "행추가", icon: <Rows3 size={15} />, onClick: handleAddProcess, disabled: processing },
+            { dataTestId: "wo-btn-delete-process", label: "행삭제", icon: <Trash2 size={15} />, onClick: () => void handleDeleteProcess(), disabled: processing },
+            { dataTestId: "wo-btn-save", label: operation === "saving" ? "저장 중..." : "저장", icon: <Save size={15} />, onClick: () => void handleSave(), disabled: processing, variant: "primary" },
+            { dataTestId: "wo-btn-delete", label: operation === "deleting" ? "삭제 중..." : "삭제", icon: <Trash2 size={15} />, onClick: () => void handleDeleteWorkOrder(), disabled: processing, variant: "danger" }
           ]} />
         </header>
         <SearchPanel message={message}>

@@ -326,15 +326,23 @@ test("API UI: sales order disables duplicate save and delete requests while pend
     };
     await page.route(endpoint, holdSave);
     await page.getByTestId("btn-save").click();
-    await page.getByTestId("confirm-dialog-confirm").click();
+    const confirmButtonBox = await page.getByTestId("confirm-dialog-confirm").boundingBox();
+    expect(confirmButtonBox).not.toBeNull();
+    if (!confirmButtonBox) throw new Error("confirmation button is not visible");
+    await page.getByTestId("confirm-dialog-confirm").dblclick();
     await saveStarted.promise;
-    await expect(page.getByTestId("btn-save")).toBeDisabled();
+    await expect(page.getByTestId("btn-save")).toHaveText("저장 중...");
     await expect(page.getByTestId("btn-delete-order")).toBeDisabled();
-    await page.getByTestId("btn-save").evaluate((button) => (button as HTMLButtonElement).click());
     expect(saveRequestCount).toBe(1);
+    const saveButtonBox = await page.getByTestId("btn-save").boundingBox();
+    expect(saveButtonBox).not.toBeNull();
+    if (!saveButtonBox) throw new Error("save button is not visible");
+    await page.mouse.click(saveButtonBox.x + saveButtonBox.width / 2, saveButtonBox.y + saveButtonBox.height / 2);
+    await page.mouse.click(confirmButtonBox.x + confirmButtonBox.width / 2, confirmButtonBox.y + confirmButtonBox.height / 2);
     saveGate.resolve();
     await expect(page.getByRole("status")).toContainText("저장되었습니다.");
     await expect(page.getByTestId("btn-save")).toBeEnabled();
+    expect(saveRequestCount).toBe(1);
     await page.unroute(endpoint, holdSave);
 
     const deleteStarted = deferred();
@@ -349,11 +357,10 @@ test("API UI: sales order disables duplicate save and delete requests while pend
     };
     await page.route(endpoint, holdDelete);
     await page.getByTestId("btn-delete-order").click();
-    await page.getByTestId("confirm-dialog-confirm").click();
+    await page.getByTestId("confirm-dialog-confirm").dblclick();
     await deleteStarted.promise;
     await expect(page.getByTestId("btn-delete-order")).toBeDisabled();
     await expect(page.getByTestId("btn-save")).toBeDisabled();
-    await page.getByTestId("btn-delete-order").evaluate((button) => (button as HTMLButtonElement).click());
     expect(deleteRequestCount).toBe(1);
     deleteGate.resolve();
     await expect(page.getByRole("status")).toContainText("삭제되었습니다.");
@@ -398,11 +405,10 @@ test("API UI: purchase order disables duplicate save and delete requests while p
     };
     await page.route(endpoint, holdSave);
     await page.getByTestId("po-btn-save").click();
-    await page.getByTestId("confirm-dialog-confirm").click();
+    await page.getByTestId("confirm-dialog-confirm").dblclick();
     await saveStarted.promise;
     await expect(page.getByTestId("po-btn-save")).toBeDisabled();
     await expect(page.getByTestId("po-btn-delete")).toBeDisabled();
-    await page.getByTestId("po-btn-save").evaluate((button) => (button as HTMLButtonElement).click());
     expect(saveRequestCount).toBe(1);
     saveGate.resolve();
     await expect(page.getByRole("status")).toContainText("저장되었습니다.");
@@ -421,11 +427,10 @@ test("API UI: purchase order disables duplicate save and delete requests while p
     };
     await page.route(endpoint, holdDelete);
     await page.getByTestId("po-btn-delete").click();
-    await page.getByTestId("confirm-dialog-confirm").click();
+    await page.getByTestId("confirm-dialog-confirm").dblclick();
     await deleteStarted.promise;
     await expect(page.getByTestId("po-btn-delete")).toBeDisabled();
     await expect(page.getByTestId("po-btn-save")).toBeDisabled();
-    await page.getByTestId("po-btn-delete").evaluate((button) => (button as HTMLButtonElement).click());
     expect(deleteRequestCount).toBe(1);
     deleteGate.resolve();
     await expect(page.getByRole("status")).toContainText("삭제되었습니다.");
@@ -434,5 +439,160 @@ test("API UI: purchase order disables duplicate save and delete requests while p
     saveGate.resolve();
     deleteGate.resolve();
     await request.delete(endpoint);
+  }
+});
+
+test("Gate 9: sales order cancels an earlier query and keeps the latest result", async ({ page }) => {
+  const firstNumber = "E2E-SO-STALE-A";
+  const latestNumber = "E2E-SO-STALE-B";
+  const endpoint = `${apiBaseUrl}/api/sales-orders`;
+  const firstResponseGate = deferred();
+  const firstRequestStarted = deferred();
+  let requestCount = 0;
+
+  const holdEarlierResponse = async (route: import("@playwright/test").Route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    requestCount += 1;
+    if (requestCount === 1) {
+      firstRequestStarted.resolve();
+      void firstResponseGate.promise.then(async () => {
+        try {
+          await route.fulfill({ contentType: "application/json", body: JSON.stringify([salesRequest(firstNumber)]) });
+        } catch {
+          // The newer query cancels this browser request before its stale response can be applied.
+        }
+      });
+      return;
+    }
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify([salesRequest(latestNumber)]) });
+  };
+
+  await page.goto("/");
+  await page.route(endpoint, holdEarlierResponse);
+  try {
+    await page.getByTestId("btn-search").click();
+    await firstRequestStarted.promise;
+    await expect(page.getByTestId("btn-search")).toBeEnabled();
+
+    await page.getByTestId("filter-partner-code").fill("P-10021");
+    await expect(page.getByTestId("filter-partner-code")).toHaveValue("P-10021");
+    await page.getByTestId("btn-search").click();
+    expect(requestCount).toBe(2);
+    await expect(page.getByTestId(`sales-order-header-grid-row-1000::${latestNumber}`)).toBeVisible();
+    await expect(page.getByTestId(`sales-order-header-grid-row-1000::${firstNumber}`)).toHaveCount(0);
+    await expect(page.locator("main[data-processing-state]")).toHaveAttribute("data-processing-state", "idle");
+
+    firstResponseGate.resolve();
+    await expect(page.getByTestId(`sales-order-header-grid-row-1000::${latestNumber}`)).toBeVisible();
+    await expect(page.getByTestId(`sales-order-header-grid-row-1000::${firstNumber}`)).toHaveCount(0);
+    await expect(page.getByTestId("btn-search")).toBeEnabled();
+    await expect(page.locator("main[data-processing-state]")).toHaveAttribute("data-processing-state", "idle");
+    expect(requestCount).toBe(2);
+  } finally {
+    firstResponseGate.resolve();
+    await page.unroute(endpoint, holdEarlierResponse);
+  }
+});
+
+test("Gate 9: a failed latest sales query does not restore an earlier response and can be retried", async ({ page }) => {
+  const earlierNumber = "E2E-SO-FAILED-LATEST-A";
+  const retryNumber = "E2E-SO-FAILED-LATEST-C";
+  const endpoint = `${apiBaseUrl}/api/sales-orders`;
+  const firstResponseGate = deferred();
+  const firstRequestStarted = deferred();
+  let requestCount = 0;
+
+  const controlResponses = async (route: import("@playwright/test").Route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    requestCount += 1;
+    if (requestCount === 1) {
+      firstRequestStarted.resolve();
+      void firstResponseGate.promise.then(async () => {
+        try {
+          await route.fulfill({ contentType: "application/json", body: JSON.stringify([salesRequest(earlierNumber)]) });
+        } catch {
+          // The newer query cancels this browser request before its stale response can be applied.
+        }
+      });
+      return;
+    }
+    if (requestCount === 2) {
+      await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "latest query failed" }) });
+      return;
+    }
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify([salesRequest(retryNumber)]) });
+  };
+
+  await page.goto("/");
+  await page.route(endpoint, controlResponses);
+  try {
+    await page.getByTestId("btn-search").click();
+    await firstRequestStarted.promise;
+    await page.getByTestId("filter-partner-code").fill("P-10021");
+    await expect(page.getByTestId("filter-partner-code")).toHaveValue("P-10021");
+    await page.getByTestId("btn-search").click();
+    await expect(page.getByTestId("status-message")).toContainText("조회 중 오류가 발생했습니다.");
+    await expect(page.getByTestId("btn-search")).toBeEnabled();
+    await expect(page.locator("main[data-processing-state]")).toHaveAttribute("data-processing-state", "idle");
+
+    firstResponseGate.resolve();
+    await expect(page.getByTestId(`sales-order-header-grid-row-1000::${earlierNumber}`)).toHaveCount(0);
+    await expect(page.getByTestId("status-message")).toContainText("조회 중 오류가 발생했습니다.");
+
+    await page.getByTestId("btn-search").click();
+    await expect(page.getByTestId(`sales-order-header-grid-row-1000::${retryNumber}`)).toBeVisible();
+    await expect(page.getByTestId("btn-search")).toBeEnabled();
+    await expect(page.locator("main[data-processing-state]")).toHaveAttribute("data-processing-state", "idle");
+    expect(requestCount).toBe(3);
+  } finally {
+    firstResponseGate.resolve();
+    await page.unroute(endpoint, controlResponses);
+  }
+});
+
+test("Gate 9: an unmounted sales query does not update the next screen", async ({ page }) => {
+  const lateNumber = "E2E-SO-UNMOUNTED";
+  const endpoint = `${apiBaseUrl}/api/sales-orders`;
+  const responseGate = deferred();
+  const requestStarted = deferred();
+  const responseReleased = deferred();
+  const consoleErrors: string[] = [];
+  const pageErrors: string[] = [];
+  let requestCount = 0;
+
+  const holdResponse = async (route: import("@playwright/test").Route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    requestCount += 1;
+    requestStarted.resolve();
+    await responseGate.promise;
+    try {
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify([salesRequest(lateNumber)]) });
+    } catch {
+      // Navigation aborts the obsolete request before the held response can update the unmounted page.
+    } finally {
+      responseReleased.resolve();
+    }
+  };
+
+  page.on("console", (message) => { if (message.type() === "error") consoleErrors.push(message.text()); });
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.goto("/");
+  await page.route(endpoint, holdResponse);
+  try {
+    await page.getByTestId("btn-search").click();
+    await requestStarted.promise;
+    await page.getByTestId("nav-purchase-order").click();
+    await expect(page.getByTestId("purchase-page-title")).toBeVisible();
+
+    responseGate.resolve();
+    await responseReleased.promise;
+    await expect(page.getByTestId("purchase-page-title")).toBeVisible();
+    await expect(page.getByTestId("status-message")).toBeEmpty();
+    expect(requestCount).toBe(1);
+    expect(consoleErrors).toEqual([]);
+    expect(pageErrors).toEqual([]);
+  } finally {
+    responseGate.resolve();
+    await page.unroute(endpoint, holdResponse);
   }
 });

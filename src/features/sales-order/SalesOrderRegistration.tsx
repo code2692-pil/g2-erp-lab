@@ -196,6 +196,7 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
   const {
     isLoading,
     isSaving,
+    operation,
     message,
     setMessage,
     setFeatureMessage,
@@ -408,9 +409,9 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
     return undefined;
   };
 
-  const loadSalesOrderData = async () => {
+  const loadSalesOrderData = async (signal?: AbortSignal) => {
     if (isApiMode()) {
-      const orders = await getSalesOrders();
+      const orders = await getSalesOrders(signal);
       return {
         headers: orders.map((order) => order.Header),
         lines: orders.flatMap((order) => order.Lines),
@@ -960,7 +961,7 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
           </nav>
         </aside>
 
-        <main aria-busy={isLoading || isSaving} className="workbench">
+        <main aria-busy={isLoading || isSaving} className="workbench" data-processing-state={operation}>
           <header className="page-header">
             <div>
               <h1 data-testid="page-title">수주등록</h1>
@@ -970,13 +971,13 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
             <PageToolbar
               processing={isLoading || isSaving}
               actions={[
-                { dataTestId: "btn-search", label: isLoading ? "조회 중..." : "조회", icon: <Search size={15} />, onClick: () => void handleSearch() },
-                { dataTestId: "btn-new", label: "신규", icon: <Plus size={15} />, onClick: () => void handleNew() },
-                { dataTestId: "btn-add-line", label: "행추가", icon: <Rows3 size={15} />, onClick: handleAddLine },
-                { dataTestId: "btn-delete-line", label: "행삭제", icon: <Trash2 size={15} />, onClick: () => void handleDeleteLine() },
-                { dataTestId: "btn-save", label: isSaving ? "저장 중..." : "저장", icon: <Save size={15} />, onClick: () => void handleSave(), variant: "primary" },
-                { dataTestId: "btn-delete-order", label: isSaving ? "삭제 중..." : "삭제", icon: <Trash2 size={15} />, onClick: () => void handleDeleteOrder(), variant: "danger" },
-                { dataTestId: "btn-mail-import", label: "메일 수주 불러오기", icon: <MailPlus size={15} />, onClick: () => setMailImportOpen(true) }
+                { dataTestId: "btn-search", label: isLoading ? "조회 중..." : "조회", icon: <Search size={15} />, onClick: () => void handleSearch(), disabled: isSaving },
+                { dataTestId: "btn-new", label: "신규", icon: <Plus size={15} />, onClick: () => void handleNew(), disabled: isLoading || isSaving },
+                { dataTestId: "btn-add-line", label: "행추가", icon: <Rows3 size={15} />, onClick: handleAddLine, disabled: isLoading || isSaving },
+                { dataTestId: "btn-delete-line", label: "행삭제", icon: <Trash2 size={15} />, onClick: () => void handleDeleteLine(), disabled: isLoading || isSaving },
+                { dataTestId: "btn-save", label: operation === "saving" ? "저장 중..." : "저장", icon: <Save size={15} />, onClick: () => void handleSave(), disabled: isLoading || isSaving, variant: "primary" },
+                { dataTestId: "btn-delete-order", label: operation === "deleting" ? "삭제 중..." : "삭제", icon: <Trash2 size={15} />, onClick: () => void handleDeleteOrder(), disabled: isLoading || isSaving, variant: "danger" },
+                { dataTestId: "btn-mail-import", label: "메일 수주 불러오기", icon: <MailPlus size={15} />, onClick: () => setMailImportOpen(true), disabled: isLoading || isSaving }
               ]}
             />
           </header>

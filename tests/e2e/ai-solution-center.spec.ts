@@ -430,6 +430,100 @@ test("Gate 12-5 E: handover and Markdown include priorities, comparison, and roa
   expectNoBrowserProblems(problems);
 });
 
+test("Gate 12-6 A: apply review requires a role and checklist without changing the analysis", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await openCenter(page);
+  await openCustomerAnalysis(page);
+  const recommendation = await page.getByTestId("ai-result-recommendation").textContent();
+  await page.getByTestId("review-status").selectOption("APPLY");
+  await page.getByTestId("reviewer-role").selectOption("CONSULTANT");
+  await page.getByTestId("review-check-CONSULTANT_CURRENT_PROCESS").check();
+  await page.getByTestId("review-record-save").click();
+  await expect(page.getByTestId("review-summary")).toContainText("적용 검토");
+  await expect(page.getByTestId("review-summary")).toContainText(recommendation ?? "");
+  await expect(page.getByTestId("ai-result-recommendation")).toHaveText(recommendation ?? "");
+  expectNoBrowserProblems(problems);
+});
+
+test("Gate 12-6 B: business-decision status blocks a blank reason and extends Markdown", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://127.0.0.1:5173" });
+  await openCustomerAnalysis(page);
+  await page.getByTestId("review-status").selectOption("NEEDS_BUSINESS_DECISION");
+  await page.getByTestId("review-record-save").click();
+  await expect(page.getByTestId("review-error")).toContainText("결정이 필요한 항목");
+  await page.getByTestId("review-decision-reason").fill("시리얼 생성 시점과 재작업 기준은 업무 책임자의 결정이 필요합니다.");
+  await page.getByTestId("review-record-save").click();
+  await expect(page.getByTestId("review-summary")).toContainText("업무결정 필요");
+  await page.getByTestId("result-copy").click();
+  const markdown = await page.evaluate(() => navigator.clipboard.readText());
+  expect(markdown).toContain("## 솔루션 검토 및 판단");
+  expect(markdown).toContain("NEEDS_BUSINESS_DECISION");
+  await page.getByTestId("handover-copy").click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain("검토 상태");
+  expectNoBrowserProblems(problems);
+});
+
+test("Gate 12-6 C: review package download contains the strict safe summary only", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  await openCustomerAnalysis(page);
+  await page.getByTestId("review-status").selectOption("APPLY");
+  await page.getByTestId("reviewer-role").selectOption("CONSULTANT");
+  await page.getByTestId("review-check-CONSULTANT_CURRENT_PROCESS").check();
+  await page.getByTestId("review-record-save").click();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByTestId("review-package-download").click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^ai-solution-review-\d{14}\.json$/);
+  const stream = await download.createReadStream();
+  let body = "";
+  for await (const chunk of stream ?? []) body += chunk.toString();
+  const reviewPackage = JSON.parse(body) as { packageType: string; schemaVersion: string; case: Record<string, unknown> };
+  expect(reviewPackage.packageType).toBe("AI_SOLUTION_REVIEW_PACKAGE");
+  expect(reviewPackage.schemaVersion).toBe("1.0");
+  expect(reviewPackage.case.recommendedOption).toBeTruthy();
+  expect(JSON.stringify(reviewPackage)).not.toContain("Supplier LOT traceability must continue");
+  expect(JSON.stringify(reviewPackage)).not.toContain("C:\\Users\\");
+  expect(JSON.stringify(reviewPackage)).not.toMatch(/password|secret|fileBinary|rawFileContent/i);
+  expectNoBrowserProblems(problems);
+});
+
+test("Gate 12-6 D: a valid review package loads separately from the current analysis", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  await openCustomerAnalysis(page);
+  const inquiry = await page.getByTestId("ai-customer-inquiry").inputValue();
+  await page.getByTestId("review-package-input").setInputFiles(resolve("docs/ai-solution-center/review-package-sample.json"));
+  await expect(page.getByTestId("loaded-review-package")).toContainText("통합형 LOT·추적성 관리");
+  await expect(page.getByTestId("loaded-review-package")).toContainText("업무결정 필요");
+  await expect(page.getByTestId("ai-customer-inquiry")).toHaveValue(inquiry);
+  await expect(page.getByTestId("ai-result")).toBeVisible();
+  expectNoBrowserProblems(problems);
+});
+
+test("Gate 12-6 E: a dangerous package is rejected atomically and a changed analysis keeps the review baseline", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  await page.getByTestId("review-package-input").setInputFiles(resolve("docs/ai-solution-center/review-package-sample.json"));
+  await expect(page.getByTestId("loaded-review-package")).toBeVisible();
+  await page.getByTestId("review-package-input").setInputFiles({ name: "dangerous.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify({ packageType: "AI_SOLUTION_REVIEW_PACKAGE", schemaVersion: "1.0", case: {}, script: "alert(1)" })) });
+  await expect(page.getByTestId("review-package-import-error")).toContainText("package.script");
+  await expect(page.getByTestId("loaded-review-package")).toBeVisible();
+  await openCustomerAnalysis(page);
+  await page.getByTestId("review-status").selectOption("APPLY");
+  await page.getByTestId("reviewer-role").selectOption("CONSULTANT");
+  await page.getByTestId("review-check-CONSULTANT_CURRENT_PROCESS").check();
+  await page.getByTestId("review-record-save").click();
+  await page.getByTestId("priority-preset-field-burden").click();
+  await page.getByTestId("recompare-options").click();
+  await expect(page.getByTestId("review-analysis-changed")).toBeVisible();
+  await expect(page.getByTestId("review-summary")).toContainText("적용 검토");
+  expectNoBrowserProblems(problems);
+});
+
 test("Gate 12-4 E: full Markdown includes evidence and handover without copying the whole inquiry", async ({ page }) => {
   const problems = collectBrowserProblems(page);
   await openCenter(page);

@@ -1,4 +1,4 @@
-import type { ClarificationAnswer, CompanyKnowledgeArticle, InputEvidence, SolutionOptionComparison, SolutionResult, SolutionRevision, SolutionSession, SolutionSource } from "./solutionTypes";
+import type { ClarificationAnswer, CompanyKnowledgeArticle, InputEvidence, ReviewRecord, SolutionOptionComparison, SolutionResult, SolutionRevision, SolutionSession, SolutionSource } from "./solutionTypes";
 
 const maximumAnalysisRevision = 3;
 
@@ -97,7 +97,7 @@ function priorityLabel(key: string) {
   return labels[key] ?? key;
 }
 
-export function consultantHandoverDetails(session: SolutionSession, unresolved: readonly string[]): readonly ConsultantHandoverDetail[] {
+export function consultantHandoverDetails(session: SolutionSession, unresolved: readonly string[], review?: ReviewRecord): readonly ConsultantHandoverDetail[] {
   const revision = activeRevision(session);
   const result = session.activeResult;
   const request = session.originalRequest;
@@ -143,19 +143,28 @@ export function consultantHandoverDetails(session: SolutionSession, unresolved: 
     { label: "현재 신뢰도", value: result.confidence },
     { label: "분석 차수", value: `${revision?.revision ?? 1}차 분석` },
     ...comparisonDetails,
+    ...(review ? [
+      { label: "검토 상태", value: review.reviewStatus },
+      { label: "검토자 역할", value: review.reviewerRole ?? "선택 안 함" },
+      { label: "컨설턴트 검토 의견", value: review.consultantReview || "없음" },
+      { label: "개발 검토 의견", value: review.developerReview || "없음" },
+      { label: "현장 확인 의견", value: review.fieldReview || "없음" },
+      { label: "보류·반려·업무결정 사유", value: review.decisionReason || "없음" },
+      { label: "검토 기록 시각", value: review.updatedAt }
+    ] : []),
     { label: "PoC 범위", value: "로컬 템플릿 기반 검토 요약이며 확정 업무 규칙 또는 실제 운영 판단이 아닙니다." }
   ];
 }
 
-function handoverMarkdown(session: SolutionSession, unresolved: readonly string[], heading: string) {
-  return [heading, ...consultantHandoverDetails(session, unresolved).map((item) => `- ${item.label}: ${escapeMarkdownText(item.value)}`)].join("\n");
+function handoverMarkdown(session: SolutionSession, unresolved: readonly string[], heading: string, review?: ReviewRecord) {
+  return [heading, ...consultantHandoverDetails(session, unresolved, review).map((item) => `- ${item.label}: ${escapeMarkdownText(item.value)}`)].join("\n");
 }
 
-export function buildConsultantHandoverMarkdown(session: SolutionSession, unresolved: readonly string[]) {
-  return handoverMarkdown(session, unresolved, "# 컨설턴트 인계 요약");
+export function buildConsultantHandoverMarkdown(session: SolutionSession, unresolved: readonly string[], review?: ReviewRecord) {
+  return handoverMarkdown(session, unresolved, "# 컨설턴트 인계 요약", review);
 }
 
-export function buildSolutionMarkdown(session: SolutionSession, unresolved: readonly string[]) {
+export function buildSolutionMarkdown(session: SolutionSession, unresolved: readonly string[], review?: ReviewRecord) {
   const revision = activeRevision(session);
   const result = session.activeResult;
   const answers = revision?.clarificationAnswers ?? [];
@@ -180,6 +189,17 @@ export function buildSolutionMarkdown(session: SolutionSession, unresolved: read
     top ? bulletSection("적용 중 재검토가 필요한 조건", top.reconsiderationConditions) : "",
     `\n## 비교 점수 안내\n${escapeMarkdownText(comparison.scoreNotice)}`
   ] : [];
+  const reviewMarkdown = review ? [
+    "## 솔루션 검토 및 판단",
+    `- 검토 상태: ${review.reviewStatus}`,
+    `- 검토자 역할: ${review.reviewerRole ?? "선택 안 함"}`,
+    `- 컨설턴트 검토 의견: ${escapeMarkdownText(review.consultantReview || "없음")}`,
+    `- 개발 검토 의견: ${escapeMarkdownText(review.developerReview || "없음")}`,
+    `- 현장 확인 의견: ${escapeMarkdownText(review.fieldReview || "없음")}`,
+    `- 보류·반려·업무결정 사유: ${escapeMarkdownText(review.decisionReason || "없음")}`,
+    `- 체크리스트 확인 수: ${Object.values(review.checklist).filter(Boolean).length}`,
+    `- 검토 기록 시각: ${review.updatedAt}`
+  ] : ["## 솔루션 검토 및 판단", "아직 담당자 검토가 완료되지 않았습니다."];
   return [
     "# AI 솔루션 센터 분석 결과",
     `- 생성 시각: ${revision?.createdAt ?? ""}`,
@@ -194,6 +214,7 @@ export function buildSolutionMarkdown(session: SolutionSession, unresolved: read
     `\n## 핵심 문제\n${escapeMarkdownText(result.mainProblem)}`,
     `\n## 추천 기본안\n### ${escapeMarkdownText(top?.title ?? result.recommendation.title)}\n${escapeMarkdownText(top?.summary ?? result.recommendation.rationale)}\n${(top?.prerequisites ?? result.recommendation.actions).map((item) => `- ${escapeMarkdownText(item)}`).join("\n")}`,
     ...comparisonMarkdown,
+    ...reviewMarkdown,
     bulletSection("적용 단계", result.phasedPlan),
     bulletSection("대안", result.alternatives),
     bulletSection("필요한 추가 정보", result.additionalInfo),
@@ -203,7 +224,7 @@ export function buildSolutionMarkdown(session: SolutionSession, unresolved: read
     bulletSection("위험·주의사항", result.risks),
     bulletSection("컨설턴트 확인사항", result.consultantQuestions),
     bulletSection("개발 담당자 확인사항", result.developmentQuestions),
-    handoverMarkdown(session, unresolved, "## 컨설턴트 인계 요약"),
+    handoverMarkdown(session, unresolved, "## 컨설턴트 인계 요약", review),
     `\n## 신뢰도\n${result.confidence}`,
     `\n## 외부·사내 검토 필요 여부\n${result.externalReviewRequired ? "필요" : "불필요"}`,
     "\n## PoC 범위 안내\n현재 분석 세션과 내보내기는 브라우저 메모리에서만 동작합니다. 외부 AI, 서버, DB, 고객 상담 이력과 연결하지 않습니다."

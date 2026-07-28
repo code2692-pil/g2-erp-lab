@@ -95,6 +95,88 @@ export interface SolutionOptionComparison {
   scoreNotice: string;
 }
 
+export const reviewStatuses = ["PENDING", "APPLY", "HOLD", "REJECT", "NEEDS_BUSINESS_DECISION"] as const;
+export type ReviewStatus = (typeof reviewStatuses)[number];
+
+export const reviewerRoles = ["CONSULTANT", "DEVELOPER", "FIELD", "CUSTOMER"] as const;
+export type ReviewerRole = (typeof reviewerRoles)[number];
+
+export const reviewChecklistKeys = [
+  "CONSULTANT_CURRENT_PROCESS",
+  "CONSULTANT_TARGET_STANDARD",
+  "CONSULTANT_FIELD_CONSTRAINT",
+  "CONSULTANT_RELATED_TEAM",
+  "CONSULTANT_BUSINESS_OWNER",
+  "DEVELOPER_EXISTING_FEATURE",
+  "DEVELOPER_MASTER_STRUCTURE",
+  "DEVELOPER_API_INTEGRATION",
+  "DEVELOPER_DATA_MODEL",
+  "DEVELOPER_EXCEPTION_REWORK",
+  "FIELD_INPUT_LOCATION",
+  "FIELD_BARCODE_OR_QR",
+  "FIELD_INPUT_BURDEN",
+  "FIELD_PILOT_SCOPE"
+] as const;
+
+export type ReviewChecklistKey = (typeof reviewChecklistKeys)[number];
+export type ReviewChecklist = Record<ReviewChecklistKey, boolean>;
+
+export interface ReviewRoadmapSummary {
+  title: string;
+  steps: readonly string[];
+}
+
+export interface ReviewKnowledgeReference {
+  title: string;
+  category: string;
+  sourceType: KnowledgeSourceType;
+  matchedKeywords: readonly string[];
+}
+
+export interface ReviewEvidenceSummary {
+  source: string;
+  excerpt: string;
+}
+
+export interface ReviewAnalysisSnapshot {
+  analysisMode: SolutionSource;
+  analysisRevision: number;
+  detectedAreas: readonly string[];
+  inputSummary: string;
+  recommendedOption: string;
+  secondOption: string;
+  priorityProfile: SolutionPriorities;
+  roadmapSummary: readonly ReviewRoadmapSummary[];
+  unresolvedItems: readonly string[];
+  knowledgeReferences: readonly ReviewKnowledgeReference[];
+  evidenceSummaries: readonly ReviewEvidenceSummary[];
+  confidence: SolutionConfidence;
+  humanReviewRequired: true;
+}
+
+export interface ReviewRecord extends ReviewAnalysisSnapshot {
+  caseId: string;
+  caseTitle: string;
+  createdAt: string;
+  updatedAt: string;
+  reviewStatus: ReviewStatus;
+  reviewerRole: ReviewerRole | null;
+  reviewerDisplayName: string;
+  consultantReview: string;
+  developerReview: string;
+  fieldReview: string;
+  decisionReason: string;
+  checklist: ReviewChecklist;
+  limitations: readonly string[];
+  analysisFingerprint: string;
+}
+
+export interface ReviewPackage {
+  packageType: "AI_SOLUTION_REVIEW_PACKAGE";
+  schemaVersion: "1.0";
+  case: Omit<ReviewRecord, "analysisFingerprint">;
+}
+
 export interface ClarifyingQuestion {
   id: string;
   audience: "컨설턴트" | "개발 담당자";

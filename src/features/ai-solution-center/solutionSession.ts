@@ -16,9 +16,12 @@ function bulletSection(title: string, values: readonly string[]) {
 }
 
 function evidenceDisplay(item: InputEvidence) {
-  const file = item.fileName ? ` · 파일: ${item.fileName}` : "";
+  const file = item.fileName ? " · 첨부 파일 근거" : "";
   const keywords = item.relatedKeywords.length > 0 ? item.relatedKeywords.join(", ") : "업무영역 기준";
-  return `${item.sourceLabel}${file} · 발췌: ${item.excerpt} · 관련 키워드: ${keywords} · 추천 반영: ${item.usedInRecommendation ? "사용됨" : "참고"}`;
+  const analyzer = item.analyzerType ? ` · 분석기: ${item.analyzerType}` : "";
+  const support = item.supportLevel ? ` · 지원 수준: ${item.supportLevel}` : "";
+  const redaction = item.redacted ? " · 민감정보 자동 가림 적용" : "";
+  return `${item.sourceLabel}${file}${analyzer}${support}${redaction} · 발췌: ${item.excerpt} · 관련 키워드: ${keywords} · 추천 반영: ${item.usedInRecommendation ? "사용됨" : "참고"}`;
 }
 
 function firstEvidence(result: SolutionResult, sourceTypes: readonly InputEvidence["sourceType"][]) {
@@ -101,7 +104,11 @@ export function consultantHandoverDetails(session: SolutionSession, unresolved: 
   const revision = activeRevision(session);
   const result = session.activeResult;
   const request = session.originalRequest;
-  const fileNames = request.fileInputs?.map((file) => file.fileName).filter(Boolean) ?? [];
+  const files = request.fileProcessingSummaries ?? [];
+  const contentSupportedCount = files.filter((file) => file.supportLevel === "CONTENT_SUPPORTED" || file.supportLevel === "STRUCTURE_SUPPORTED").length;
+  const descriptionBasedCount = files.filter((file) => file.userDescriptionUsed && file.supportLevel !== "CONTENT_SUPPORTED" && file.supportLevel !== "STRUCTURE_SUPPORTED").length;
+  const excludedCount = files.filter((file) => !file.includeInAnalysis).length;
+  const redactionApplied = files.some((file) => file.redactionApplied);
   const currentSituation = session.mode === "customer-qa"
     ? firstEvidenceValue(result, ["CUSTOMER_QUESTION"], "정보 미입력으로 컨설턴트 확인 필요")
     : firstEvidenceValue(result, ["FILE_NOTE", "EXTRACTED_FILE_TEXT", "COMMON_CONTEXT"], "정보 미입력으로 컨설턴트 확인 필요");
@@ -133,12 +140,18 @@ export function consultantHandoverDetails(session: SolutionSession, unresolved: 
     { label: "추천 기본 방향", value: top?.title ?? result.recommendation.title },
     { label: "대안", value: result.alternatives.join(" / ") || "정보 미입력으로 컨설턴트 확인 필요" },
     { label: "관련 업무영역", value: result.inferredDomain },
-    { label: "관련 부서", value: "정보 미입력으로 컨설턴트 확인 필요" },
+    { label: "관련 부서", value: request.involvedDepartments?.trim() || "정보 미입력으로 컨설턴트 확인 필요" },
     { label: "확인할 추가 정보", value: result.additionalInfo.join(" / ") || "정보 미입력으로 컨설턴트 확인 필요" },
     { label: "아직 확인이 필요한 사항", value: unresolved.join(" / ") || "현재 입력 범위에서 주요 확인사항은 충분히 답변되었습니다." },
     { label: "컨설턴트 결정 필요사항", value: result.consultantQuestions.join(" / ") || "정보 미입력으로 컨설턴트 확인 필요" },
     { label: "개발 담당자 확인 필요사항", value: result.developmentQuestions.join(" / ") || "정보 미입력으로 컨설턴트 확인 필요" },
-    { label: "참고한 파일", value: fileNames.join(", ") || "파일 미첨부" },
+    { label: "첨부 파일", value: `${files.length}건` },
+    { label: "실제 내용·구조 분석 지원 파일", value: `${contentSupportedCount}건` },
+    { label: "사용자 입력 설명 기반 파일", value: `${descriptionBasedCount}건${descriptionBasedCount > 0 ? " · 사용자 입력 설명을 근거로 분석함" : ""}` },
+    { label: "분석 제외 파일", value: `${excludedCount}건` },
+    { label: "민감정보 가림 적용", value: redactionApplied ? "적용 · 공유 전 담당자 확인 필요" : "감지된 패턴 없음" },
+    { label: "선택 업무 예시", value: request.selectedScenarioTitle || "선택 안 함" },
+    { label: "파일 처리 한계", value: "OCR·STT·영상 장면 분석·PDF/Office 본문 파싱·압축 해제를 수행하지 않음" },
     { label: "회사 지식 사용", value: result.companyKnowledgeUsed ? "사용" : "미사용" },
     { label: "현재 신뢰도", value: result.confidence },
     { label: "분석 차수", value: `${revision?.revision ?? 1}차 분석` },
@@ -154,6 +167,30 @@ export function consultantHandoverDetails(session: SolutionSession, unresolved: 
     ] : []),
     { label: "PoC 범위", value: "로컬 템플릿 기반 검토 요약이며 확정 업무 규칙 또는 실제 운영 판단이 아닙니다." }
   ];
+}
+
+function fileProcessingMarkdown(session: SolutionSession) {
+  const request = session.originalRequest;
+  const files = request.fileProcessingSummaries ?? [];
+  if (files.length === 0) return "## 첨부 파일 처리 결과\n- 파일 미첨부";
+  const categories = [...new Set(files.flatMap((file) => file.sensitiveCategories))];
+  const lines = files.map((file) => [
+    `- ${escapeMarkdownText(file.displayName)} · ${file.category} · ${file.supportLevel} · ${file.processingStatus}`,
+    `  - 분석 포함: ${file.includeInAnalysis ? "포함" : "제외"}`,
+    `  - 구조 요약: ${escapeMarkdownText(file.structureSummary)}`,
+    `  - 경고: ${file.warnings.length > 0 ? file.warnings.map(escapeMarkdownText).join(" / ") : "없음"}`,
+    `  - 민감정보: ${file.sensitiveFindingCount > 0 ? `${file.sensitiveFindingCount}건 · ${file.sensitiveCategories.join(", ")} · 자동 가림 적용` : "감지된 패턴 없음"}`,
+    `  - 사용자 설명: ${file.userDescriptionUsed ? "사용" : "미사용"}`
+  ].join("\n"));
+  return [
+    "## 첨부 파일 처리 결과",
+    ...lines,
+    "",
+    `- 선택한 ERP·MES 시나리오: ${escapeMarkdownText(request.selectedScenarioTitle || "없음")}`,
+    `- 민감정보 감지 category: ${categories.join(", ") || "없음"}`,
+    "- 기초 패턴 탐지이며 모든 개인정보·기밀정보를 완전히 찾거나 제거한다고 보장하지 않습니다.",
+    "- 전체 파일 원문·파일 바이너리·절대 로컬 경로·Object URL은 포함하지 않습니다."
+  ].join("\n");
 }
 
 function handoverMarkdown(session: SolutionSession, unresolved: readonly string[], heading: string, review?: ReviewRecord) {
@@ -213,6 +250,7 @@ export function buildSolutionMarkdown(session: SolutionSession, unresolved: read
     `\n## 감지 업무영역\n${escapeMarkdownText(result.inferredDomain)}`,
     `\n## 핵심 문제\n${escapeMarkdownText(result.mainProblem)}`,
     `\n## 추천 기본안\n### ${escapeMarkdownText(top?.title ?? result.recommendation.title)}\n${escapeMarkdownText(top?.summary ?? result.recommendation.rationale)}\n${(top?.prerequisites ?? result.recommendation.actions).map((item) => `- ${escapeMarkdownText(item)}`).join("\n")}`,
+    fileProcessingMarkdown(session),
     ...comparisonMarkdown,
     ...reviewMarkdown,
     bulletSection("적용 단계", result.phasedPlan),

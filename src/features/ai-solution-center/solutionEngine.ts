@@ -30,7 +30,7 @@ const domainKeywords: ReadonlyArray<readonly [BusinessDomain, readonly string[]]
 
 function combinedInput(request: SolutionRequest) {
   const fileValues = request.fileInputs?.flatMap((file) => [file.extractedText, file.note]) ?? [];
-  return [request.situation, request.extractedText, request.currentManagement, request.desiredStandard, request.fieldConstraints, ...fileValues]
+  return [request.situation, request.extractedText, request.currentManagement, request.desiredStandard, request.fieldConstraints, request.involvedDepartments, ...fileValues]
     .concat((request.clarificationAnswers ?? []).map((answer) => `${answer.question}\n${answer.answer}`))
     .filter(Boolean)
     .join("\n")
@@ -61,7 +61,7 @@ function relatedKeywordsFor(value: string, candidate: KnowledgeCandidate) {
 
 function inputEvidenceFor(request: SolutionRequest, candidate: KnowledgeCandidate): readonly InputEvidence[] {
   const raw: InputEvidence[] = [];
-  const append = (id: string, sourceType: InputEvidenceSourceType, sourceLabel: string, value: string | undefined, fileName?: string) => {
+  const append = (id: string, sourceType: InputEvidenceSourceType, sourceLabel: string, value: string | undefined, file?: NonNullable<SolutionRequest["fileInputs"]>[number]) => {
     const excerpt = compactExcerpt(value ?? "");
     if (excerpt.length === 0) return;
     const relatedKeywords = relatedKeywordsFor(excerpt, candidate);
@@ -69,17 +69,24 @@ function inputEvidenceFor(request: SolutionRequest, candidate: KnowledgeCandidat
       id,
       sourceType,
       sourceLabel,
-      fileName,
+      fileName: file?.fileName,
       excerpt,
       relatedKeywords,
-      usedInRecommendation: relatedKeywords.length > 0 || symptomMatchCount(candidate.symptoms, excerpt) > 0
+      usedInRecommendation: relatedKeywords.length > 0 || symptomMatchCount(candidate.symptoms, excerpt) > 0,
+      analyzerType: file?.analyzerType,
+      supportLevel: file?.supportLevel,
+      redacted: file?.redacted,
+      sensitiveCategories: file?.sensitiveCategories,
+      structureSummary: file?.structureSummary,
+      includeInAnalysis: file?.includeInAnalysis
     });
   };
 
   const files = [...(request.fileInputs ?? [])].sort((left, right) => left.attachmentOrder - right.attachmentOrder || left.id.localeCompare(right.id));
   files.forEach((file) => {
-    append(`${file.id}-extracted`, "EXTRACTED_FILE_TEXT", "자동 추출 텍스트", file.extractedText, file.fileName);
-    append(`${file.id}-note`, "FILE_NOTE", "파일별 주요 내용·의사결정", file.note, file.fileName);
+    const analyzerLabel = file.analyzerType && ["CSV", "JSON", "XML", "LOG"].includes(file.analyzerType) ? `${file.analyzerType} 로컬 분석 요약` : "자동 추출 텍스트";
+    append(`${file.id}-extracted`, "EXTRACTED_FILE_TEXT", analyzerLabel, file.extractedText, file);
+    append(`${file.id}-note`, "FILE_NOTE", "파일별 주요 내용·의사결정", file.note, file);
   });
   if (files.length === 0) append("legacy-extracted-text", "EXTRACTED_FILE_TEXT", "자동 추출 텍스트", request.extractedText);
 
@@ -90,6 +97,7 @@ function inputEvidenceFor(request: SolutionRequest, candidate: KnowledgeCandidat
     append("customer-current-management", "CUSTOMER_CONTEXT", "현재 관리 방식", request.currentManagement);
     append("customer-desired-standard", "CUSTOMER_CONTEXT", "희망 기준", request.desiredStandard);
     append("customer-field-constraints", "CUSTOMER_CONTEXT", "현장 제약", request.fieldConstraints);
+    append("customer-involved-departments", "CUSTOMER_CONTEXT", "관련 부서", request.involvedDepartments);
   }
   (request.clarificationAnswers ?? []).forEach((answer) => append(`clarification-${answer.questionId}`, "CLARIFICATION_ANSWER", "후속 질문 답변", answer.answer));
 
@@ -105,10 +113,11 @@ function inputEvidenceFor(request: SolutionRequest, candidate: KnowledgeCandidat
 
 function inputSummaryFor(request: SolutionRequest) {
   if (request.source === "consultant-file") {
-    const files = request.fileInputs ?? [];
-    const extractedCount = files.filter((file) => file.extractedText?.trim()).length;
-    const noteCount = files.filter((file) => file.note?.trim()).length;
-    const parts = [`첨부 파일 ${files.length}건`, `자동 추출 텍스트 ${extractedCount}건`, `파일별 메모 ${noteCount}건`];
+    const files = request.fileProcessingSummaries ?? [];
+    const includedCount = files.filter((file) => file.includeInAnalysis).length;
+    const contentCount = files.filter((file) => file.supportLevel === "CONTENT_SUPPORTED" || file.supportLevel === "STRUCTURE_SUPPORTED").length;
+    const noteCount = files.filter((file) => file.userDescriptionUsed).length;
+    const parts = [`첨부 파일 ${files.length}건`, `분석 포함 ${includedCount}건`, `내용·구조 지원 ${contentCount}건`, `사용자 설명 ${noteCount}건`];
     if (request.situation.trim()) parts.push("공통 상황 설명 반영");
     return parts.join(" · ");
   }
@@ -116,6 +125,8 @@ function inputSummaryFor(request: SolutionRequest) {
   if (request.currentManagement?.trim()) parts.push("현재 관리 방식");
   if (request.desiredStandard?.trim()) parts.push("희망 기준");
   if (request.fieldConstraints?.trim()) parts.push("현장 제약");
+  if (request.involvedDepartments?.trim()) parts.push("관련 부서");
+  if (request.selectedScenarioTitle?.trim()) parts.push(`업무 예시: ${request.selectedScenarioTitle}`);
   if ((request.clarificationAnswers ?? []).length > 0) parts.push("후속 질문 답변");
   return `${parts.join(" · ")} 반영`;
 }

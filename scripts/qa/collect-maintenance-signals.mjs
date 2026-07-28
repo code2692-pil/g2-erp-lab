@@ -8,6 +8,8 @@ import { loadMaintenanceConfig } from "./verify-maintenance-boundaries.mjs";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const ignoredDirectories = new Set([".git", "node_modules", ".pnpm-store", "dist", "build", "artifacts", ".artifacts", "playwright-report", "test-results", "bin", "obj"]);
 const sensitivePattern = /api[_-]?key|token|secret|password|connectionstring|authorization/i;
+const sourceSensitiveValuePattern = /\b(?:api[_-]?key|token|secret|password|connectionstring|authorization)\b\s*[:=]\s*["'`](?!TEST_ONLY_|REDACTED_|your_|example_|demo_)([^"'`\s]{8,})["'`]/i;
+const sourceBearerValuePattern = /\bBearer\s+(?!TEST_ONLY_|REDACTED_)[A-Za-z0-9._~+/=-]{12,}/i;
 
 function git(args, rootDirectory) {
   try {
@@ -46,7 +48,7 @@ export function detectSourceMarkers(text) {
     todoOrFixme: /\b(TODO|FIXME)\b/.test(text),
     isolatedTest: /\.(only|skip)\s*\(/.test(text),
     diagnostic: /\b(console\.log|debugger|GATE\d+-DIAG)\b/.test(text),
-    sensitive: sensitivePattern.test(text)
+    sensitive: sourceSensitiveValuePattern.test(text) || sourceBearerValuePattern.test(text)
   };
 }
 

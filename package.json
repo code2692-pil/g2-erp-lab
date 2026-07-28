@@ -22,6 +22,7 @@
     "test:e2e:api:sqlserver": "node scripts/run-mode.mjs test sqlserver",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:report": "playwright show-report",
+    "test:ai-file-intelligence": "node --experimental-strip-types --test tests/unit/ai-file-intelligence.test.ts",
     "qa:maintenance:test": "node --test scripts/qa/tests/*.test.mjs",
     "qa:maintenance:scan": "node scripts/qa/collect-maintenance-signals.mjs",
     "qa:maintenance:report": "node scripts/qa/build-maintenance-report.mjs",

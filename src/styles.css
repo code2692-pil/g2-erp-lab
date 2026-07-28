@@ -993,6 +993,298 @@ textarea {
   line-height: 1.4;
 }
 
+.ai-solution-center__scenario-library {
+  border: 1px solid #9fbcd5;
+  border-radius: 6px;
+  background: #f7fbff;
+}
+
+.ai-solution-center__scenario-library > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 14px;
+  color: #284b6c;
+  cursor: pointer;
+  list-style: none;
+}
+
+.ai-solution-center__scenario-library > summary::-webkit-details-marker {
+  display: none;
+}
+
+.ai-solution-center__scenario-library > summary span {
+  display: grid;
+  gap: 3px;
+}
+
+.ai-solution-center__scenario-library > summary small {
+  color: #526b83;
+  font-weight: 400;
+}
+
+.ai-solution-center__scenario-library[open] > summary svg {
+  transform: rotate(180deg);
+}
+
+.ai-solution-center__scenario-notice,
+.ai-solution-center__scenario-selected {
+  margin: 0;
+  border-left: 3px solid #b68120;
+  padding: 8px 10px;
+  color: #6f541f;
+  background: #fffaf0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ai-solution-center__scenario-library > .ai-solution-center__scenario-notice {
+  margin: 0 14px 10px;
+}
+
+.ai-solution-center__scenario-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0 14px 14px;
+}
+
+.ai-solution-center__scenario-grid article {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid #c8d8e7;
+  border-radius: 5px;
+  padding: 10px;
+  background: #ffffff;
+}
+
+.ai-solution-center__scenario-grid article > div > span {
+  color: #52708b;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ai-solution-center__scenario-grid h3,
+.ai-solution-center__file-processing-result h3 {
+  margin: 2px 0 0;
+  color: #284b6c;
+  font-size: 15px;
+}
+
+.ai-solution-center__scenario-grid article > p {
+  margin: 0;
+  color: #425b71;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.ai-solution-center__scenario-grid dl {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.ai-solution-center__scenario-grid dl > div {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  gap: 6px;
+}
+
+.ai-solution-center__scenario-grid dt {
+  color: #607588;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ai-solution-center__scenario-grid dd {
+  margin: 0;
+  color: #35495c;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.ai-solution-center__scenario-grid button {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 5px;
+  min-height: 32px;
+  border: 1px solid #6d9bc7;
+  border-radius: 4px;
+  color: #174d7e;
+  background: #ffffff;
+  font-weight: 700;
+}
+
+.ai-solution-center__analysis-files > li {
+  align-items: flex-start;
+}
+
+.ai-solution-center__file-analysis-content {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+
+.ai-solution-center__file-analysis-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ai-solution-center__file-analysis-heading > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ai-solution-center__file-analysis-heading strong {
+  overflow-wrap: anywhere;
+}
+
+.ai-solution-center__file-analysis-content > p,
+.ai-solution-center__file-structure {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #4c6378;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.ai-solution-center__file-structure {
+  border-left: 3px solid #85a9c8;
+  padding-left: 8px;
+}
+
+.ai-solution-center__file-include {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  color: #284b6c;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ai-solution-center__file-include input {
+  accent-color: #1d75d8;
+}
+
+.ai-solution-center__blocked-file {
+  border-left: 3px solid #b54242;
+  padding: 7px 9px;
+  color: #8b2626 !important;
+  background: #fff5f5;
+  font-weight: 700;
+}
+
+.ai-solution-center__file-warnings {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding-left: 20px;
+  color: #765315;
+  font-size: 12px;
+}
+
+.ai-solution-center__sensitive-notice {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #d7c993;
+  border-radius: 5px;
+  padding: 9px;
+  background: #fffdf6;
+}
+
+.ai-solution-center__sensitive-notice.risk-review_required {
+  border-color: #d58a75;
+  background: #fff8f5;
+}
+
+.ai-solution-center__sensitive-notice > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #6f541f;
+}
+
+.ai-solution-center__sensitive-notice p {
+  margin: 0;
+  color: #6b5b35;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.ai-solution-center__sensitive-notice ul {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding-left: 20px;
+  color: #6b4b35;
+  font-size: 11px;
+}
+
+.ai-solution-center__file-processing-result {
+  display: grid;
+  gap: 9px;
+  border: 1px solid #a9c4dc;
+  border-radius: 6px;
+  padding: 12px;
+  background: #f7fbff;
+}
+
+.ai-solution-center__file-processing-result > p {
+  margin: 0;
+  color: #435d74;
+  font-size: 12px;
+}
+
+.ai-solution-center__file-processing-result > ul {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ai-solution-center__file-processing-result li {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  border: 1px solid #cad9e6;
+  border-radius: 4px;
+  padding: 8px;
+  background: #ffffff;
+}
+
+.ai-solution-center__file-processing-result li > div {
+  display: grid;
+  gap: 2px;
+}
+
+.ai-solution-center__file-processing-result li strong,
+.ai-solution-center__file-processing-result li span,
+.ai-solution-center__file-processing-result li p {
+  overflow-wrap: anywhere;
+}
+
+.ai-solution-center__file-processing-result li span {
+  color: #597084;
+  font-size: 11px;
+}
+
+.ai-solution-center__file-processing-result li p {
+  margin: 0;
+  color: #435d74;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .ai-solution-center__security {
   border-color: #d7c993;
   background: #fffdf6;
@@ -1019,7 +1311,9 @@ textarea {
   .ai-solution-center__review-fields,
   .ai-solution-center__review-checklists,
   .ai-solution-center__review-summary dl,
-  .ai-solution-center__loaded-review dl {
+  .ai-solution-center__loaded-review dl,
+  .ai-solution-center__scenario-grid,
+  .ai-solution-center__file-processing-result > ul {
     grid-template-columns: 1fr;
   }
 

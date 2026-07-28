@@ -1,3 +1,5 @@
+import type { FileCategory, FileProcessingStatus, FileProcessingSummary, FileSupportLevel, SensitiveCategory } from "./file-analysis/fileAnalysisTypes";
+
 export const businessDomains = ["자재", "재고", "LOT", "추적성", "생산", "공정", "검사", "현장", "MES", "기타"] as const;
 
 export type BusinessDomain = (typeof businessDomains)[number] | "";
@@ -17,9 +19,18 @@ export type InputEvidenceSourceType =
 export interface FileAnalysisInput {
   id: string;
   fileName: string;
+  safeDisplayName?: string;
   extractedText?: string;
   note?: string;
   attachmentOrder: number;
+  analyzerType?: FileCategory;
+  supportLevel?: FileSupportLevel;
+  processingStatus?: FileProcessingStatus;
+  structureSummary?: string;
+  sensitiveCategories?: readonly SensitiveCategory[];
+  redacted?: boolean;
+  includeInAnalysis?: boolean;
+  userDescriptionUsed?: boolean;
 }
 
 export interface InputEvidence {
@@ -30,6 +41,12 @@ export interface InputEvidence {
   excerpt: string;
   relatedKeywords: readonly string[];
   usedInRecommendation: boolean;
+  analyzerType?: FileCategory;
+  supportLevel?: FileSupportLevel;
+  redacted?: boolean;
+  sensitiveCategories?: readonly SensitiveCategory[];
+  structureSummary?: string;
+  includeInAnalysis?: boolean;
 }
 
 export interface SolutionRequest {
@@ -40,8 +57,12 @@ export interface SolutionRequest {
   currentManagement?: string;
   desiredStandard?: string;
   fieldConstraints?: string;
+  involvedDepartments?: string;
   clarificationAnswers?: readonly ClarificationAnswer[];
   fileInputs?: readonly FileAnalysisInput[];
+  fileProcessingSummaries?: readonly FileProcessingSummary[];
+  selectedScenarioId?: string;
+  selectedScenarioTitle?: string;
 }
 
 export interface SolutionRecommendation {
@@ -138,6 +159,18 @@ export interface ReviewEvidenceSummary {
   excerpt: string;
 }
 
+export interface ReviewFileProcessingSummary {
+  displayName: string;
+  category: FileCategory;
+  supportLevel: FileSupportLevel;
+  processingStatus: FileProcessingStatus;
+  includeInAnalysis: boolean;
+  structureSummary: string;
+  sensitiveCategories: readonly SensitiveCategory[];
+  redactionApplied: boolean;
+  userDescriptionUsed: boolean;
+}
+
 export interface ReviewAnalysisSnapshot {
   analysisMode: SolutionSource;
   analysisRevision: number;
@@ -150,6 +183,14 @@ export interface ReviewAnalysisSnapshot {
   unresolvedItems: readonly string[];
   knowledgeReferences: readonly ReviewKnowledgeReference[];
   evidenceSummaries: readonly ReviewEvidenceSummary[];
+  fileCount: number;
+  includedFileCount: number;
+  fileCategories: readonly FileCategory[];
+  fileProcessingSummaries: readonly ReviewFileProcessingSummary[];
+  sensitiveFindingCategories: readonly SensitiveCategory[];
+  redactionApplied: boolean;
+  selectedScenarioId: string;
+  selectedScenarioTitle: string;
   confidence: SolutionConfidence;
   humanReviewRequired: true;
 }
@@ -171,11 +212,19 @@ export interface ReviewRecord extends ReviewAnalysisSnapshot {
   analysisFingerprint: string;
 }
 
-export interface ReviewPackage {
+export interface ReviewPackageV11 {
   packageType: "AI_SOLUTION_REVIEW_PACKAGE";
-  schemaVersion: "1.0";
+  schemaVersion: "1.1";
   case: Omit<ReviewRecord, "analysisFingerprint">;
 }
+
+export interface ReviewPackageV10 {
+  packageType: "AI_SOLUTION_REVIEW_PACKAGE";
+  schemaVersion: "1.0";
+  case: Omit<ReviewRecord, "analysisFingerprint" | "fileCount" | "includedFileCount" | "fileCategories" | "fileProcessingSummaries" | "sensitiveFindingCategories" | "redactionApplied" | "selectedScenarioId" | "selectedScenarioTitle">;
+}
+
+export type ReviewPackage = ReviewPackageV10 | ReviewPackageV11;
 
 export interface ClarifyingQuestion {
   id: string;

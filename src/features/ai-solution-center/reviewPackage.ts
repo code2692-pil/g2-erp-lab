@@ -1,6 +1,8 @@
-import { activeRevision, analysisModeLabel, analysisRevision } from "./solutionSession";
-import { defaultSolutionPriorities } from "./solutionOptions";
-import { reviewChecklistKeys, reviewerRoles, reviewStatuses, type ReviewChecklist, type ReviewChecklistKey, type ReviewPackage, type ReviewRecord, type ReviewStatus, type ReviewerRole, type SolutionPriorities, type SolutionSession } from "./solutionTypes";
+import { activeRevision, analysisModeLabel, analysisRevision } from "./solutionSession.ts";
+import { defaultSolutionPriorities } from "./solutionOptions.ts";
+import { reviewChecklistKeys, reviewerRoles, reviewStatuses, type ReviewChecklist, type ReviewChecklistKey, type ReviewPackage, type ReviewRecord, type ReviewStatus, type ReviewerRole, type SolutionPriorities, type SolutionSession } from "./solutionTypes.ts";
+import { fileCategories, fileProcessingStatuses, fileSupportLevels, sensitiveCategories } from "./file-analysis/fileAnalysisTypes.ts";
+import { redactSensitiveData } from "./file-analysis/sensitiveDataRedactor.ts";
 
 export const reviewStatusLabels: Readonly<Record<ReviewStatus, string>> = {
   PENDING: "검토 대기",
@@ -84,6 +86,8 @@ function reviewSnapshot(session: SolutionSession, unresolved: readonly string[])
   const result = session.activeResult;
   const top = session.optionComparison?.options[0];
   const second = session.optionComparison?.options[1];
+  const files = session.originalRequest.fileProcessingSummaries ?? [];
+  const findingCategories = [...new Set(files.flatMap((file) => file.sensitiveCategories))];
   return {
     analysisMode: session.mode,
     analysisRevision: analysisRevision(session),
@@ -99,6 +103,24 @@ function reviewSnapshot(session: SolutionSession, unresolved: readonly string[])
       source: compact(evidence.sourceLabel, 120),
       excerpt: "사용자 입력 및 원문 파일 내용은 검토 패키지에 포함하지 않습니다."
     })),
+    fileCount: files.length,
+    includedFileCount: files.filter((file) => file.includeInAnalysis).length,
+    fileCategories: [...new Set(files.map((file) => file.category))],
+    fileProcessingSummaries: files.slice(0, 10).map((file) => ({
+      displayName: compact(file.displayName, 80),
+      category: file.category,
+      supportLevel: file.supportLevel,
+      processingStatus: file.processingStatus,
+      includeInAnalysis: file.includeInAnalysis,
+      structureSummary: compact(file.structureSummary, 300),
+      sensitiveCategories: [...file.sensitiveCategories],
+      redactionApplied: file.redactionApplied,
+      userDescriptionUsed: file.userDescriptionUsed
+    })),
+    sensitiveFindingCategories: findingCategories,
+    redactionApplied: files.some((file) => file.redactionApplied),
+    selectedScenarioId: compact(session.originalRequest.selectedScenarioId ?? "", 80),
+    selectedScenarioTitle: compact(session.originalRequest.selectedScenarioTitle ?? "", 150),
     confidence: result.confidence,
     humanReviewRequired: true as const
   };
@@ -125,21 +147,22 @@ export function createReviewRecord(session: SolutionSession, unresolved: readonl
   if (error) throw new Error(error);
   const snapshot = reviewSnapshot(session, unresolved);
   const caseId = `review-${stableHash([session.mode, snapshot.analysisRevision, snapshot.detectedAreas.join("|"), snapshot.recommendedOption, session.optionComparison?.options.map((option) => option.id).join("|") ?? ""].join("|"))}`;
+  const safe = (value: string, maximum: number) => compact(redactSensitiveData(value).redactedText, maximum);
   return {
     ...snapshot,
     caseId,
-    caseTitle: compact(draft.caseTitle || automaticCaseTitle(session, now), 150),
+    caseTitle: safe(draft.caseTitle || automaticCaseTitle(session, now), 150),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
     reviewStatus: draft.reviewStatus,
     reviewerRole: draft.reviewerRole || null,
-    reviewerDisplayName: compact(draft.reviewerDisplayName, 100),
-    consultantReview: compact(draft.consultantReview, 2000),
-    developerReview: compact(draft.developerReview, 2000),
-    fieldReview: compact(draft.fieldReview, 2000),
-    decisionReason: compact(draft.decisionReason, 2000),
+    reviewerDisplayName: safe(draft.reviewerDisplayName, 100),
+    consultantReview: safe(draft.consultantReview, 2000),
+    developerReview: safe(draft.developerReview, 2000),
+    fieldReview: safe(draft.fieldReview, 2000),
+    decisionReason: safe(draft.decisionReason, 2000),
     checklist: { ...draft.checklist },
-    limitations: ["검토 상태는 실제 승인·전자결재 또는 적용 완료를 의미하지 않습니다.", "검토 패키지는 로컬 파일 기반 PoC이며 사용자 인증·권한·DB·감사 로그와 연결하지 않습니다."],
+    limitations: ["검토 상태는 실제 승인·전자결재 또는 적용 완료를 의미하지 않습니다.", "검토 패키지는 로컬 파일 기반 PoC이며 사용자 인증·권한·DB·감사 로그와 연결하지 않습니다.", "민감정보 탐지는 기초 패턴 기반이며 실제 공유 전 담당자 검토가 필요합니다."],
     analysisFingerprint: reviewAnalysisFingerprint(session)
   };
 }
@@ -150,7 +173,7 @@ export function reviewDraftFromRecord(record: ReviewRecord): ReviewDraft {
 
 export function toReviewPackage(record: ReviewRecord): ReviewPackage {
   const { analysisFingerprint: _analysisFingerprint, ...reviewCase } = record;
-  return { packageType: "AI_SOLUTION_REVIEW_PACKAGE", schemaVersion: "1.0", case: reviewCase };
+  return { packageType: "AI_SOLUTION_REVIEW_PACKAGE", schemaVersion: "1.1", case: reviewCase };
 }
 
 export function reviewPackageFilename(record: ReviewRecord) {
@@ -181,7 +204,11 @@ function isIsoDate(value: unknown) {
 }
 
 function plainText(value: unknown, maximum: number) {
-  return typeof value === "string" && value.length <= maximum && !/<\/?[a-z][^>]*>/i.test(value) && !/(?:file:\/\/|[a-z]:\\|\/users\/|<script)/i.test(value);
+  return typeof value === "string"
+    && value.length <= maximum
+    && !/<\/?[a-z][^>]*>/i.test(value)
+    && !/(?:file:\/\/|[a-z]:\\|\/users\/|<script)/i.test(value)
+    && redactSensitiveData(value).redactedText === value;
 }
 
 function prioritiesAreValid(value: unknown): value is SolutionPriorities {
@@ -197,8 +224,28 @@ function stringArray(value: unknown, maximumCount: number, maximumLength: number
   return Array.isArray(value) && value.length <= maximumCount && value.every((item) => plainText(item, maximumLength));
 }
 
-function validateCase(value: unknown): string | ReviewRecord {
-  const caseKeys = ["caseId", "caseTitle", "createdAt", "updatedAt", "analysisMode", "analysisRevision", "detectedAreas", "inputSummary", "recommendedOption", "secondOption", "priorityProfile", "roadmapSummary", "unresolvedItems", "knowledgeReferences", "evidenceSummaries", "confidence", "humanReviewRequired", "reviewStatus", "reviewerRole", "reviewerDisplayName", "consultantReview", "developerReview", "fieldReview", "decisionReason", "checklist", "limitations"];
+const v10CaseKeys = ["caseId", "caseTitle", "createdAt", "updatedAt", "analysisMode", "analysisRevision", "detectedAreas", "inputSummary", "recommendedOption", "secondOption", "priorityProfile", "roadmapSummary", "unresolvedItems", "knowledgeReferences", "evidenceSummaries", "confidence", "humanReviewRequired", "reviewStatus", "reviewerRole", "reviewerDisplayName", "consultantReview", "developerReview", "fieldReview", "decisionReason", "checklist", "limitations"] as const;
+const v11ExtraKeys = ["fileCount", "includedFileCount", "fileCategories", "fileProcessingSummaries", "sensitiveFindingCategories", "redactionApplied", "selectedScenarioId", "selectedScenarioTitle"] as const;
+
+function validateFileSummary(value: unknown) {
+  const keys = ["displayName", "category", "supportLevel", "processingStatus", "includeInAnalysis", "structureSummary", "sensitiveCategories", "redactionApplied", "userDescriptionUsed"];
+  return isRecord(value)
+    && hasExactKeys(value, keys)
+    && plainText(value.displayName, 80)
+    && fileCategories.includes(value.category as (typeof fileCategories)[number])
+    && fileSupportLevels.includes(value.supportLevel as (typeof fileSupportLevels)[number])
+    && fileProcessingStatuses.includes(value.processingStatus as (typeof fileProcessingStatuses)[number])
+    && typeof value.includeInAnalysis === "boolean"
+    && plainText(value.structureSummary, 300)
+    && Array.isArray(value.sensitiveCategories)
+    && value.sensitiveCategories.length <= sensitiveCategories.length
+    && value.sensitiveCategories.every((category) => sensitiveCategories.includes(category))
+    && typeof value.redactionApplied === "boolean"
+    && typeof value.userDescriptionUsed === "boolean";
+}
+
+function validateCase(value: unknown, schemaVersion: "1.0" | "1.1"): string | UnknownRecord {
+  const caseKeys = schemaVersion === "1.1" ? [...v10CaseKeys, ...v11ExtraKeys] : [...v10CaseKeys];
   if (!isRecord(value)) return "case: 객체여야 합니다.";
   if (!hasExactKeys(value, caseKeys)) return schemaKeyError(value, caseKeys, "case");
   if (!plainText(value.caseId, 80) || typeof value.caseId !== "string" || !/^review-[a-z0-9]{7}$/.test(value.caseId)) return "case.caseId: 허용되지 않은 형식입니다.";
@@ -216,14 +263,24 @@ function validateCase(value: unknown): string | ReviewRecord {
   if (value.humanReviewRequired !== true || !reviewStatuses.includes(value.reviewStatus as ReviewStatus)) return "case.reviewStatus: 허용되지 않은 값입니다.";
   if (!(value.reviewerRole === null || reviewerRoles.includes(value.reviewerRole as ReviewerRole)) || !plainText(value.reviewerDisplayName, 100) || !plainText(value.consultantReview, 2000) || !plainText(value.developerReview, 2000) || !plainText(value.fieldReview, 2000) || !plainText(value.decisionReason, 2000)) return "case: 검토자 또는 검토 의견 field가 올바르지 않습니다.";
   if (!checklistIsValid(value.checklist) || !stringArray(value.limitations, 5, 300)) return "case: 체크리스트 또는 제한사항이 올바르지 않습니다.";
-  return value as unknown as ReviewRecord;
+  if (schemaVersion === "1.1") {
+    if (!Number.isInteger(value.fileCount) || !Number.isInteger(value.includedFileCount) || typeof value.fileCount !== "number" || typeof value.includedFileCount !== "number" || value.fileCount < 0 || value.fileCount > 10 || value.includedFileCount < 0 || value.includedFileCount > value.fileCount) return "case.fileCount: 파일 집계가 올바르지 않습니다.";
+    if (!Array.isArray(value.fileCategories) || value.fileCategories.length > fileCategories.length || !value.fileCategories.every((category) => fileCategories.includes(category))) return "case.fileCategories: 파일 분류가 올바르지 않습니다.";
+    if (!Array.isArray(value.fileProcessingSummaries) || value.fileProcessingSummaries.length > 10 || !value.fileProcessingSummaries.every(validateFileSummary)) return "case.fileProcessingSummaries: 파일 처리 요약이 올바르지 않습니다.";
+    if (!Array.isArray(value.sensitiveFindingCategories) || value.sensitiveFindingCategories.length > sensitiveCategories.length || !value.sensitiveFindingCategories.every((category) => sensitiveCategories.includes(category)) || typeof value.redactionApplied !== "boolean") return "case.sensitiveFindingCategories: 민감정보 집계가 올바르지 않습니다.";
+    if (!plainText(value.selectedScenarioId, 80) || !plainText(value.selectedScenarioTitle, 150)) return "case.selectedScenarioId: 시나리오 정보가 올바르지 않습니다.";
+  }
+  return value;
 }
 
 export function validateReviewPackage(value: unknown): { success: true; value: ReviewPackage } | { success: false; error: string } {
   const topKeys = ["packageType", "schemaVersion", "case"];
   if (!isRecord(value)) return { success: false, error: "최상위 구조는 객체여야 합니다." };
   if (!hasExactKeys(value, topKeys)) return { success: false, error: schemaKeyError(value, topKeys, "package") };
-  if (value.packageType !== "AI_SOLUTION_REVIEW_PACKAGE" || value.schemaVersion !== "1.0") return { success: false, error: "지원하지 않는 packageType 또는 schemaVersion입니다." };
-  const reviewCase = validateCase(value.case);
-  return typeof reviewCase === "string" ? { success: false, error: reviewCase } : { success: true, value: { packageType: "AI_SOLUTION_REVIEW_PACKAGE", schemaVersion: "1.0", case: reviewCase } };
+  if (value.packageType !== "AI_SOLUTION_REVIEW_PACKAGE" || (value.schemaVersion !== "1.0" && value.schemaVersion !== "1.1")) return { success: false, error: "지원하지 않는 packageType 또는 schemaVersion입니다." };
+  const reviewCase = validateCase(value.case, value.schemaVersion);
+  if (typeof reviewCase === "string") return { success: false, error: reviewCase };
+  return value.schemaVersion === "1.1"
+    ? { success: true, value: { packageType: "AI_SOLUTION_REVIEW_PACKAGE", schemaVersion: "1.1", case: reviewCase as unknown as Omit<ReviewRecord, "analysisFingerprint"> } }
+    : { success: true, value: { packageType: "AI_SOLUTION_REVIEW_PACKAGE", schemaVersion: "1.0", case: reviewCase as unknown as Extract<ReviewPackage, { schemaVersion: "1.0" }>["case"] } };
 }

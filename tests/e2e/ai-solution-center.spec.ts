@@ -9,7 +9,7 @@ function collectBrowserProblems(page: Page) {
   page.on("pageerror", (error) => pageErrors.push(error.message));
   page.on("request", (request) => {
     const url = new URL(request.url());
-    if (url.hostname !== "127.0.0.1") externalRequests.push(request.url());
+    if ((url.protocol === "http:" || url.protocol === "https:") && url.hostname !== "127.0.0.1") externalRequests.push(request.url());
   });
   return { consoleErrors, pageErrors, externalRequests };
 }
@@ -483,7 +483,7 @@ test("Gate 12-6 C: review package download contains the strict safe summary only
   for await (const chunk of stream ?? []) body += chunk.toString();
   const reviewPackage = JSON.parse(body) as { packageType: string; schemaVersion: string; case: Record<string, unknown> };
   expect(reviewPackage.packageType).toBe("AI_SOLUTION_REVIEW_PACKAGE");
-  expect(reviewPackage.schemaVersion).toBe("1.0");
+  expect(reviewPackage.schemaVersion).toBe("1.1");
   expect(reviewPackage.case.recommendedOption).toBeTruthy();
   expect(JSON.stringify(reviewPackage)).not.toContain("Supplier LOT traceability must continue");
   expect(JSON.stringify(reviewPackage)).not.toContain("C:\\Users\\");
@@ -521,6 +521,236 @@ test("Gate 12-6 E: a dangerous package is rejected atomically and a changed anal
   await page.getByTestId("recompare-options").click();
   await expect(page.getByTestId("review-analysis-changed")).toBeVisible();
   await expect(page.getByTestId("review-summary")).toContainText("적용 검토");
+  expectNoBrowserProblems(problems);
+});
+
+test("Gate 12-7 A: CSV 구조 분석은 열·행·ERP Header를 표시하고 요약만 근거로 사용한다", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  const csv = "LOT,QTY,ITEM,NOTE\nLOT-A,10,P-100,\"검사, 포장\"\nLOT-B,20,P-200,출하";
+  await page.getByTestId("ai-file-input").setInputFiles({ name: "lot-plan.csv", mimeType: "text/csv", buffer: Buffer.from(csv) });
+  await expect(page.locator("[data-testid^='file-summary-']")).toContainText("4열");
+  await expect(page.locator("[data-testid^='file-summary-']")).toContainText("2행");
+  await expect(page.locator("[data-testid^='file-structure-']")).toContainText("LOT");
+  await expect(page.locator("[data-testid^='file-structure-']")).toContainText("QTY");
+  await expect(page.getByTestId("ai-file-list")).not.toContainText(csv);
+  await page.getByTestId("ai-consultant-analyze").click();
+  await expect(page.getByTestId("file-processing-result")).toContainText("CSV");
+  await expect(page.getByTestId("input-evidence-file-1-extracted")).toContainText("CSV 로컬 분석 요약");
+  await expect(page.getByTestId("ai-result")).not.toContainText("LOT-A,10,P-100");
+  expectNoBrowserProblems(problems);
+});
+
+test("Gate 12-7 B: JSON은 key·배열·중첩 깊이를 표시하고 민감 key 값을 가린다", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  const privateValue = "Gate12PrivateValue123!";
+  const json = JSON.stringify({ orders: [{ LOT: "LOT-A", quantity: 2, password: privateValue, detail: { warehouse: "W1" } }] });
+  await page.getByTestId("ai-file-input").setInputFiles({ name: "orders.json", mimeType: "application/json", buffer: Buffer.from(json) });
+  await expect(page.locator("[data-testid^='file-summary-']")).toContainText("최상위 object");
+  await expect(page.locator("[data-testid^='file-summary-']")).toContainText("최대 중첩 깊이");
+  await expect(page.locator("[data-testid^='file-sensitive-']")).toContainText("Secret 설정값 후보");
+  await expect(page.getByTestId("ai-file-list")).not.toContainText(privateValue);
+  await page.getByTestId("ai-consultant-analyze").click();
+  await expect(page.getByTestId("input-evidence-file-1-extracted")).not.toContainText(privateValue);
+  await expect(page.getByTestId("ai-result")).not.toContainText(json);
+  expectNoBrowserProblems(problems);
+});
+
+test("Gate 12-7 C: 정상 XML과 구조 오류 XML을 분리하고 설명 기반 분석을 허용한다", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  await page.getByTestId("ai-file-input").setInputFiles([
+    { name: "orders.xml", mimeType: "application/xml", buffer: Buffer.from("<orders><order LOT=\"A\"/><order LOT=\"B\"/></orders>") },
+    { name: "broken.xml", mimeType: "application/xml", buffer: Buffer.from("<orders><order></orders>") }
+  ]);
+  await expect(page.getByTestId("ai-file-list")).toContainText("root orders");
+  await expect(page.getByTestId("ai-file-list")).toContainText("XML 구조 오류");
+  const notes = page.locator("[data-testid^='file-note-']");
+  await notes.nth(1).fill("깨진 XML이지만 검사 LOT 항목과 재작업 이력을 확인해야 합니다.");
+  await page.getByTestId("ai-consultant-analyze").click();
+  await expect(page.getByTestId("input-evidence-file-2-note")).toBeVisible();
+  await expect(page.getByTestId("file-processing-result")).toContainText("XML");
+  expectNoBrowserProblems(problems);
+});
+
+test("Gate 12-7 D: LOG는 오류 후보를 집계하고 가린 발췌만 제공한다", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  const sensitiveToken = "Abcd1234Abcd1234Abcd1234Abcd1234";
+  const log = `2026-07-29 10:00 ERROR timeout token=${sensitiveToken}\n2026-07-29 10:01 WARN duplicate LOT\n2026-07-29 10:02 INFO retry`;
+  await page.getByTestId("ai-file-input").setInputFiles({ name: "production.log", mimeType: "text/plain", buffer: Buffer.from(log) });
+  await expect(page.locator("[data-testid^='file-summary-']")).toContainText("ERROR 1건");
+  await expect(page.locator("[data-testid^='file-summary-']")).toContainText("WARN 1건");
+  await expect(page.getByTestId("ai-file-list")).not.toContainText(sensitiveToken);
+  await page.getByTestId("ai-consultant-analyze").click();
+  await expect(page.getByTestId("ai-result")).toContainText("오류 원인 확정이 아니라");
+  await expect(page.getByTestId("ai-result")).not.toContainText(sensitiveToken);
+  expectNoBrowserProblems(problems);
+});
+
+test("Gate 12-7 E: 이미지는 크기 메타정보와 OCR 미지원 안내 후 메모로 분석한다", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZP1sAAAAASUVORK5CYII=", "base64");
+  await page.getByTestId("ai-file-input").setInputFiles({ name: "inspection.png", mimeType: "image/png", buffer: png });
+  await expect(page.getByTestId("ai-file-list")).toContainText("1×1");
+  await expect(page.getByTestId("ai-file-list")).toContainText("OCR이나 장면 분석을 지원하지 않습니다");
+  await page.locator("[data-testid^='file-note-']").fill("검사 화면에서 LOT와 부적합 결과를 함께 확인하는 예시입니다.");
+  await page.getByTestId("ai-consultant-analyze").click();
+  await expect(page.getByTestId("input-evidence-file-1-note")).toBeVisible();
+  expectNoBrowserProblems(problems);
+});
+
+test("Gate 12-7 F: 미디어와 PDF는 내용 분석 표현 없이 사용자 설명으로 분석한다", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  await page.getByTestId("ai-file-input").setInputFiles([
+    { name: "machine.wav", mimeType: "audio/wav", buffer: Buffer.from("not-real-audio") },
+    { name: "manual.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-placeholder") }
+  ]);
+  await expect(page.getByTestId("ai-file-list")).toContainText("음성 전사를 지원하지 않습니다");
+  await expect(page.getByTestId("ai-file-list")).toContainText("본문 자동 추출을 지원하지 않습니다");
+  const notes = page.locator("[data-testid^='file-note-']");
+  await notes.nth(0).fill("설비 이상 시점의 작업지시와 불량 발생을 비교해야 합니다.");
+  await notes.nth(1).fill("문서에는 LOT 검사 기준과 재작업 승인 항목이 정리되어 있습니다.");
+  await page.getByTestId("ai-consultant-analyze").click();
+  await expect(page.getByTestId("input-evidence-file-1-note")).toBeVisible();
+  await expect(page.getByTestId("input-evidence-file-2-note")).toBeVisible();
+  expectNoBrowserProblems(problems);
+});
+
+test("Gate 12-7 G: 실행파일은 BLOCKED이고 다른 정상 파일 분석은 계속된다", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  await page.getByTestId("ai-file-input").setInputFiles([
+    { name: "unsafe.exe", mimeType: "application/octet-stream", buffer: Buffer.from("do-not-read") },
+    { name: "safe.txt", mimeType: "text/plain", buffer: Buffer.from("LOT 검사 포장 추적") }
+  ]);
+  await expect(page.locator("[data-testid^='file-blocked-']")).toContainText("실행 가능한 파일");
+  const blockedCard = page.locator("[data-testid^='file-analysis-']").filter({ hasText: "unsafe.exe" });
+  await expect(blockedCard.locator("input[type='checkbox']")).toHaveCount(0);
+  await expect(blockedCard.locator("textarea")).toHaveCount(0);
+  await expect(page.locator("[data-testid^='file-note-']")).toHaveCount(1);
+  await page.getByTestId("ai-consultant-analyze").click();
+  await expect(page.getByTestId("input-evidence-file-2-extracted")).toBeVisible();
+  await expect(page.getByTestId("file-processing-result")).toContainText("보안상 차단");
+  expectNoBrowserProblems(problems);
+});
+
+test("Gate 12-7 H: 민감정보 원문은 화면·Markdown·검토 패키지에 남지 않는다", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://127.0.0.1:5173" });
+  const email = "gate12@example.com";
+  const phone = "010-1234-5678";
+  const token = "TEST_ONLY_GATE12_TOKEN_123456789012345678901234";
+  await page.getByTestId("ai-file-input").setInputFiles({ name: "secure.txt", mimeType: "text/plain", buffer: Buffer.from(`LOT 검사 담당 ${email} ${phone} access_token=${token}`) });
+  await expect(page.locator("[data-testid^='file-sensitive-']")).toContainText("이메일 주소");
+  await expect(page.locator("[data-testid^='file-sensitive-']")).toContainText("전화번호 후보");
+  await page.getByTestId("ai-consultant-analyze").click();
+  await expect(page.getByTestId("ai-result")).not.toContainText(email);
+  await expect(page.getByTestId("ai-result")).not.toContainText(phone);
+  await expect(page.getByTestId("ai-result")).not.toContainText(token);
+  await expect(page.getByTestId("input-evidence-file-1-extracted")).toContainText("REDACTED");
+  await page.getByTestId("result-copy").click();
+  const markdown = await page.evaluate(() => navigator.clipboard.readText());
+  expect(markdown).not.toContain(email);
+  expect(markdown).not.toContain(phone);
+  expect(markdown).not.toContain(token);
+  expect(markdown).toContain("자동 가림 적용");
+  await page.getByTestId("review-status").selectOption("APPLY");
+  await page.getByTestId("reviewer-role").selectOption("CONSULTANT");
+  await page.getByTestId("review-check-CONSULTANT_CURRENT_PROCESS").check();
+  await page.getByTestId("review-record-save").click();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByTestId("review-package-download").click();
+  const download = await downloadPromise;
+  const stream = await download.createReadStream();
+  let body = "";
+  for await (const chunk of stream ?? []) body += chunk.toString();
+  expect(body).not.toContain(email);
+  expect(body).not.toContain(phone);
+  expect(body).not.toContain(token);
+  expect(JSON.parse(body).schemaVersion).toBe("1.1");
+  expectNoBrowserProblems(problems);
+});
+
+test("Gate 12-7 I: 파일 제외는 새 분석에만 반영되고 기존 결과 스냅샷은 유지된다", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  await page.getByTestId("ai-file-input").setInputFiles([
+    { name: "lot.txt", mimeType: "text/plain", buffer: Buffer.from("LOT 검사 포장 추적") },
+    { name: "errors.log", mimeType: "text/plain", buffer: Buffer.from("ERROR timeout production") }
+  ]);
+  const toggles = page.locator("[data-testid^='file-include-']");
+  await toggles.nth(1).uncheck();
+  await page.getByTestId("ai-consultant-analyze").click();
+  await expect(page.getByTestId("input-evidence-file-1-extracted")).toBeVisible();
+  await expect(page.getByTestId("input-evidence-file-2-extracted")).toHaveCount(0);
+  await expect(page.getByTestId("result-file-file-2")).toContainText("분석 제외");
+  await toggles.nth(1).check();
+  await expect(page.getByTestId("result-file-file-2")).toContainText("분석 제외");
+  await page.getByTestId("ai-consultant-analyze").click();
+  await expect(page.getByTestId("input-evidence-file-2-extracted")).toBeVisible();
+  await expect(page.getByTestId("result-file-file-2")).toContainText("분석 포함");
+  expectNoBrowserProblems(problems);
+});
+
+test("Gate 12-7 J: ERP·MES 검사 재작업 예시는 입력만 채우고 사용자가 직접 분석한다", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  await page.getByTestId("scenario-library").locator("summary").click();
+  await page.getByTestId("scenario-apply-inspection-rework-history").click();
+  await expect(page.getByRole("tab", { name: "고객 업무 Q&A" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("ai-customer-inquiry")).toHaveValue(/검사 부적합/);
+  await expect(page.getByTestId("ai-customer-current-management")).toHaveValue(/엑셀/);
+  await expect(page.getByTestId("ai-customer-field-constraints")).toHaveValue(/업무 규칙/);
+  await expect(page.getByTestId("ai-customer-departments")).toHaveValue("생산, 품질, 기술");
+  await expect(page.getByTestId("ai-result")).toHaveCount(0);
+  await page.getByTestId("ai-customer-guide").click();
+  await expect(page.getByTestId("ai-result")).toBeVisible();
+  await expect(page.getByTestId("result-selected-scenario")).toContainText("검사 부적합·재작업");
+  await expect(page.getByTestId("option-comparison")).toBeVisible();
+  await expect(page.getByTestId("option-roadmap")).toBeVisible();
+  expectNoBrowserProblems(problems);
+});
+
+test("Gate 12-7 K: 작성 중 예시 교체를 취소하면 현재 입력을 유지한다", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  await page.getByRole("tab", { name: "고객 업무 Q&A" }).click();
+  const original = "작성 중인 고객 문의를 유지해야 합니다.";
+  await page.getByTestId("ai-customer-inquiry").fill(original);
+  await page.getByTestId("scenario-library").locator("summary").click();
+  await page.getByTestId("scenario-apply-warehouse-location-control").click();
+  await expect(page.getByTestId("confirm-dialog")).toBeVisible();
+  await expect(page.getByTestId("confirm-dialog-confirm")).toHaveText("적용");
+  await expect(page.getByTestId("confirm-dialog-cancel")).toHaveText("취소");
+  await page.getByTestId("confirm-dialog-cancel").click();
+  await expect(page.getByTestId("ai-customer-inquiry")).toHaveValue(original);
+  await expect(page.getByTestId("ai-result")).toHaveCount(0);
+  expectNoBrowserProblems(problems);
+});
+
+test("Gate 12-7 L: 파일·시나리오·검토 UI는 설정 해상도에서 가로 넘침 없이 접근된다", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  await page.getByTestId("scenario-library").locator("summary").click();
+  await expect(page.locator(".ai-solution-center__scenario-grid > article")).toHaveCount(10);
+  await page.getByTestId("scenario-library").locator("summary").click();
+  await page.getByTestId("ai-file-input").setInputFiles({
+    name: "매우-긴-파일명-표시에서도-레이아웃이-깨지지-않아야-하는-생산-추적-참고자료.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from("workOrder,lot,status\nWO-001,LOT-001,READY")
+  });
+  await expect(page.getByTestId("ai-file-list")).toContainText("생산-추적-참고자료.csv");
+  await page.getByTestId("ai-situation-input").fill("생산 LOT 추적 현황을 검토합니다.");
+  await page.getByTestId("ai-consultant-analyze").click();
+  await expect(page.getByTestId("ai-result")).toBeVisible();
+  await expect(page.getByTestId("review-record-panel")).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
   expectNoBrowserProblems(problems);
 });
 

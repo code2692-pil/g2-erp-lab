@@ -1,6 +1,8 @@
 export type ValidationScope = "header" | "line" | "screen";
 
 export interface ValidationIssue {
+  /** Stable identity used for deterministic rendering and focus selection. */
+  id?: string;
   scope: ValidationScope;
   message: string;
   rowKey?: string;
@@ -22,6 +24,11 @@ export interface FieldValidationOptions {
 }
 
 export type ValidationCellErrors = Readonly<Record<string, Readonly<Record<string, string>>>>;
+
+export interface ValidationIssueSortOptions {
+  headerFields: readonly string[];
+  detailFields: readonly string[];
+}
 
 function isEmpty(value: unknown) {
   return value === null || value === undefined || (typeof value === "string" && !value.trim());
@@ -82,6 +89,39 @@ export function toValidationCellErrors(issues: readonly ValidationIssue[]): Vali
   }
 
   return cellErrors;
+}
+
+/**
+ * Keeps the same document data focused on the same correction point across
+ * repeated save attempts. Screen modules supply their real input order.
+ */
+export function sortValidationIssues(
+  issues: readonly ValidationIssue[],
+  { headerFields, detailFields }: ValidationIssueSortOptions
+) {
+  const fieldOrder = (issue: ValidationIssue) => {
+    const fields = issue.scope === "header" ? headerFields : detailFields;
+    const index = issue.field ? fields.indexOf(issue.field) : -1;
+    return index === -1 ? Number.MAX_SAFE_INTEGER : index;
+  };
+
+  return issues
+    .map((issue, sourceIndex) => ({
+      ...issue,
+      id: issue.id ?? `${issue.scope}::${issue.rowKey ?? "screen"}::${issue.field ?? "message"}::${issue.message}`,
+      sourceIndex
+    }))
+    .sort((left, right) => {
+      const scopeOrder = (issue: ValidationIssue) => issue.scope === "header" ? 0 : issue.scope === "line" ? 1 : 2;
+      const byScope = scopeOrder(left) - scopeOrder(right);
+      if (byScope !== 0) return byScope;
+      const byRow = (left.rowKey ?? "").localeCompare(right.rowKey ?? "");
+      if (byRow !== 0) return byRow;
+      const byField = fieldOrder(left) - fieldOrder(right);
+      if (byField !== 0) return byField;
+      return left.sourceIndex - right.sourceIndex;
+    })
+    .map(({ sourceIndex: _sourceIndex, ...issue }) => issue);
 }
 
 export function isValidDate(value: string) {

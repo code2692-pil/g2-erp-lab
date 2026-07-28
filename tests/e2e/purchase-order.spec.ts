@@ -58,7 +58,7 @@ test("B: 신규 발주 Validation, Lookup, 금액 계산과 저장", async ({ pa
   await page.getByTestId("po-btn-save").click();
   await expect(page.getByTestId("status-message")).toContainText("저장할 수 없습니다.");
   await expect(page.getByTestId("purchase-validation-summary")).toBeVisible();
-  await page.getByTestId("purchase-validation-close").click();
+  await expect(page.getByTestId("purchase-validation-summary-count")).toContainText("입력 오류");
 
   await page.getByTestId("po-btn-partner-lookup").click();
   await page.getByTestId("po-partner-lookup-grid-row-1000::P-10021").click();

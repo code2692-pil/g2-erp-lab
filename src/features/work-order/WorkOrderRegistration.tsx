@@ -2,13 +2,13 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Building2, ChevronRight, Plus, Rows3, Save, Search, Trash2 } from "lucide-react";
 import { ErpDataGrid, registerErpDataGridPasteHandler } from "../../components/common/ErpDataGrid";
 import { DirtyIndicator } from "../../components/common/DirtyIndicator";
-import type { ErpDataGridCellValue, ErpDataGridColumn, ErpDataGridPasteRequest } from "../../components/common/ErpDataGrid";
+import type { ErpDataGridCellValue, ErpDataGridColumn, ErpDataGridFocusRequest, ErpDataGridPasteRequest } from "../../components/common/ErpDataGrid";
 import { parseErpGridPasteNumber } from "../../components/common/erpGridPaste";
-import { ErpDialog } from "../../components/common/ErpDialog";
 import { ErpLookupDialog } from "../../components/common/ErpLookupDialog";
+import { ErpValidationSummary } from "../../components/common/ErpValidationSummary";
 import { PageToolbar } from "../../components/common/PageToolbar";
 import { SearchPanel } from "../../components/common/SearchPanel";
-import { toValidationCellErrors, type ValidationIssue } from "../../components/common/validation/validation";
+import { sortValidationIssues, toValidationCellErrors, type ValidationIssue } from "../../components/common/validation/validation";
 import { useConfirm } from "../../hooks/useConfirm";
 import { useCrudPage } from "../../hooks/useCrudPage";
 import { useDirtyState } from "../../hooks/useDirtyState";
@@ -41,6 +41,8 @@ const workOrderStatuses: readonly WorkOrderStatus[] = ["미확정", "확정", "�
 const processStatuses: readonly ProcessStatus[] = ["대기", "진행", "완료", "보류"];
 const urgentOptions: readonly YesNo[] = ["N", "Y"];
 const quantity = new Intl.NumberFormat("ko-KR");
+const workOrderHeaderValidationOrder = ["CD_FIRM", "DT_WO", "CD_ITEM", "QT_WO", "QT_RESULT", "DT_PLAN_START", "DT_PLAN_END", "CD_LINE"];
+const workOrderProcessValidationOrder = ["CD_PROC", "CD_EQUIP", "QT_PLAN", "QT_RESULT", "TM_PLAN_START", "TM_PLAN_END"];
 
 const itemColumns: readonly ErpDataGridColumn<Item>[] = [
   { field: "CD_FIRM", headerName: "회사코드", width: 82 },
@@ -160,7 +162,10 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
   });
   const [checkedProcessKeys, setCheckedProcessKeys] = useState<string[]>([]);
   const [tempSequence, setTempSequence] = useState(1);
-  const [validationDialogOpen, setValidationDialogOpen] = useState(false);
+  const [validationAttempted, setValidationAttempted] = useState(false);
+  const [headerFocusRequest, setHeaderFocusRequest] = useState<ErpDataGridFocusRequest | null>(null);
+  const [processFocusRequest, setProcessFocusRequest] = useState<ErpDataGridFocusRequest | null>(null);
+  const validationFocusRequestId = useRef(0);
   const [itemLookupOpen, setItemLookupOpen] = useState(false);
   const [productionLineLookupOpen, setProductionLineLookupOpen] = useState(false);
   const [processLookupOpen, setProcessLookupOpen] = useState(false);
@@ -195,7 +200,7 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
     let cancelled = false;
     void workOrderDataService.getLookups()
       .then((nextLookups) => { if (!cancelled) setLookups(nextLookups); })
-      .catch(() => { if (!cancelled) notify("error", "작업지시 Lookup을 불러오지 못했습니다."); });
+      .catch(() => { if (!cancelled) notify("error", "작업지시 도움창 데이터를 불러오지 못했습니다."); });
     return () => { cancelled = true; };
   }, [notify]);
 
@@ -216,10 +221,14 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
     checkedProcessKeys.includes(createWorkOrderProcessKey(process.CD_FIRM, process.NO_WO, process.NO_PROC))
   );
   const deleteTargetProcesses = checkedProcesses.length > 0 ? checkedProcesses : selectedProcess ? [selectedProcess] : [];
-  const validationIssues = useMemo(() => validateWorkOrders(headers, processes), [headers, processes]);
+  const validationIssues = useMemo(
+    () => sortValidationIssues(validateWorkOrders(headers, processes), { headerFields: workOrderHeaderValidationOrder, detailFields: workOrderProcessValidationOrder }),
+    [headers, processes]
+  );
+  const displayedValidationIssues = validationAttempted ? validationIssues : [];
   const validationWarnings = useMemo(() => getWorkOrderWarnings(headers), [headers]);
   const displayedWarning = serverWarnings[0] ?? validationWarnings[0];
-  const validationCellErrors = useMemo(() => toValidationCellErrors(validationIssues), [validationIssues]);
+  const validationCellErrors = useMemo(() => toValidationCellErrors(displayedValidationIssues), [displayedValidationIssues]);
   const processTotals = calculateWorkOrderProcessTotals(selectedProcesses);
   const itemLookupRows = lookups.items.filter((item) =>
     item.YN_USE === "Y" && (!selectedHeader || item.CD_FIRM === selectedHeader.CD_FIRM)
@@ -247,12 +256,9 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
 
   const focusValidationIssue = (issue: ValidationIssue) => {
     if (!issue.rowKey || !issue.field) return;
-    const grid = issue.scope === "header" ? "work-order-header-grid" : "work-order-process-grid";
-    window.requestAnimationFrame(() => {
-      document.querySelector<HTMLElement>(
-        `[data-testid="${grid}-cell-${issue.rowKey}-${issue.field}"], [data-testid="${grid}-cell-container-${issue.rowKey}-${issue.field}"]`
-      )?.focus();
-    });
+    const request = { rowKey: issue.rowKey, field: issue.field, requestId: ++validationFocusRequestId.current };
+    if (issue.scope === "header") setHeaderFocusRequest(request);
+    else if (issue.scope === "line") setProcessFocusRequest(request);
   };
 
   const handleSearch = async () => {
@@ -269,6 +275,7 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
         selectMaster(result.headers[0] ? createWorkOrderHeaderKey(result.headers[0].CD_FIRM, result.headers[0].NO_WO) : "");
         setCheckedProcessKeys([]);
         setServerWarnings([]);
+        setValidationAttempted(false);
         clearDirty();
         notify(result.headers.length > 0 ? "success" : "info", result.headers.length > 0 ? "조회되었습니다." : "조회된 작업지시가 없습니다.");
       },
@@ -280,7 +287,10 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
   const selectHeader = async (header: WorkOrderHeader) => {
     const nextKey = createWorkOrderHeaderKey(header.CD_FIRM, header.NO_WO);
     if (nextKey !== selectedMasterKey && !(await confirmDiscardChanges())) return false;
-    if (nextKey !== selectedMasterKey) clearDirty();
+    if (nextKey !== selectedMasterKey) {
+      setValidationAttempted(false);
+      clearDirty();
+    }
     selectMaster(nextKey);
     setCheckedProcessKeys([]);
     return true;
@@ -380,6 +390,7 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
         selectMaster(createWorkOrderHeaderKey(header.CD_FIRM, header.NO_WO));
         setCheckedProcessKeys([]);
         setTempSequence((sequence) => sequence + 1);
+        setValidationAttempted(false);
         clearDirty();
         return header;
       },
@@ -435,10 +446,9 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
     }
     const issues = validateWorkOrders(headers, processes);
     if (issues.length > 0) {
-      setValidationDialogOpen(true);
+      setValidationAttempted(true);
       setMessage(`저장할 수 없습니다. 입력값 ${issues.length}건을 확인하세요.`);
-      focusValidationIssue(issues[0]);
-      notify("warning", `저장할 수 없습니다. 입력값 ${issues.length}건을 확인하세요.`);
+      focusValidationIssue(sortValidationIssues(issues, { headerFields: workOrderHeaderValidationOrder, detailFields: workOrderProcessValidationOrder })[0]);
       return;
     }
     if (!(await confirm({ title: "작업지시 저장", message: "입력한 작업지시를 저장하시겠습니까?", confirmLabel: "저장" }))) return;
@@ -452,6 +462,7 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
         setProcesses((current) => [...current.filter((process) => createWorkOrderHeaderKey(process.CD_FIRM, process.NO_WO) !== sourceKey), ...saved.Processes]);
         selectMaster(createWorkOrderHeaderKey(saved.Header.CD_FIRM, saved.Header.NO_WO));
         setServerWarnings(saved.Warnings);
+        setValidationAttempted(false);
         clearDirty();
         const warnings = [...new Set(saved.Warnings)];
         notify(
@@ -490,6 +501,7 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
         selectMaster("");
         setCheckedProcessKeys([]);
         setServerWarnings([]);
+        setValidationAttempted(false);
         clearDirty();
         notify("success", "삭제되었습니다.");
       },
@@ -602,6 +614,7 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
 
   const handleNavigate = async (page: NavigationPage) => {
     if (!(await confirmDiscardChanges())) return;
+    setValidationAttempted(false);
     clearDirty();
     onNavigate(page);
   };
@@ -677,16 +690,17 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
           <label>생산라인<input data-testid="wo-filter-line" value={filters.line} onChange={(event) => setFilters({ ...filters, line: event.target.value })} /></label>
           <label>작업지시상태<select data-testid="wo-filter-status" value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">전체</option>{workOrderStatuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></label>
           <label>긴급지시 여부<select data-testid="wo-filter-urgent" value={filters.urgent} onChange={(event) => setFilters({ ...filters, urgent: event.target.value })}><option value="">전체</option>{urgentOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
-          {validationIssues.length > 0 && <span data-testid="work-order-validation-count">오류 {validationIssues.length}건</span>}
+          {displayedValidationIssues.length > 0 && <span data-testid="work-order-validation-count">오류 {displayedValidationIssues.length}건</span>}
           {displayedWarning && <span data-testid="work-order-warning">경고: {displayedWarning}</span>}
         </SearchPanel>
+        <ErpValidationSummary dataTestId="work-order-validation-summary" issues={displayedValidationIssues} onFocusFirst={() => focusValidationIssue(displayedValidationIssues[0])} />
         <section className="grid-section top-grid">
           <div className="section-title"><h2>작업지시</h2><div className="section-title-actions"><button className="section-lookup-button" data-testid="wo-btn-item-lookup" disabled={processing} onClick={handleOpenItemLookup} type="button"><Search size={14} />품목 도움</button><button className="section-lookup-button" data-testid="wo-btn-line-lookup" disabled={processing} onClick={handleOpenProductionLineLookup} type="button"><Search size={14} />라인 도움</button></div></div>
-          <ErpDataGrid<WorkOrderHeader> ariaLabel="작업지시 Header" cellErrors={validationCellErrors} className="work-order-header-grid" columns={headerColumns} dataTestId="work-order-header-grid" emptyMessage="조회된 작업지시가 없습니다." lookupDisabled={processing || itemLookupOpen || productionLineLookupOpen || processLookupOpen || equipmentLookupOpen} onCellValueChange={(row, field, value) => { if (isHeaderEditableField(field)) updateHeader(row, field, value); }} onLookupCellDoubleClick={(row, column) => handleLookupCellDoubleClick(row, column.field)} onRowClick={(header) => void selectHeader(header)} rowKey={(header) => createWorkOrderHeaderKey(header.CD_FIRM, header.NO_WO)} rows={headers} selectedRowKey={selectedHeader ? createWorkOrderHeaderKey(selectedHeader.CD_FIRM, selectedHeader.NO_WO) : undefined} selectionMode="single" showFooter showRowNumbers />
+          <ErpDataGrid<WorkOrderHeader> ariaLabel="작업지시 Header" cellErrors={validationCellErrors} className="work-order-header-grid" columns={headerColumns} dataTestId="work-order-header-grid" emptyMessage="조회된 작업지시가 없습니다." focusRequest={headerFocusRequest} lookupDisabled={processing || itemLookupOpen || productionLineLookupOpen || processLookupOpen || equipmentLookupOpen} onCellValueChange={(row, field, value) => { if (isHeaderEditableField(field)) updateHeader(row, field, value); }} onLookupCellDoubleClick={(row, column) => handleLookupCellDoubleClick(row, column.field)} onRowClick={(header) => void selectHeader(header)} rowKey={(header) => createWorkOrderHeaderKey(header.CD_FIRM, header.NO_WO)} rows={headers} selectedRowKey={selectedHeader ? createWorkOrderHeaderKey(selectedHeader.CD_FIRM, selectedHeader.NO_WO) : undefined} selectionMode="single" showFooter showRowNumbers />
         </section>
         <section className="grid-section bottom-grid">
           <div className="section-title"><h2>공정상세</h2></div>
-          <ErpDataGrid<WorkOrderProcess> ariaLabel="공정상세" cellErrors={validationCellErrors} checkedRowKeys={checkedProcessKeys} className="work-order-process-grid" columns={processColumns} dataTestId="work-order-process-grid" emptyMessage="작업지시 행을 선택하면 공정상세가 표시됩니다." lookupDisabled={processing || itemLookupOpen || productionLineLookupOpen || processLookupOpen || equipmentLookupOpen} onCellValueChange={(row, field, value) => { if (isProcessEditableField(field)) updateProcess(row, field, value); }} onCheckedRowKeysChange={setCheckedProcessKeys} onLookupCellDoubleClick={(row, column) => handleLookupCellDoubleClick(row, column.field)} onRowClick={(process) => selectDetail(process.NO_PROC)} rowKey={(process) => createWorkOrderProcessKey(process.CD_FIRM, process.NO_WO, process.NO_PROC)} rows={selectedProcesses} selectedRowKey={selectedProcess ? createWorkOrderProcessKey(selectedProcess.CD_FIRM, selectedProcess.NO_WO, selectedProcess.NO_PROC) : undefined} selectionMode="multiple" showCheckboxes showFooter showRowNumbers />
+          <ErpDataGrid<WorkOrderProcess> ariaLabel="공정상세" cellErrors={validationCellErrors} checkedRowKeys={checkedProcessKeys} className="work-order-process-grid" columns={processColumns} dataTestId="work-order-process-grid" emptyMessage="작업지시 행을 선택하면 공정상세가 표시됩니다." focusRequest={processFocusRequest} lookupDisabled={processing || itemLookupOpen || productionLineLookupOpen || processLookupOpen || equipmentLookupOpen} onCellValueChange={(row, field, value) => { if (isProcessEditableField(field)) updateProcess(row, field, value); }} onCheckedRowKeysChange={setCheckedProcessKeys} onLookupCellDoubleClick={(row, column) => handleLookupCellDoubleClick(row, column.field)} onRowClick={(process) => selectDetail(process.NO_PROC)} rowKey={(process) => createWorkOrderProcessKey(process.CD_FIRM, process.NO_WO, process.NO_PROC)} rows={selectedProcesses} selectedRowKey={selectedProcess ? createWorkOrderProcessKey(selectedProcess.CD_FIRM, selectedProcess.NO_WO, selectedProcess.NO_PROC) : undefined} selectionMode="multiple" showCheckboxes showFooter showRowNumbers />
         </section>
         <div className="sales-order-total-summary" data-testid="work-order-process-total-summary"><span>공정 건수 {quantity.format(selectedProcesses.length)}</span><span>계획수량 {quantity.format(processTotals.QT_PLAN)}</span><strong>실적수량 {quantity.format(processTotals.QT_RESULT)}</strong></div>
       </main>
@@ -696,8 +710,5 @@ export function WorkOrderRegistration({ onNavigate, showDevelopmentDataManager =
     <ErpLookupDialog<ProductionLine> columns={productionLineColumns} dataTestId="wo-line-lookup" emptyMessage="조회된 생산라인이 없습니다." onClose={() => setProductionLineLookupOpen(false)} onSelect={handleSelectProductionLine} open={productionLineLookupOpen} rowKey={(line) => `${line.CD_FIRM}::${line.CD_LINE}`} rows={productionLineLookupRows} searchFields={["CD_LINE", "NM_LINE"]} title="생산라인 도움" />
     <ErpLookupDialog<ProductionProcess> columns={processLookupColumns} dataTestId="wo-process-lookup" emptyMessage="조회된 공정이 없습니다." onClose={() => setProcessLookupOpen(false)} onSelect={handleSelectProcess} open={processLookupOpen} rowKey={(process) => `${process.CD_FIRM}::${process.CD_PROC}`} rows={processLookupRows} searchFields={["CD_PROC", "NM_PROC"]} title="공정 도움" />
     <ErpLookupDialog<Equipment> columns={equipmentColumns} dataTestId="wo-equipment-lookup" emptyMessage="조회된 설비가 없습니다." onClose={() => setEquipmentLookupOpen(false)} onSelect={handleSelectEquipment} open={equipmentLookupOpen} rowKey={(equipment) => `${equipment.CD_FIRM}::${equipment.CD_EQUIP}`} rows={equipmentLookupRows} searchFields={["CD_EQUIP", "NM_EQUIP", "CD_LINE"]} title="설비 도움" />
-    <ErpDialog dataTestId="work-order-dialog-validation-summary" footer={<div className="erp-confirm-dialog__actions"><button className="erp-confirm-dialog__button" data-testid="work-order-dialog-validation-close" onClick={() => setValidationDialogOpen(false)} type="button">확인</button></div>} onClose={() => setValidationDialogOpen(false)} open={validationDialogOpen} title="저장 전 입력값 검증" width={560}>
-      <div className="validation-summary"><p data-testid="work-order-validation-summary-count">저장할 수 없습니다. 입력값 {validationIssues.length}건을 확인하세요.</p><ul data-testid="work-order-validation-summary-list">{validationIssues.map((issue, index) => <li key={`${issue.scope}-${issue.rowKey ?? "screen"}-${issue.field ?? "message"}-${index}`}>{issue.message}</li>)}</ul></div>
-    </ErpDialog>
   </>;
 }

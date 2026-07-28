@@ -112,8 +112,6 @@ test("API UI: purchase order lookup, save/delete dialogs, dirty navigation, and 
     await expect(page.getByTestId("purchase-validation-summary")).toBeVisible();
     await expect(page.getByTestId("confirm-dialog")).toHaveCount(0);
     await expect(page.getByTestId(`purchase-header-grid-cell-1000::${number}-CD_PARTNER`)).toHaveAttribute("aria-invalid", "true");
-    await page.getByTestId("purchase-validation-close").click();
-    await expect(page.getByTestId("purchase-validation-summary")).toHaveCount(0);
 
     await page.getByTestId("po-btn-partner-lookup").click();
     await page.getByTestId("po-partner-lookup-grid-row-1000::P-10021").click();

@@ -1092,6 +1092,31 @@ tr.selected .grid-select,
   line-height: 1.4;
 }
 
+.erp-validation-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  color: var(--erp-text);
+  text-align: left;
+  border: 1px solid var(--erp-danger);
+  border-radius: 4px;
+  background: var(--erp-surface-muted);
+  cursor: pointer;
+}
+
+.erp-validation-summary:hover,
+.erp-validation-summary:focus-visible {
+  outline: 2px solid var(--erp-focus);
+  outline-offset: 2px;
+}
+
+.erp-validation-summary span {
+  color: var(--erp-text-muted);
+}
+
 @media (max-width: 980px) {
   .erp-shell {
     grid-template-columns: 1fr;

@@ -236,9 +236,7 @@ export function ErpDataGrid<T extends object>({
   };
 
   const focusGridCell = (rowIdentifier: string, preferredField?: string) => {
-    const fields = preferredField
-      ? [preferredField, ...editableColumnKeys.filter((field) => field !== preferredField)]
-      : editableColumnKeys;
+    const fields = preferredField ? [preferredField] : editableColumnKeys;
     for (const field of fields) {
       const { editor } = getEditor(rowIdentifier, field);
       if (editor) {
@@ -406,6 +404,7 @@ export function ErpDataGrid<T extends object>({
   };
 
   const getCellError = (row: T, column: ErpDataGridColumn<T>, rowIdentifier: string) => {
+    if (!column.editable || column.readOnly) return undefined;
     if (cellErrors) return cellErrors[rowIdentifier]?.[String(column.field)];
     const value = row[column.field];
     if (column.required && isEmptyRequiredValue(value)) return "필수 입력 항목입니다.";
@@ -416,7 +415,8 @@ export function ErpDataGrid<T extends object>({
     row: T,
     column: ErpDataGridColumn<T>,
     error: string | undefined,
-    rowIdentifier: string
+    rowIdentifier: string,
+    errorId: string | undefined
   ) => {
     const value = row[column.field];
     const onChange = (nextValue: ErpDataGridCellValue) =>
@@ -428,6 +428,7 @@ export function ErpDataGrid<T extends object>({
       return (
         <input
           aria-invalid={Boolean(error)}
+          aria-describedby={error ? errorId : undefined}
           checked={Boolean(value)}
           className="erp-data-grid__editor erp-data-grid__editor--boolean"
           data-erp-grid-editor="true"
@@ -441,6 +442,7 @@ export function ErpDataGrid<T extends object>({
     return (
       <input
         aria-invalid={Boolean(error)}
+        aria-describedby={error ? errorId : undefined}
         className={`erp-data-grid__editor${column.dataType === "number" ? " num" : ""}${
           column.dataType === "code" ? " mono" : ""
         }`}
@@ -606,6 +608,7 @@ export function ErpDataGrid<T extends object>({
                         data-erp-grid-cell-state={
                           error ? "error" : column.readOnly ? "readonly" : editable ? "editable" : undefined
                         }
+                        data-validation-state={error ? "error" : undefined}
                         data-testid={
                           dataTestId
                             ? `${dataTestId}-cell-container-${key}-${String(column.field)}`
@@ -623,12 +626,12 @@ export function ErpDataGrid<T extends object>({
                         {column.render
                           ? column.render(row)
                           : editable
-                            ? renderEditor(row, column, error, key)
+                            ? renderEditor(row, column, error, key, errorId)
                             : column.formatter
                               ? column.formatter(row[column.field], row)
                               : renderDefaultValue(row[column.field], column.dataType ?? "text")}
                         {error && errorId && (
-                          <span className="erp-data-grid__error-message" id={errorId} role="alert">
+                          <span className="erp-data-grid__error-message" id={errorId}>
                             {error}
                           </span>
                         )}

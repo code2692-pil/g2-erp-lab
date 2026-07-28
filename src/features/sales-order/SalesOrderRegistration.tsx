@@ -13,11 +13,11 @@ import { ErpDataGrid } from "../../components/common/ErpDataGrid";
 import { DirtyIndicator } from "../../components/common/DirtyIndicator";
 import type { ErpDataGridColumn, ErpDataGridCellValue, ErpDataGridFocusRequest, ErpDataGridPasteRequest } from "../../components/common/ErpDataGrid";
 import { parseErpGridPasteDate, parseErpGridPasteNumber } from "../../components/common/erpGridPaste";
-import { ErpDialog } from "../../components/common/ErpDialog";
 import { ErpLookupDialog } from "../../components/common/ErpLookupDialog";
+import { ErpValidationSummary } from "../../components/common/ErpValidationSummary";
 import { PageToolbar } from "../../components/common/PageToolbar";
 import { SearchPanel } from "../../components/common/SearchPanel";
-import { toValidationCellErrors, type ValidationIssue } from "../../components/common/validation/validation";
+import { sortValidationIssues, toValidationCellErrors, type ValidationIssue } from "../../components/common/validation/validation";
 import { mockItems } from "../common-code/item/mockData";
 import type { Item } from "../common-code/item/types";
 import { mockPartners } from "../common-code/partner/mockData";
@@ -57,6 +57,8 @@ type LineEditableField = Exclude<
 
 const statusOptions: SalesOrderStatus[] = ["신규", "진행", "확정", "마감"];
 const money = new Intl.NumberFormat("ko-KR");
+const salesHeaderValidationOrder = ["CD_FIRM", "DT_SO", "CD_PARTNER"];
+const salesLineValidationOrder = ["CD_ITEM", "QT_SO", "UM_SO", "DT_DLV"];
 
 const partnerLookupColumns: readonly ErpDataGridColumn<Partner>[] = [
   { field: "CD_FIRM", headerName: "회사코드", width: 90, align: "center" },
@@ -204,12 +206,13 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
   } = useCrudPage();
   const [checkedLineKeys, setCheckedLineKeys] = useState<string[]>([]);
   const [lineFocusRequest, setLineFocusRequest] = useState<ErpDataGridFocusRequest | null>(null);
+  const [headerFocusRequest, setHeaderFocusRequest] = useState<ErpDataGridFocusRequest | null>(null);
   const lineFocusRequestId = useRef(0);
   const [tempSeq, setTempSeq] = useState(1);
   const [partnerLookupOpen, setPartnerLookupOpen] = useState(false);
   const [itemLookupOpen, setItemLookupOpen] = useState(false);
   const itemLookupLineKeyRef = useRef<string | null>(null);
-  const [validationDialogOpen, setValidationDialogOpen] = useState(false);
+  const [validationAttempted, setValidationAttempted] = useState(false);
   const [mailImportOpen, setMailImportOpen] = useState(false);
   const [appliedMailIds, setAppliedMailIds] = useState<string[]>([]);
   const [selectedPartnerRowKey, setSelectedPartnerRowKey] = useState<string | null>(null);
@@ -239,10 +242,14 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
       : Promise.resolve(true);
 
   const selectedHeader = headers.find((header) => header.NO_SO === selectedNoSo);
-  const validationIssues = useMemo(() => validateSalesOrders(headers, lines), [headers, lines]);
+  const validationIssues = useMemo(
+    () => sortValidationIssues(validateSalesOrders(headers, lines), { headerFields: salesHeaderValidationOrder, detailFields: salesLineValidationOrder }),
+    [headers, lines]
+  );
+  const displayedValidationIssues = validationAttempted ? validationIssues : [];
   const validationCellErrors = useMemo(
-    () => toValidationCellErrors(validationIssues),
-    [validationIssues]
+    () => toValidationCellErrors(displayedValidationIssues),
+    [displayedValidationIssues]
   );
   const selectedLineData = lines.find(
     (line) => line.NO_SO === selectedNoSo && line.NO_LINE === selectedLine
@@ -277,7 +284,7 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
         setPartners(nextPartners);
         setItems(nextItems);
       })
-      .catch(() => setMessage("API Lookup 데이터를 불러오지 못했습니다."));
+      .catch(() => setMessage("도움창 데이터를 불러오지 못했습니다."));
   }, []);
 
   useLayoutEffect(() => {
@@ -301,21 +308,17 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
 
   const focusValidationIssue = (issue: ValidationIssue) => {
     if (!issue.rowKey || !issue.field) return;
-    const gridTestId = issue.scope === "header" ? "sales-order-header-grid" : "sales-order-line-grid";
-    const editorTestId = `${gridTestId}-cell-${issue.rowKey}-${issue.field}`;
-    const containerTestId = `${gridTestId}-cell-container-${issue.rowKey}-${issue.field}`;
-
-    window.requestAnimationFrame(() => {
-      const target = document.querySelector<HTMLElement>(
-        `[data-testid="${editorTestId}"], [data-testid="${containerTestId}"]`
-      );
-      target?.focus();
-    });
+    const request = { rowKey: issue.rowKey, field: issue.field, requestId: ++lineFocusRequestId.current };
+    if (issue.scope === "header") setHeaderFocusRequest(request);
+    else if (issue.scope === "line") setLineFocusRequest(request);
   };
 
   const selectHeader = async (header: SalesOrderHeader) => {
     if (header.NO_SO !== selectedNoSo && !(await confirmDiscardChanges())) return;
-    if (header.NO_SO !== selectedNoSo) clearDirty();
+    if (header.NO_SO !== selectedNoSo) {
+      clearDirty();
+      setValidationAttempted(false);
+    }
     selectMaster(header.NO_SO);
     setCheckedLineKeys([]);
   };
@@ -442,6 +445,7 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
         setLines(nextLines);
         selectMaster(matchedHeaders[0]?.NO_SO ?? "");
         setCheckedLineKeys([]);
+        setValidationAttempted(false);
         clearDirty();
         notify(matchedHeaders.length > 0 ? "success" : "info", matchedHeaders.length > 0 ? "조회되었습니다." : "조회된 데이터가 없습니다.");
       },
@@ -520,6 +524,7 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
         selectMaster(tempNo);
         setCheckedLineKeys([]);
         setTempSeq((seq) => seq + 1);
+        setValidationAttempted(false);
         clearDirty();
         return nextHeader;
       },
@@ -641,9 +646,9 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
   const saveSalesOrder = async () => {
     const issues = validateSalesOrders(headers, lines);
     if (issues.length > 0) {
-      setValidationDialogOpen(true);
+      setValidationAttempted(true);
       setMessage(`저장 전 검증 오류 ${issues.length}건을 확인하세요.`);
-      focusValidationIssue(issues[0]);
+      focusValidationIssue(sortValidationIssues(issues, { headerFields: salesHeaderValidationOrder, detailFields: salesLineValidationOrder })[0]);
       return;
     }
 
@@ -729,10 +734,9 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
     }
     const currentIssues = validateSalesOrders(headers, lines);
     if (currentIssues.length > 0) {
-      setValidationDialogOpen(true);
+      setValidationAttempted(true);
       setMessage(`저장할 수 없습니다. 입력값 ${currentIssues.length}건을 확인하세요.`);
-      focusValidationIssue(currentIssues[0]);
-      notify("warning", `저장할 수 없습니다. 입력값 ${currentIssues.length}건을 확인하세요.`);
+      focusValidationIssue(sortValidationIssues(currentIssues, { headerFields: salesHeaderValidationOrder, detailFields: salesLineValidationOrder })[0]);
       return;
     }
     if (!(await confirm({ title: "저장 확인", message: "저장하시겠습니까?", confirmLabel: "저장" }))) return;
@@ -741,15 +745,15 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
       validate: () => {
         const issues = validateSalesOrders(headers, lines);
         if (issues.length > 0) {
-          setValidationDialogOpen(true);
+          setValidationAttempted(true);
           setMessage(`저장 전 검증 오류 ${issues.length}건을 확인하세요.`);
-          focusValidationIssue(issues[0]);
+          focusValidationIssue(sortValidationIssues(issues, { headerFields: salesHeaderValidationOrder, detailFields: salesLineValidationOrder })[0]);
           return false;
         }
         return true;
       },
       execute: saveSalesOrder,
-      onSuccess: () => { clearDirty(); notify("success", "저장되었습니다."); },
+      onSuccess: () => { setValidationAttempted(false); clearDirty(); notify("success", "저장되었습니다."); },
       successMessage: "저장되었습니다.",
       errorMessage: "저장 중 오류가 발생했습니다. 입력값을 확인하고 다시 시도하세요."
     });
@@ -790,7 +794,7 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
     setFeatureMessage("");
     await executeDelete({
       execute: deleteSalesOrderAction,
-      onSuccess: () => { clearDirty(); notify("success", "삭제되었습니다."); },
+      onSuccess: () => { setValidationAttempted(false); clearDirty(); notify("success", "삭제되었습니다."); },
       successMessage: "삭제되었습니다.",
       errorMessage: "삭제 중 오류가 발생했습니다. 다시 시도하세요."
     });
@@ -798,18 +802,21 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
 
   const handleNavigateToPurchase = async () => {
     if (!(await confirmDiscardChanges())) return;
+    setValidationAttempted(false);
     clearDirty();
     onNavigate?.("purchase");
   };
 
   const handleNavigateToWorkOrder = async () => {
     if (!(await confirmDiscardChanges())) return;
+    setValidationAttempted(false);
     clearDirty();
     onNavigate?.("work");
   };
 
   const handleNavigateToDevelopmentData = async () => {
     if (!(await confirmDiscardChanges())) return;
+    setValidationAttempted(false);
     clearDirty();
     onNavigate?.("development");
   };
@@ -976,7 +983,7 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
 
           <SearchPanel
             message={message}
-            statusAddon={validationIssues.length > 0 ? <span data-testid="validation-error-count">오류 {validationIssues.length}건</span> : undefined}
+            statusAddon={displayedValidationIssues.length > 0 ? <span data-testid="validation-error-count">오류 {displayedValidationIssues.length}건</span> : undefined}
           >
             <label>
               회사코드
@@ -1044,6 +1051,12 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
             </div>
           </SearchPanel>
 
+          <ErpValidationSummary
+            dataTestId="sales-order-validation-summary"
+            issues={displayedValidationIssues}
+            onFocusFirst={() => focusValidationIssue(displayedValidationIssues[0])}
+          />
+
           <section className="grid-section top-grid">
             <div className="section-title">
               <h2>수주정보</h2>
@@ -1054,6 +1067,7 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
               className="sales-order-header-grid"
               columns={headerGridColumns}
               dataTestId="sales-order-header-grid"
+              focusRequest={headerFocusRequest}
               emptyMessage="조회 조건에 맞는 수주정보가 없습니다."
               onCellValueChange={(row, field, value) => {
                 if (isHeaderEditableField(field)) updateHeader(row.NO_SO, field, String(value ?? ""));
@@ -1168,38 +1182,6 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
         title="품목 도움창"
         width={820}
       />
-
-      <ErpDialog
-        dataTestId="dialog-validation-summary"
-        footer={
-          <div className="erp-confirm-dialog__actions">
-            <button
-              className="erp-confirm-dialog__button"
-              data-testid="dialog-validation-close"
-              onClick={() => setValidationDialogOpen(false)}
-              type="button"
-            >
-              확인
-            </button>
-          </div>
-        }
-        height={420}
-        onClose={() => setValidationDialogOpen(false)}
-        open={validationDialogOpen}
-        title="저장 전 입력값 검증"
-        width={560}
-      >
-        <div className="validation-summary">
-          <p data-testid="validation-summary-count">검증 오류 {validationIssues.length}건으로 저장이 중단되었습니다.</p>
-          <ul data-testid="validation-summary-list">
-            {validationIssues.map((issue, index) => (
-              <li key={`${issue.scope}-${issue.rowKey ?? "screen"}-${issue.field ?? "message"}-${index}`}>
-                {issue.message}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </ErpDialog>
 
     </>
   );

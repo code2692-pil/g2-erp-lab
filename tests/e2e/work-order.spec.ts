@@ -176,16 +176,15 @@ test("D: 저장 전 Validation은 ConfirmDialog 없이 요약과 오류 셀을 �
   await openWorkOrder(page);
   await page.getByTestId("wo-btn-new").click();
   await page.getByTestId("wo-btn-save").click();
-  await expect(page.getByTestId("work-order-dialog-validation-summary")).toBeVisible();
-  await expect(page.getByTestId("work-order-validation-summary-list")).toContainText("생산품목코드은(는) 필수 입력값입니다.");
+  await expect(page.getByTestId("work-order-validation-summary")).toBeVisible();
+  await expect(page.getByTestId("work-order-validation-summary-first-message")).toContainText("생산품목코드은(는) 필수 입력값입니다.");
   await expect(page.getByTestId("confirm-dialog")).toHaveCount(0);
   await expect(page.getByTestId("work-order-header-grid-cell-container-1000::TEMP-WO-001-CD_ITEM")).toHaveClass(/erp-data-grid__cell--invalid/);
-  await page.getByTestId("work-order-dialog-validation-close").click();
 
   await headerCell(page, "1000::TEMP-WO-001", "DT_PLAN_START").fill("2026-07-11");
   await headerCell(page, "1000::TEMP-WO-001", "DT_PLAN_END").fill("2026-07-10");
   await page.getByTestId("wo-btn-save").click();
-  await expect(page.getByTestId("work-order-validation-summary-list")).toContainText("계획시작일은 계획종료일보다 늦을 수 없습니다.");
+  await expect(page.getByTestId("work-order-header-grid-cell-container-1000::TEMP-WO-001-DT_PLAN_END")).toHaveAttribute("title", "계획시작일은 계획종료일보다 늦을 수 없습니다.");
 });
 
 test("E: 공정상세 행추가, 다중 삭제와 Footer 갱신을 처리한다", async ({ page }) => {

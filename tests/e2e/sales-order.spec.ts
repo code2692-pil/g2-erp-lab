@@ -217,8 +217,7 @@ test("G: 기존 주요 버튼과 Lookup, Grid 행추가/삭제 동작을 유지�
   await page.getByTestId("confirm-dialog-cancel").click();
 
   await page.getByTestId("btn-save").click();
-  await expect(page.getByTestId("dialog-validation-summary")).toBeVisible();
-  await page.getByTestId("dialog-validation-close").click();
+  await expect(page.getByTestId("sales-order-validation-summary")).toBeVisible();
   await expect(page.getByTestId("sales-order-header-grid-row-1000::TEMP_SO_001")).toHaveCount(1);
   await page.getByTestId("btn-delete-order").click();
   await page.getByTestId("confirm-dialog-confirm").click();
@@ -232,8 +231,9 @@ test("Validation A: Header 필수값 누락 시 저장을 중단하고 오류를
   await headerCell(page, headerRowKey, "CD_PARTNER").fill("");
   await page.getByTestId("btn-save").click();
 
-  await expect(page.getByTestId("dialog-validation-summary")).toBeVisible();
-  await expect(page.getByTestId("validation-summary-list")).toContainText("거래처코드은(는) 필수 입력값입니다.");
+  await expect(page.getByTestId("sales-order-validation-summary")).toBeVisible();
+  await expect(page.getByTestId("sales-order-validation-summary-first-message")).toContainText("거래처코드은(는) 필수 입력값입니다.");
+  await expect(headerCell(page, headerRowKey, "CD_PARTNER")).toBeFocused();
   await expect(
     page.getByTestId(`sales-order-header-grid-cell-container-${headerRowKey}-CD_PARTNER`)
   ).toHaveClass(/erp-data-grid__cell--invalid/);
@@ -248,8 +248,8 @@ test("Validation B: 상세 필수값 누락 시 오류 셀을 강조하고 저�
   const newLineKey = "1000::SO2026070001::3";
   await page.getByTestId("btn-save").click();
 
-  await expect(page.getByTestId("dialog-validation-summary")).toBeVisible();
-  await expect(page.getByTestId("validation-summary-list")).toContainText("품목코드은(는) 필수 입력값입니다.");
+  await expect(page.getByTestId("sales-order-validation-summary")).toBeVisible();
+  await expect(page.getByTestId("sales-order-validation-summary-first-message")).toContainText("품목코드은(는) 필수 입력값입니다.");
   await expect(
     page.getByTestId(`sales-order-line-grid-cell-container-${newLineKey}-CD_ITEM`)
   ).toHaveClass(/erp-data-grid__cell--invalid/);
@@ -263,8 +263,8 @@ test("Validation C: 수량이 0이면 오류 메시지와 함께 저장을 중�
   await lineCell(page, firstLineKey, "QT_SO").fill("0");
   await page.getByTestId("btn-save").click();
 
-  await expect(page.getByTestId("dialog-validation-summary")).toBeVisible();
-  await expect(page.getByTestId("validation-summary-list")).toContainText("수량은 0보다 커야 합니다.");
+  await expect(page.getByTestId("sales-order-validation-summary")).toBeVisible();
+  await expect(page.getByTestId("sales-order-validation-summary-first-message")).toContainText("수량은 0보다 커야 합니다.");
   await expect(
     page.getByTestId(`sales-order-line-grid-cell-container-${firstLineKey}-QT_SO`)
   ).toHaveClass(/erp-data-grid__cell--invalid/);
@@ -278,8 +278,8 @@ test("Validation D: 단가가 음수이면 오류 메시지와 함께 저장을 
   await lineCell(page, firstLineKey, "UM_SO").fill("-1");
   await page.getByTestId("btn-save").click();
 
-  await expect(page.getByTestId("dialog-validation-summary")).toBeVisible();
-  await expect(page.getByTestId("validation-summary-list")).toContainText("단가은(는) 0 이상이어야 합니다.");
+  await expect(page.getByTestId("sales-order-validation-summary")).toBeVisible();
+  await expect(page.getByTestId("sales-order-validation-summary-first-message")).toContainText("단가은(는) 0 이상이어야 합니다.");
   await expect(
     page.getByTestId(`sales-order-line-grid-cell-container-${firstLineKey}-UM_SO`)
   ).toHaveClass(/erp-data-grid__cell--invalid/);
@@ -289,17 +289,22 @@ test("Validation E: 오류 값을 수정하면 오류 표시가 즉시 해제된
   await openSalesOrder(page);
   await searchSalesOrders(page);
 
+  await headerCell(page, headerRowKey, "CD_PARTNER").fill("");
   await lineCell(page, firstLineKey, "QT_SO").fill("0");
   await page.getByTestId("btn-save").click();
-  await page.getByTestId("dialog-validation-close").click();
   const quantityCell = page.getByTestId(
     `sales-order-line-grid-cell-container-${firstLineKey}-QT_SO`
   );
+  const partnerCell = page.getByTestId(
+    `sales-order-header-grid-cell-container-${headerRowKey}-CD_PARTNER`
+  );
   await expect(quantityCell).toHaveClass(/erp-data-grid__cell--invalid/);
+  await expect(partnerCell).toHaveClass(/erp-data-grid__cell--invalid/);
 
   await lineCell(page, firstLineKey, "QT_SO").fill("1");
   await expect(quantityCell).not.toHaveClass(/erp-data-grid__cell--invalid/);
-  await expect(page.getByTestId("validation-error-count")).toHaveCount(0);
+  await expect(partnerCell).toHaveClass(/erp-data-grid__cell--invalid/);
+  await expect(page.getByTestId("sales-order-validation-summary-count")).toHaveText("입력 오류 1건");
 });
 
 test("Validation F: 정상 입력값이면 mock 저장 성공 메시지를 표시하고 화면을 저장한다", async ({ page }, testInfo) => {
@@ -311,7 +316,7 @@ test("Validation F: 정상 입력값이면 mock 저장 성공 메시지를 표�
   await expect(page.getByTestId("confirm-dialog")).toContainText("저장하시겠습니까?");
   await page.getByTestId("confirm-dialog-confirm").click();
 
-  await expect(page.getByTestId("dialog-validation-summary")).toHaveCount(0);
+  await expect(page.getByTestId("sales-order-validation-summary")).toHaveCount(0);
   await expect(page.getByTestId("status-message")).toHaveText("저장되었습니다.");
   await page.screenshot({ path: testInfo.outputPath("sales-order-validation-success.png"), fullPage: true });
 });

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Building2, ChevronRight, FileText, Trash2 } from "lucide-react";
-import { businessDomains, type BusinessDomain, type CompanyKnowledgeArticle, type SolutionRequest, type SolutionResult } from "./solutionTypes";
-import { buildSolutionResult } from "./solutionEngine";
+import { Building2, ChevronRight, ClipboardCopy, Download, FileText, RotateCcw, Trash2 } from "lucide-react";
 import { CompanyKnowledgeSettings } from "./CompanyKnowledgeSettings";
+import { buildSolutionResult } from "./solutionEngine";
 import { solutionKnowledge } from "./solutionKnowledge";
+import { activeRevision, analysisModeLabel, analysisRevision, appendSolutionRevision, buildExportFilename, buildSolutionMarkdown, canRefineSession, clarificationAnswersFor, createSolutionSession, maximumAnalysisRevision, pendingClarifyingQuestions, unresolvedItems } from "./solutionSession";
+import { businessDomains, type BusinessDomain, type CompanyKnowledgeArticle, type SolutionRequest, type SolutionSession, type SolutionSource } from "./solutionTypes";
 
 type NavigationPage = "sales" | "purchase" | "work" | "development" | "ai";
 type ActiveTab = "consultant" | "customer";
@@ -20,6 +21,18 @@ interface FileAttachment {
 
 interface AiSolutionCenterPageProps {
   onNavigate: (page: NavigationPage) => void;
+}
+
+interface ResultPanelProps {
+  session: SolutionSession;
+  answerMap: Readonly<Record<string, string>>;
+  answerError: string;
+  refining: boolean;
+  exportStatus: string;
+  onAnswerChange: (questionId: string, answer: string) => void;
+  onRefine: () => void;
+  onCopy: () => void;
+  onDownload: () => void;
 }
 
 const automaticTextLimit = 512 * 1024;
@@ -49,13 +62,25 @@ function fileStatusMessage(status: FileStatus) {
   }
 }
 
-function ResultPanel({ result }: { result: SolutionResult }) {
+function List({ items, dataTestId }: { items: readonly string[]; dataTestId?: string }) {
+  return <ul data-testid={dataTestId}>{items.map((item) => <li key={item}>{item}</li>)}</ul>;
+}
+
+function ResultPanel({ session, answerMap, answerError, refining, exportStatus, onAnswerChange, onRefine, onCopy, onDownload }: ResultPanelProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
-  useEffect(() => { headingRef.current?.focus(); }, [result]);
+  const revision = activeRevision(session);
+  const result = session.activeResult;
+  const questions = result.clarifyingQuestions;
+  const unresolved = unresolvedItems(result, answerMap);
+  const canRefine = canRefineSession(session);
+
+  useEffect(() => { headingRef.current?.focus(); }, [revision?.revision]);
 
   return <section className="ai-solution-center__result" data-testid="ai-result" aria-live="polite">
-    <h2 ref={headingRef} tabIndex={-1} data-testid="ai-result-heading">검토 가이드</h2>
+    <div className="ai-solution-center__result-heading-row"><div><h2 ref={headingRef} tabIndex={-1} data-testid="ai-result-heading">{revision?.revision ?? 1}차 분석 결과</h2><p className="ai-solution-center__revision-status" data-testid="analysis-revision-status">현재 분석 차수: {revision?.revision ?? 1} / {maximumAnalysisRevision}</p></div><div className="ai-solution-center__export-actions"><button data-testid="result-copy" type="button" onClick={onCopy}><ClipboardCopy size={15} />결과 복사</button><button data-testid="result-download" type="button" onClick={onDownload}><Download size={15} />Markdown 다운로드</button></div></div>
+    {exportStatus && <p className="ai-solution-center__file-status" data-testid="result-export-status" role="status" aria-live="polite">{exportStatus}</p>}
     <p className="ai-solution-center__guide-notice">{result.guideNotice}</p>
+    {revision && revision.revision > 1 && <section className="ai-solution-center__revision-summary" data-testid="revision-summary"><h3>{revision.revision}차 분석에 추가로 반영한 정보</h3><List items={revision.clarificationAnswers.map((answer) => `${answer.question}: ${answer.answer}`)} /><p>신뢰도: {revision.previousConfidence} → {revision.currentConfidence}</p></section>}
     <dl className="ai-solution-center__result-summary">
       <div><dt>입력 요약</dt><dd>{result.inputSummary}</dd></div>
       <div><dt>추정 업무영역</dt><dd data-testid="ai-result-domain">{result.inferredDomain}</dd></div>
@@ -65,18 +90,13 @@ function ResultPanel({ result }: { result: SolutionResult }) {
     </dl>
     <section><h3 data-testid="ai-result-recommendation">{result.recommendation.title}</h3><p>{result.recommendation.rationale}</p><List items={result.recommendation.actions} /></section>
     <section><h3>단계적 적용 방법</h3><List dataTestId="ai-result-phased-plan" items={result.phasedPlan} /></section>
-    <div className="ai-solution-center__result-columns">
-      <section><h3>우선순위</h3><List items={result.priorities} /></section>
-      <section><h3>추가 확인 정보</h3><List items={result.additionalInfo} /></section>
-      <section><h3>위험·주의사항</h3><List items={result.risks} /></section>
-    </div>
+    <div className="ai-solution-center__result-columns"><section><h3>우선순위</h3><List items={result.priorities} /></section><section><h3>추가 확인 정보</h3><List items={result.additionalInfo} /></section><section><h3>위험·주의사항</h3><List items={result.risks} /></section></div>
     <section data-testid="ai-result-questions"><h3>컨설턴트·개발 담당자 확인 질문</h3>{result.clarifyingQuestions.length > 0 ? <div className="ai-solution-center__question-columns"><div><h4>컨설턴트 확인</h4><List items={result.consultantQuestions} /></div><div><h4>개발 담당자 확인</h4><List items={result.developmentQuestions} /></div></div> : <p>입력 정보가 비교적 구체적입니다. 적용 전에도 회사의 기준과 보안 조건을 확인해 주세요.</p>}</section>
     <section className="ai-solution-center__evidence" data-testid="ai-result-evidence"><h3>참고한 지식 근거</h3><ul>{result.evidence.map((evidence) => <li key={evidence.id} data-testid={`ai-evidence-${evidence.id}`}><strong>{evidence.title}</strong><span>{evidence.category} · {evidence.sourceType === "COMPANY" ? "회사 지식" : "일반 지식"}</span><p>일치 주요 키워드: {evidence.matchedKeywords.length > 0 ? evidence.matchedKeywords.join(", ") : "업무영역 기준"}</p><p>{evidence.reason} (신뢰 가중치 {evidence.confidenceWeight.toFixed(2)})</p></li>)}</ul>{result.companyKnowledgeUsed && <p className="ai-solution-center__company-reference" data-testid="company-knowledge-reference">회사 지식도 실제 업무 적용 전 해당 컨설턴트와 개발자의 검토가 필요합니다.</p>}</section>
+    <section className="ai-solution-center__unresolved" data-testid="unresolved-items"><h3>아직 확인이 필요한 사항</h3>{unresolved.length > 0 ? <List items={unresolved} /> : <p>현재 입력 범위에서 주요 확인사항은 충분히 답변되었습니다. 실제 적용 전 최종 검토는 필요합니다.</p>}</section>
+    {questions.length > 0 && canRefine && <section className="ai-solution-center__followup" data-testid="followup-panel" aria-busy={refining}><h3>추가 정보로 추천 보완</h3><p>아래 질문에 답변하면 현재 입력과 함께 다시 분석하여 추천 내용을 보완합니다.</p>{questions.map((question, index) => <label key={question.id} className="ai-solution-center__followup-question"><span><strong>질문 {index + 1}. {question.question}</strong><em>{question.required ? "필수" : "선택"} · {question.audience} · {question.purpose}</em></span><textarea data-testid={`followup-answer-${question.id}`} value={answerMap[question.id] ?? ""} aria-invalid={Boolean(answerError)} onChange={(event) => onAnswerChange(question.id, event.target.value)} maxLength={1000} rows={3} /></label>)}{answerError && <p className="ai-solution-center__error" data-testid="followup-error" role="alert" aria-live="assertive">{answerError}</p>}<button className="ai-solution-center__primary-button" data-testid="followup-refine" type="button" disabled={refining} onClick={onRefine}>{refining ? "보완 분석 중..." : "답변 반영 후 추천 보완"}</button></section>}
+    {analysisRevision(session) >= maximumAnalysisRevision && <p className="ai-solution-center__limit-notice" data-testid="analysis-limit-notice">현재 PoC에서는 최대 3차 분석까지만 지원합니다. 추가 검토는 해당 컨설턴트에게 전달해 주세요.</p>}
   </section>;
-}
-
-function List({ items, dataTestId }: { items: readonly string[]; dataTestId?: string }) {
-  return <ul data-testid={dataTestId}>{items.map((item) => <li key={item}>{item}</li>)}</ul>;
 }
 
 export function AiSolutionCenterPage({ onNavigate }: AiSolutionCenterPageProps) {
@@ -86,7 +106,10 @@ export function AiSolutionCenterPage({ onNavigate }: AiSolutionCenterPageProps) 
   const [situation, setSituation] = useState("");
   const [consultantError, setConsultantError] = useState("");
   const [consultantProcessing, setConsultantProcessing] = useState(false);
-  const [consultantResult, setConsultantResult] = useState<SolutionResult>();
+  const [consultantSession, setConsultantSession] = useState<SolutionSession>();
+  const [consultantAnswers, setConsultantAnswers] = useState<Record<string, string>>({});
+  const [consultantFollowupError, setConsultantFollowupError] = useState("");
+  const [consultantRefining, setConsultantRefining] = useState(false);
   const [companyKnowledge, setCompanyKnowledge] = useState<readonly CompanyKnowledgeArticle[]>([]);
   const [inquiry, setInquiry] = useState("");
   const [currentManagement, setCurrentManagement] = useState("");
@@ -94,7 +117,11 @@ export function AiSolutionCenterPage({ onNavigate }: AiSolutionCenterPageProps) 
   const [fieldConstraints, setFieldConstraints] = useState("");
   const [customerError, setCustomerError] = useState("");
   const [customerProcessing, setCustomerProcessing] = useState(false);
-  const [customerResult, setCustomerResult] = useState<SolutionResult>();
+  const [customerSession, setCustomerSession] = useState<SolutionSession>();
+  const [customerAnswers, setCustomerAnswers] = useState<Record<string, string>>({});
+  const [customerFollowupError, setCustomerFollowupError] = useState("");
+  const [customerRefining, setCustomerRefining] = useState(false);
+  const [exportStatus, setExportStatus] = useState("");
 
   const extractedText = useMemo(() => attachments.filter((attachment) => attachment.status === "text-ready").map((attachment) => attachment.text ?? "").join("\n"), [attachments]);
   const canAnalyzeFiles = extractedText.trim().length > 0 || situation.trim().length > 0;
@@ -125,9 +152,13 @@ export function AiSolutionCenterPage({ onNavigate }: AiSolutionCenterPageProps) 
     }
     setConsultantProcessing(true);
     setConsultantError("");
+    setExportStatus("");
     try {
       const request: SolutionRequest = { source: "consultant-file", domain, situation, extractedText };
-      setConsultantResult(buildSolutionResult(request, companyKnowledge));
+      const result = buildSolutionResult(request, companyKnowledge);
+      setConsultantSession(createSolutionSession("consultant-file", request, result, companyKnowledge));
+      setConsultantAnswers({});
+      setConsultantFollowupError("");
     } catch {
       setConsultantError("기본 검토 가이드를 만들지 못했습니다. 입력을 유지한 채 다시 시도해 주세요.");
     } finally {
@@ -151,8 +182,13 @@ export function AiSolutionCenterPage({ onNavigate }: AiSolutionCenterPageProps) 
     }
     setCustomerProcessing(true);
     setCustomerError("");
+    setExportStatus("");
     try {
-      setCustomerResult(buildSolutionResult({ source: "customer-qa", domain: "", situation: inquiry, currentManagement, desiredStandard, fieldConstraints }, companyKnowledge));
+      const request: SolutionRequest = { source: "customer-qa", domain: "", situation: inquiry, currentManagement, desiredStandard, fieldConstraints };
+      const result = buildSolutionResult(request, companyKnowledge);
+      setCustomerSession(createSolutionSession("customer-qa", request, result, companyKnowledge));
+      setCustomerAnswers({});
+      setCustomerFollowupError("");
     } catch {
       setCustomerError("기본 검토 가이드를 만들지 못했습니다. 입력을 유지한 채 다시 시도해 주세요.");
     } finally {
@@ -160,66 +196,92 @@ export function AiSolutionCenterPage({ onNavigate }: AiSolutionCenterPageProps) 
     }
   };
 
+  const validateAnswers = (session: SolutionSession, answerMap: Readonly<Record<string, string>>) => {
+    const answers = clarificationAnswersFor(session.activeResult, answerMap);
+    if (answers.length === 0) return { error: "추가 질문 중 하나 이상에 답변해 주세요." } as const;
+    if (answers.some((answer) => answer.answer.length > 1000)) return { error: "질문별 답변은 최대 1,000자까지 입력할 수 있습니다." } as const;
+    if (answers.reduce((length, answer) => length + answer.answer.length, 0) > 3000) return { error: "추가 답변 전체는 최대 3,000자까지 입력할 수 있습니다." } as const;
+    return { answers } as const;
+  };
+
+  const refine = (mode: SolutionSource) => {
+    const session = mode === "consultant-file" ? consultantSession : customerSession;
+    const answerMap = mode === "consultant-file" ? consultantAnswers : customerAnswers;
+    const setError = mode === "consultant-file" ? setConsultantFollowupError : setCustomerFollowupError;
+    const setRefining = mode === "consultant-file" ? setConsultantRefining : setCustomerRefining;
+    const setSession = mode === "consultant-file" ? setConsultantSession : setCustomerSession;
+    const refining = mode === "consultant-file" ? consultantRefining : customerRefining;
+    if (!session || refining || !canRefineSession(session)) return;
+    const validation = validateAnswers(session, answerMap);
+    if ("error" in validation) {
+      setError(validation.error ?? "추가 답변을 확인해 주세요.");
+      return;
+    }
+    setRefining(true);
+    setError("");
+    setExportStatus("");
+    try {
+      const request: SolutionRequest = { ...session.originalRequest, clarificationAnswers: validation.answers };
+      const result = buildSolutionResult(request, session.companyKnowledgeSnapshot);
+      setSession(appendSolutionRevision(session, result, validation.answers));
+    } catch {
+      setError("추천 보완 중 오류가 발생했습니다. 기존 결과와 입력은 유지되며 다시 시도할 수 있습니다.");
+    } finally {
+      setRefining(false);
+    }
+  };
+
   const applyCompanyKnowledge = (articles: readonly CompanyKnowledgeArticle[]) => {
     setCompanyKnowledge(articles);
-    setConsultantResult(undefined);
-    setCustomerResult(undefined);
   };
 
   const resetCompanyKnowledge = () => {
     setCompanyKnowledge([]);
-    setConsultantResult(undefined);
-    setCustomerResult(undefined);
   };
 
-  return <div className="erp-shell">
-    <aside className="side-nav">
-      <div className="brand"><Building2 size={20} /><strong>SMART ERP</strong></div>
-      <nav>
-        <div className="menu-title">영업관리</div><button className="menu-item" data-testid="nav-sales-order" onClick={() => onNavigate("sales")} type="button">수주등록</button>
-        <div className="menu-title">구매관리</div><div className="menu-group"><ChevronRight size={14} /><span>발주관리</span></div><button className="menu-item" data-testid="nav-purchase-order" onClick={() => onNavigate("purchase")} type="button">발주등록</button>
-        <div className="menu-title">생산관리</div><div className="menu-group"><ChevronRight size={14} /><span>작업지시관리</span></div><button className="menu-item" data-testid="nav-work-order" onClick={() => onNavigate("work")} type="button">작업지시등록</button>
-        <div className="menu-title">AI 솔루션</div><button className="menu-item active" data-testid="nav-ai-solution-center" type="button">AI 솔루션 센터</button>
-      </nav>
-    </aside>
-    <main className="ai-solution-center" aria-busy={consultantProcessing || customerProcessing}>
-      <header className="page-header"><div><h1 data-testid="ai-solution-center-title">AI 솔루션 센터</h1><p>ERP·MES 업무 상황을 정리하고 검토 가능한 기본 가이드와 추가 확인사항을 제공합니다.</p></div></header>
-      <aside className="ai-solution-center__top-note" aria-label="PoC 안내">현재 버전은 로컬 지식 템플릿 기반 PoC입니다.<br />실제 회사 지식과 보안 확인 후 AI를 연결하면 확장할 수 있습니다.</aside>
-      <CompanyKnowledgeSettings companyKnowledge={companyKnowledge} generalKnowledgeCount={solutionKnowledge.length} onApply={applyCompanyKnowledge} onReset={resetCompanyKnowledge} />
-      <div className="ai-solution-center__tabs" role="tablist" aria-label="AI 솔루션 방식">
-        <button type="button" role="tab" id="consultant-tab" aria-controls="consultant-panel" aria-selected={activeTab === "consultant"} className={activeTab === "consultant" ? "is-active" : ""} onClick={() => setActiveTab("consultant")}>컨설턴트 파일 분석</button>
-        <button type="button" role="tab" id="customer-tab" aria-controls="customer-panel" aria-selected={activeTab === "customer"} className={activeTab === "customer" ? "is-active" : ""} onClick={() => setActiveTab("customer")}>고객 업무 Q&amp;A</button>
-      </div>
-      {activeTab === "consultant" ? <section id="consultant-panel" role="tabpanel" aria-labelledby="consultant-tab" className="ai-solution-center__panel">
-        <div className="ai-solution-center__form-card">
-          <h2>컨설턴트 파일 분석</h2>
-          <label className="ai-solution-center__file-label" htmlFor="ai-file-input"><FileText size={16} />파일 선택 또는 추가<input id="ai-file-input" data-testid="ai-file-input" type="file" multiple onChange={(event) => void handleFiles(event)} /></label>
-          <p className="ai-solution-center__muted">선택한 파일은 서버로 업로드하지 않으며 브라우저 메모리에서만 처리합니다.</p>
-          {attachments.length > 0 && <ul className="ai-solution-center__file-list" data-testid="ai-file-list">{attachments.map((attachment) => <li key={attachment.id}><div><strong>{attachment.name}</strong><span>{attachment.extension.toUpperCase()} · {formatBytes(attachment.size)} · {fileStatusMessage(attachment.status)}</span>{attachment.status === "unsupported" && <p>파일은 첨부 상태로 유지되지만 현재 PoC에서는 내용을 자동 추출하지 않습니다.<br />주요 내용이나 요약문을 아래 상황 설명란에 입력해 주세요.</p>}</div><button type="button" aria-label={`${attachment.name} 제거`} onClick={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))}><Trash2 size={15} />제거</button></li>)}</ul>}
-          <p className="ai-solution-center__file-status" data-testid="ai-file-status" aria-live="polite">{attachments.length === 0 ? "파일을 선택하면 자동 추출 가능 여부를 안내합니다." : `첨부 파일 ${attachments.length}건`}</p>
-          <div className="ai-solution-center__fields">
-            <label>업무영역<select data-testid="ai-domain-select" value={domain} onChange={(event) => setDomain(event.target.value as BusinessDomain)}><option value="">자동 추정</option>{businessDomains.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-            <label>공통 상황 설명<textarea data-testid="ai-situation-input" value={situation} aria-invalid={Boolean(consultantError) && !canAnalyzeFiles} onChange={(event) => { setSituation(event.target.value); setConsultantError(""); }} placeholder="업무 상황, 현재 문제, 확인하고 싶은 기준을 적어 주세요." rows={6} /></label>
-          </div>
-          {consultantError && <p className="ai-solution-center__error" role="alert">{consultantError}</p>}
-          <button className="ai-solution-center__primary-button" data-testid="ai-consultant-analyze" type="button" disabled={consultantProcessing} onClick={analyzeConsultant}>{consultantProcessing ? "분석 중..." : "기본 가이드 분석"}</button>
-        </div>
-        {consultantResult && <ResultPanel result={consultantResult} />}
-      </section> : <section id="customer-panel" role="tabpanel" aria-labelledby="customer-tab" className="ai-solution-center__panel">
-        <div className="ai-solution-center__form-card">
-          <h2>고객 업무 Q&amp;A</h2>
-          <div className="ai-solution-center__fields">
-            <label>문의 또는 문제<textarea data-testid="ai-customer-inquiry" value={inquiry} aria-invalid={Boolean(customerError)} onChange={(event) => { setInquiry(event.target.value); setCustomerError(""); }} rows={4} /></label>
-            <label>현재 관리 방식<textarea data-testid="ai-customer-current-management" value={currentManagement} onChange={(event) => setCurrentManagement(event.target.value)} rows={3} /></label>
-            <label>원하는 기준<textarea data-testid="ai-customer-desired-standard" value={desiredStandard} onChange={(event) => setDesiredStandard(event.target.value)} rows={3} /></label>
-            <label>현장 제약<textarea data-testid="ai-customer-field-constraints" value={fieldConstraints} onChange={(event) => setFieldConstraints(event.target.value)} rows={3} /></label>
-          </div>
-          {customerError && <p className="ai-solution-center__error" role="alert">{customerError}</p>}
-          <div className="ai-solution-center__actions"><button type="button" onClick={fillExample}>예시 질문 넣기</button><button className="ai-solution-center__primary-button" data-testid="ai-customer-guide" type="button" disabled={customerProcessing} onClick={guideCustomer}>{customerProcessing ? "가이드 작성 중..." : "기본 가이드 받기"}</button></div>
-        </div>
-        {customerResult && <ResultPanel result={customerResult} />}
-      </section>}
-      <section className="ai-solution-center__security" aria-label="보안 안내"><h2>보안 및 사용 안내</h2><ul><li>선택한 파일은 서버로 업로드하지 않습니다.</li><li>파일 내용은 브라우저 메모리에서만 처리합니다.</li><li>개인정보, 비밀번호, 고객 재무정보는 첨부하지 마세요.</li><li>실제 도입 전에는 회사 보안 검토가 필요합니다.</li><li>현재 출력은 기본 검토 가이드이므로 담당자 확인이 필요합니다.</li></ul></section>
-    </main>
-  </div>;
+  const resetAnalysisSession = () => {
+    setAttachments([]);
+    setDomain("");
+    setSituation("");
+    setInquiry("");
+    setCurrentManagement("");
+    setDesiredStandard("");
+    setFieldConstraints("");
+    setConsultantError("");
+    setCustomerError("");
+    setConsultantFollowupError("");
+    setCustomerFollowupError("");
+    setConsultantSession(undefined);
+    setCustomerSession(undefined);
+    setConsultantAnswers({});
+    setCustomerAnswers({});
+    setExportStatus("");
+    setActiveTab("consultant");
+  };
+
+  const exportMarkdown = async (session: SolutionSession, answerMap: Readonly<Record<string, string>>) => {
+    const markdown = buildSolutionMarkdown(session, unresolvedItems(session.activeResult, answerMap));
+    try {
+      await navigator.clipboard.writeText(markdown);
+      setExportStatus("결과를 클립보드에 복사했습니다.");
+    } catch {
+      setExportStatus("클립보드 복사에 실패했습니다. Markdown 다운로드를 사용해 주세요.");
+    }
+  };
+
+  const downloadMarkdown = (session: SolutionSession, answerMap: Readonly<Record<string, string>>) => {
+    const markdown = buildSolutionMarkdown(session, unresolvedItems(session.activeResult, answerMap));
+    const objectUrl = URL.createObjectURL(new Blob([markdown], { type: "text/markdown;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = buildExportFilename(session);
+    link.click();
+    URL.revokeObjectURL(objectUrl);
+    setExportStatus("Markdown 파일 다운로드를 시작했습니다.");
+  };
+
+  const consultantBusy = consultantProcessing || consultantRefining;
+  const customerBusy = customerProcessing || customerRefining;
+
+  return <div className="erp-shell"><aside className="side-nav"><div className="brand"><Building2 size={20} /><strong>SMART ERP</strong></div><nav><div className="menu-title">영업관리</div><button className="menu-item" data-testid="nav-sales-order" onClick={() => onNavigate("sales")} type="button">수주등록</button><div className="menu-title">구매관리</div><div className="menu-group"><ChevronRight size={14} /><span>발주관리</span></div><button className="menu-item" data-testid="nav-purchase-order" onClick={() => onNavigate("purchase")} type="button">발주등록</button><div className="menu-title">생산관리</div><div className="menu-group"><ChevronRight size={14} /><span>작업지시관리</span></div><button className="menu-item" data-testid="nav-work-order" onClick={() => onNavigate("work")} type="button">작업지시등록</button><div className="menu-title">AI 솔루션</div><button className="menu-item active" data-testid="nav-ai-solution-center" type="button">AI 솔루션 센터</button></nav></aside><main className="ai-solution-center" aria-busy={consultantBusy || customerBusy}><header className="page-header"><div><h1 data-testid="ai-solution-center-title">AI 솔루션 센터</h1><p>ERP·MES 업무 상황을 정리하고 검토 가능한 기본 가이드와 추가 확인사항을 제공합니다.</p></div><button className="ai-solution-center__reset-button" data-testid="analysis-session-reset" type="button" onClick={resetAnalysisSession}><RotateCcw size={15} />분석 세션 초기화</button></header><aside className="ai-solution-center__top-note" aria-label="PoC 안내">현재 버전은 로컬 지식 템플릿 기반 PoC입니다.<br />실제 회사 지식과 보안 확인 후 AI를 연결하면 확장할 수 있습니다.</aside><CompanyKnowledgeSettings companyKnowledge={companyKnowledge} generalKnowledgeCount={solutionKnowledge.length} onApply={applyCompanyKnowledge} onReset={resetCompanyKnowledge} /><div className="ai-solution-center__tabs" role="tablist" aria-label="AI 솔루션 방식"><button type="button" role="tab" id="consultant-tab" aria-controls="consultant-panel" aria-selected={activeTab === "consultant"} className={activeTab === "consultant" ? "is-active" : ""} onClick={() => setActiveTab("consultant")}>컨설턴트 파일 분석</button><button type="button" role="tab" id="customer-tab" aria-controls="customer-panel" aria-selected={activeTab === "customer"} className={activeTab === "customer" ? "is-active" : ""} onClick={() => setActiveTab("customer")}>고객 업무 Q&amp;A</button></div>{activeTab === "consultant" ? <section id="consultant-panel" role="tabpanel" aria-labelledby="consultant-tab" className="ai-solution-center__panel"><div className="ai-solution-center__form-card"><h2>컨설턴트 파일 분석</h2><label className="ai-solution-center__file-label" htmlFor="ai-file-input"><FileText size={16} />파일 선택 또는 추가<input id="ai-file-input" data-testid="ai-file-input" type="file" multiple onChange={(event) => void handleFiles(event)} /></label><p className="ai-solution-center__muted">선택한 파일은 서버로 업로드하지 않으며 브라우저 메모리에서만 처리합니다.</p>{attachments.length > 0 && <ul className="ai-solution-center__file-list" data-testid="ai-file-list">{attachments.map((attachment) => <li key={attachment.id}><div><strong>{attachment.name}</strong><span>{attachment.extension.toUpperCase()} · {formatBytes(attachment.size)} · {fileStatusMessage(attachment.status)}</span>{attachment.status === "unsupported" && <p>파일은 첨부 상태로 유지되지만 현재 PoC에서는 내용을 자동 추출하지 않습니다.<br />주요 내용이나 요약문을 아래 상황 설명란에 입력해 주세요.</p>}</div><button type="button" aria-label={`${attachment.name} 제거`} onClick={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))}><Trash2 size={15} />제거</button></li>)}</ul>}<p className="ai-solution-center__file-status" data-testid="ai-file-status" aria-live="polite">{attachments.length === 0 ? "파일을 선택하면 자동 추출 가능 여부를 안내합니다." : `첨부 파일 ${attachments.length}건`}</p><div className="ai-solution-center__fields"><label>업무영역<select data-testid="ai-domain-select" value={domain} onChange={(event) => setDomain(event.target.value as BusinessDomain)}><option value="">자동 추정</option>{businessDomains.map((item) => <option key={item} value={item}>{item}</option>)}</select></label><label>공통 상황 설명<textarea data-testid="ai-situation-input" value={situation} aria-invalid={Boolean(consultantError) && !canAnalyzeFiles} onChange={(event) => { setSituation(event.target.value); setConsultantError(""); }} placeholder="업무 상황, 현재 문제, 확인하고 싶은 기준을 적어 주세요." rows={6} /></label></div>{consultantError && <p className="ai-solution-center__error" role="alert">{consultantError}</p>}<button className="ai-solution-center__primary-button" data-testid="ai-consultant-analyze" type="button" disabled={consultantBusy} onClick={analyzeConsultant}>{consultantProcessing ? "분석 중..." : "기본 가이드 분석"}</button></div>{consultantSession && <ResultPanel session={consultantSession} answerMap={consultantAnswers} answerError={consultantFollowupError} refining={consultantRefining} exportStatus={exportStatus} onAnswerChange={(id, answer) => { setConsultantAnswers((current) => ({ ...current, [id]: answer })); setConsultantFollowupError(""); }} onRefine={() => refine("consultant-file")} onCopy={() => void exportMarkdown(consultantSession, consultantAnswers)} onDownload={() => downloadMarkdown(consultantSession, consultantAnswers)} />}</section> : <section id="customer-panel" role="tabpanel" aria-labelledby="customer-tab" className="ai-solution-center__panel"><div className="ai-solution-center__form-card"><h2>고객 업무 Q&amp;A</h2><div className="ai-solution-center__fields"><label>문의 또는 문제<textarea data-testid="ai-customer-inquiry" value={inquiry} aria-invalid={Boolean(customerError)} onChange={(event) => { setInquiry(event.target.value); setCustomerError(""); }} rows={4} /></label><label>현재 관리 방식<textarea data-testid="ai-customer-current-management" value={currentManagement} onChange={(event) => setCurrentManagement(event.target.value)} rows={3} /></label><label>원하는 기준<textarea data-testid="ai-customer-desired-standard" value={desiredStandard} onChange={(event) => setDesiredStandard(event.target.value)} rows={3} /></label><label>현장 제약<textarea data-testid="ai-customer-field-constraints" value={fieldConstraints} onChange={(event) => setFieldConstraints(event.target.value)} rows={3} /></label></div>{customerError && <p className="ai-solution-center__error" role="alert">{customerError}</p>}<div className="ai-solution-center__actions"><button type="button" onClick={fillExample}>예시 질문 넣기</button><button className="ai-solution-center__primary-button" data-testid="ai-customer-guide" type="button" disabled={customerBusy} onClick={guideCustomer}>{customerProcessing ? "가이드 작성 중..." : "기본 가이드 받기"}</button></div></div>{customerSession && <ResultPanel session={customerSession} answerMap={customerAnswers} answerError={customerFollowupError} refining={customerRefining} exportStatus={exportStatus} onAnswerChange={(id, answer) => { setCustomerAnswers((current) => ({ ...current, [id]: answer })); setCustomerFollowupError(""); }} onRefine={() => refine("customer-qa")} onCopy={() => void exportMarkdown(customerSession, customerAnswers)} onDownload={() => downloadMarkdown(customerSession, customerAnswers)} />}</section>}<section className="ai-solution-center__security" aria-label="보안 안내"><h2>보안 및 사용 안내</h2><ul><li>선택한 파일은 서버로 업로드하지 않습니다.</li><li>파일 내용과 분석 세션은 브라우저 메모리에서만 처리합니다.</li><li>개인정보, 비밀번호, 고객 재무정보는 첨부하거나 질문에 입력하지 마세요.</li><li>실제 도입 전에는 회사 보안 검토가 필요합니다.</li><li>현재 출력은 기본 검토 가이드이므로 담당자 확인이 필요합니다.</li></ul></section></main></div>;
 }

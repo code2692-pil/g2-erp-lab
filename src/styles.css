@@ -364,6 +364,105 @@ textarea {
   gap: 14px;
 }
 
+.ai-solution-center__result-heading-row,
+.ai-solution-center__export-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ai-solution-center__revision-status {
+  margin: 4px 0 0;
+  color: #617287;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ai-solution-center__export-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 30px;
+  border: 1px solid #9eafbf;
+  border-radius: 4px;
+  padding: 0 9px;
+  color: #304b64;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ai-solution-center__export-actions button:focus-visible {
+  outline: 2px solid #8fc3ff;
+  outline-offset: 2px;
+}
+
+.ai-solution-center__revision-summary,
+.ai-solution-center__unresolved,
+.ai-solution-center__followup {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #d4e0ea;
+  border-radius: 5px;
+  padding: 11px;
+  background: #f8fbfe;
+}
+
+.ai-solution-center__revision-summary h3,
+.ai-solution-center__unresolved h3,
+.ai-solution-center__followup h3 {
+  margin: 0;
+  color: #304a63;
+  font-size: 14px;
+}
+
+.ai-solution-center__revision-summary p,
+.ai-solution-center__unresolved p,
+.ai-solution-center__followup p {
+  margin: 0;
+  color: #526b83;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ai-solution-center__followup {
+  border-color: #94b6d6;
+  background: #f3f9ff;
+}
+
+.ai-solution-center__followup-question {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid #d7e5f0;
+  padding-top: 10px;
+}
+
+.ai-solution-center__followup-question span {
+  display: grid;
+  gap: 3px;
+  color: #324f69;
+  font-size: 13px;
+}
+
+.ai-solution-center__followup-question em {
+  color: #687d91;
+  font-size: 11px;
+  font-style: normal;
+}
+
+.ai-solution-center__limit-notice {
+  margin: 0;
+  border-left: 3px solid #b68120;
+  padding: 8px 10px;
+  color: #755214;
+  background: #fffaf0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .ai-solution-center__result section {
   display: grid;
   gap: 7px;
@@ -485,6 +584,12 @@ textarea {
   .ai-solution-center__knowledge-heading {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .ai-solution-center__result-heading-row,
+  .ai-solution-center__export-actions {
+    align-items: flex-start;
+    flex-wrap: wrap;
   }
 }
 

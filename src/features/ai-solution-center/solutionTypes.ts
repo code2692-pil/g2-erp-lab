@@ -13,6 +13,7 @@ export interface SolutionRequest {
   currentManagement?: string;
   desiredStandard?: string;
   fieldConstraints?: string;
+  clarificationAnswers?: readonly ClarificationAnswer[];
 }
 
 export interface SolutionRecommendation {
@@ -22,8 +23,17 @@ export interface SolutionRecommendation {
 }
 
 export interface ClarifyingQuestion {
+  id: string;
   audience: "컨설턴트" | "개발 담당자";
   question: string;
+  required: boolean;
+  purpose: string;
+}
+
+export interface ClarificationAnswer {
+  questionId: string;
+  question: string;
+  answer: string;
 }
 
 export interface KnowledgeArticle {
@@ -85,6 +95,7 @@ export interface SolutionResult {
   phasedPlan: readonly string[];
   priorities: readonly string[];
   additionalInfo: readonly string[];
+  alternatives: readonly string[];
   risks: readonly string[];
   clarifyingQuestions: readonly ClarifyingQuestion[];
   consultantQuestions: readonly string[];
@@ -94,4 +105,21 @@ export interface SolutionResult {
   confidence: SolutionConfidence;
   externalReviewRequired: true;
   guideNotice: string;
+}
+
+export interface SolutionRevision {
+  revision: number;
+  createdAt: string;
+  result: SolutionResult;
+  clarificationAnswers: readonly ClarificationAnswer[];
+  previousConfidence?: SolutionConfidence;
+  currentConfidence: SolutionConfidence;
+}
+
+export interface SolutionSession {
+  mode: SolutionSource;
+  originalRequest: SolutionRequest;
+  companyKnowledgeSnapshot: readonly CompanyKnowledgeArticle[];
+  revisions: readonly SolutionRevision[];
+  activeResult: SolutionResult;
 }

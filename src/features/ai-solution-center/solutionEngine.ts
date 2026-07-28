@@ -30,6 +30,7 @@ const domainKeywords: ReadonlyArray<readonly [BusinessDomain, readonly string[]]
 
 function combinedInput(request: SolutionRequest) {
   return [request.situation, request.extractedText, request.currentManagement, request.desiredStandard, request.fieldConstraints]
+    .concat((request.clarificationAnswers ?? []).map((answer) => `${answer.question}\n${answer.answer}`))
     .filter(Boolean)
     .join("\n")
     .trim();
@@ -153,8 +154,8 @@ export function buildSolutionResult(request: SolutionRequest, companyKnowledge: 
   const companyKnowledgeUsed = evidence.some((item) => item.sourceType === "COMPANY");
   const questions = questionSets(primary.candidate, confidence, companyKnowledgeUsed);
   const clarifyingQuestions: ClarifyingQuestion[] = [
-    ...questions.consultant.map((question) => ({ audience: "컨설턴트" as const, question })),
-    ...questions.development.map((question) => ({ audience: "개발 담당자" as const, question }))
+    ...questions.consultant.map((question, index) => ({ id: `${primary.candidate.id}-consultant-${index + 1}`, audience: "컨설턴트" as const, question, required: index === 0, purpose: "실제 업무 기준과 현장 적용 가능성을 확인합니다." })),
+    ...questions.development.map((question, index) => ({ id: `${primary.candidate.id}-development-${index + 1}`, audience: "개발 담당자" as const, question, required: false, purpose: "기존 ERP 화면·데이터·예외 처리 영향을 확인합니다." }))
   ];
 
   return {
@@ -165,6 +166,7 @@ export function buildSolutionResult(request: SolutionRequest, companyKnowledge: 
     phasedPlan: primary.candidate.phasedPlan.length > 0 ? primary.candidate.phasedPlan : primary.candidate.recommendations,
     priorities: primary.candidate.priorities.length > 0 ? primary.candidate.priorities : primary.candidate.requiredInformation,
     additionalInfo: primary.candidate.additionalInfo.length > 0 ? primary.candidate.additionalInfo : primary.candidate.requiredInformation,
+    alternatives: primary.candidate.alternatives,
     risks: primary.candidate.risks,
     clarifyingQuestions,
     consultantQuestions: questions.consultant,

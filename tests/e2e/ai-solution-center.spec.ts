@@ -39,6 +39,24 @@ async function openCompanyLotQuestion(page: Page) {
   await page.getByTestId("ai-customer-guide").click();
 }
 
+async function openCustomerAnalysis(page: Page) {
+  await page.getByRole("tab").nth(1).click();
+  await page.getByTestId("ai-customer-inquiry").fill("Supplier LOT traceability must continue from receiving through production and packaging. The field team needs a practical ERP guide.");
+  await page.getByTestId("ai-customer-current-management").fill("Receiving checks supplier LOT, but production and packaging records are separated.");
+  await page.getByTestId("ai-customer-desired-standard").fill("One trace record must connect receiving, production, inspection, and packaging.");
+  await page.getByTestId("ai-customer-field-constraints").fill("Operators need a short barcode-based input flow.");
+  await page.getByTestId("ai-customer-guide").click();
+  await expect(page.getByTestId("ai-result")).toBeVisible();
+}
+
+async function fillTwoFollowupAnswers(page: Page) {
+  const fields = page.locator("[data-testid^='followup-answer-']");
+  const ids = await fields.evaluateAll((elements) => elements.map((element) => element.getAttribute("data-testid")).filter((id): id is string => Boolean(id)));
+  expect(ids.length).toBeGreaterThanOrEqual(2);
+  await page.getByTestId(ids[0]).fill("Receiving creates the supplier LOT and packaging confirms the final trace label.");
+  await page.getByTestId(ids[1]).fill("Barcode scanning is available at the receiving and packaging workstations.");
+}
+
 test("회사 지식 A: 정상 JSON을 적용하면 두 탭의 추천 근거에 회사 지식이 표시된다", async ({ page }) => {
   const problems = collectBrowserProblems(page);
   await openCenter(page);
@@ -160,5 +178,105 @@ test("AI 센터 D: 기존 업무 화면과 AI 메뉴 전환 뒤 기본 도구모
   await expect(page.getByTestId("wo-btn-search")).toBeVisible();
   await page.getByTestId("nav-ai-solution-center").click();
   await expect(page.getByTestId("ai-solution-center-title")).toBeVisible();
+  expectNoBrowserProblems(problems);
+});
+
+test("Gate 12-3 A: customer answers create a second recommendation revision", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  await openCustomerAnalysis(page);
+  await expect(page.getByTestId("followup-panel")).toBeVisible();
+  await expect(page.getByTestId("analysis-revision-status")).toContainText("1 / 3");
+  await fillTwoFollowupAnswers(page);
+  await page.getByTestId("followup-refine").click();
+  await expect(page.getByTestId("analysis-revision-status")).toContainText("2 / 3");
+  await expect(page.getByTestId("revision-summary")).toContainText("Receiving creates the supplier LOT");
+  await expect(page.getByTestId("ai-result")).toContainText("Barcode scanning is available");
+  await expect(page.getByTestId("ai-result-external-review")).toBeVisible();
+  await page.getByTestId("followup-refine").click();
+  await expect(page.getByTestId("analysis-revision-status")).toContainText("3 / 3");
+  await expect(page.getByTestId("followup-refine")).toHaveCount(0);
+  await expect(page.getByTestId("analysis-limit-notice")).toBeVisible();
+  expectNoBrowserProblems(problems);
+});
+
+test("Gate 12-3 B: a blank follow-up is blocked without losing the first revision", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  await openCustomerAnalysis(page);
+  await page.getByTestId("followup-refine").click();
+  await expect(page.getByTestId("followup-error")).toHaveText("추가 질문 중 하나 이상에 답변해 주세요.");
+  await expect(page.getByTestId("analysis-revision-status")).toContainText("1 / 3");
+  await expect(page.getByTestId("ai-result")).toHaveCount(1);
+  expectNoBrowserProblems(problems);
+});
+
+test("Gate 12-3 C: company evidence is retained through refinement with no more than three sources", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  await applyCompanyKnowledgeSample(page);
+  await openCustomerAnalysis(page);
+  await expect(page.getByTestId("ai-evidence-poc-material-lot-001")).toBeVisible();
+  await expect(page.getByTestId("ai-evidence-lot-traceability")).toBeVisible();
+  await fillTwoFollowupAnswers(page);
+  await page.getByTestId("followup-refine").click();
+  await expect(page.getByTestId("analysis-revision-status")).toContainText("2 / 3");
+  await expect(page.getByTestId("ai-evidence-poc-material-lot-001")).toBeVisible();
+  expect(await page.getByTestId("ai-result-evidence").locator("li").count()).toBeLessThanOrEqual(3);
+  expectNoBrowserProblems(problems);
+});
+
+test("Gate 12-3 D: session reset clears analysis state but preserves the company knowledge pack", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  await applyCompanyKnowledgeSample(page);
+  await openCustomerAnalysis(page);
+  await fillTwoFollowupAnswers(page);
+  await page.getByTestId("followup-refine").click();
+  await expect(page.getByTestId("analysis-revision-status")).toContainText("2 / 3");
+  await page.getByTestId("analysis-session-reset").focus();
+  await expect(page.getByTestId("analysis-session-reset")).toBeFocused();
+  await page.getByTestId("analysis-session-reset").click();
+  await expect(page.getByTestId("ai-result")).toHaveCount(0);
+  await expect(page.getByTestId("company-knowledge-count")).toContainText("3");
+  await page.getByRole("tab").nth(1).click();
+  await expect(page.getByTestId("ai-customer-inquiry")).toHaveValue("");
+  expectNoBrowserProblems(problems);
+});
+
+test("Gate 12-3 E: copy and Markdown download export the active result without external requests", async ({ page }) => {
+  await page.addInitScript(() => {
+    const created: string[] = [];
+    const revoked: string[] = [];
+    const originalCreateObjectUrl = URL.createObjectURL;
+    const originalRevokeObjectUrl = URL.revokeObjectURL;
+    URL.createObjectURL = (value) => {
+      const url = originalCreateObjectUrl.call(URL, value);
+      created.push(url);
+      return url;
+    };
+    URL.revokeObjectURL = (url) => {
+      revoked.push(url);
+      originalRevokeObjectUrl.call(URL, url);
+    };
+    (window as Window & { gate12ObjectUrls?: { created: string[]; revoked: string[] } }).gate12ObjectUrls = { created, revoked };
+  });
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://127.0.0.1:5173" });
+  await openCustomerAnalysis(page);
+  await page.getByTestId("result-copy").click();
+  await expect(page.getByTestId("result-export-status")).toHaveText("결과를 클립보드에 복사했습니다.");
+  const clipboard = await page.evaluate(() => navigator.clipboard.readText());
+  expect(clipboard).toContain("# AI 솔루션 센터 분석 결과");
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByTestId("result-download").click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^ai-solution-customer-\d{14}\.md$/);
+  await expect(page.getByTestId("result-export-status")).toContainText("Markdown");
+  await expect.poll(() => page.evaluate(() => window.gate12ObjectUrls)).toEqual(expect.objectContaining({ created: expect.any(Array), revoked: expect.any(Array) }));
+  const objectUrls = await page.evaluate(() => window.gate12ObjectUrls);
+  expect(objectUrls?.created).toHaveLength(1);
+  expect(objectUrls?.revoked).toEqual(objectUrls?.created);
   expectNoBrowserProblems(problems);
 });

@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 2,
+  "mode": "ACTIVE",
+  "freezeAt": "2026-07-31T15:00:00+09:00",
+  "allowedModes": ["ACTIVE", "FREEZE"],
+  "allowedRiskLevels": ["Green", "Yellow", "Red"],
+  "maxCandidatesPerRun": 10,
+  "maxPredevelopmentsPerRun": 2,
+  "reportDirectory": ".artifacts/maintenance",
+  "branchPrefix": "ai/green-",
+  "predevelopmentPolicy": {
+    "Green": "allowed",
+    "Yellow": "human-approval-required",
+    "Red": "prohibited"
+  },
+  "protectedPaths": [
+    { "pattern": "server/**", "reason": "server, API, DTO, or business contract" },
+    { "pattern": "database/**", "reason": "database or SQL" },
+    { "pattern": "src/api/**", "reason": "API client contract" },
+    { "pattern": "**/*.sql", "reason": "SQL" },
+    { "pattern": "**/*Dto*.cs", "reason": "DTO" },
+    { "pattern": "**/Contracts/**", "reason": "API contract" }
+  ],
+  "forbiddenPaths": [".env", ".env.*"],
+  "forbiddenCommands": ["merge", "rebase", "cherry-pick", "push", "deploy", "vercel", "release"],
+  "requiredChecks": {
+    "quick": ["git diff --check", "typecheck", "build", "dotnet build", "Mock smoke", "InMemory smoke"],
+    "full": ["quick", "Mock full", "InMemory full"],
+    "nightly": ["full", "race", "validation", "dirty guard", "lookup", "Grid keyboard", "Ctrl+V"]
+  },
+  "sensitiveInformation": {
+    "markers": ["api_key", "token", "secret", "password", "connectionstring", "authorization"],
+    "reportingRule": "Record only that a sensitive-looking pattern was detected; never record the value."
+  },
+  "categories": {
+    "Green": ["tests", "docs", "simple UI copy or layout", "duplicate click protection", "recovery state", "safe diagnostic scripts"],
+    "Yellow": ["common component", "multi-screen refactor", "API client", "performance", "exception structure"],
+    "Red": ["ERP rule", "money or quantity", "status transition", "authentication", "API or DTO", "DB or SQL", "customer logic", "production inventory inspection", "MES PLC", "operating environment or deployment"]
+  }
+}

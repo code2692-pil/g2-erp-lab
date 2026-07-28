@@ -21,7 +21,11 @@
     "test:e2e:api:inmemory": "node scripts/run-mode.mjs test inmemory",
     "test:e2e:api:sqlserver": "node scripts/run-mode.mjs test sqlserver",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:report": "playwright show-report"
+    "test:e2e:report": "playwright show-report",
+    "qa:maintenance:test": "node --test scripts/qa/tests/*.test.mjs",
+    "qa:maintenance:scan": "node scripts/qa/collect-maintenance-signals.mjs",
+    "qa:maintenance:report": "node scripts/qa/build-maintenance-report.mjs",
+    "qa:quality:quick": "node scripts/qa/run-quality-gates.mjs quick"
   },
   "dependencies": {
     "lucide-react": "^1.23.0",

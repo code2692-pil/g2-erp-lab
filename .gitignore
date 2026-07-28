@@ -30,6 +30,9 @@ pnpm-debug.log*
 test-results/
 playwright-report/
 
+# AI maintenance reports are local review artifacts, never source changes.
+.artifacts/
+
 # OS / editor
 .DS_Store
 Thumbs.db

@@ -4,6 +4,33 @@ export type BusinessDomain = (typeof businessDomains)[number] | "";
 export type SolutionSource = "consultant-file" | "customer-qa";
 export type SolutionConfidence = "높음" | "보통" | "낮음";
 export type KnowledgeSourceType = "GENERAL" | "COMPANY";
+export type InputEvidenceSourceType =
+  | "EXTRACTED_FILE_TEXT"
+  | "FILE_NOTE"
+  | "COMMON_CONTEXT"
+  | "CUSTOMER_QUESTION"
+  | "CUSTOMER_CONTEXT"
+  | "CLARIFICATION_ANSWER"
+  | "GENERAL_KNOWLEDGE"
+  | "COMPANY_KNOWLEDGE";
+
+export interface FileAnalysisInput {
+  id: string;
+  fileName: string;
+  extractedText?: string;
+  note?: string;
+  attachmentOrder: number;
+}
+
+export interface InputEvidence {
+  id: string;
+  sourceType: InputEvidenceSourceType;
+  sourceLabel: string;
+  fileName?: string;
+  excerpt: string;
+  relatedKeywords: readonly string[];
+  usedInRecommendation: boolean;
+}
 
 export interface SolutionRequest {
   source: SolutionSource;
@@ -14,6 +41,7 @@ export interface SolutionRequest {
   desiredStandard?: string;
   fieldConstraints?: string;
   clarificationAnswers?: readonly ClarificationAnswer[];
+  fileInputs?: readonly FileAnalysisInput[];
 }
 
 export interface SolutionRecommendation {
@@ -101,6 +129,7 @@ export interface SolutionResult {
   consultantQuestions: readonly string[];
   developmentQuestions: readonly string[];
   evidence: readonly RecommendationEvidence[];
+  inputEvidence: readonly InputEvidence[];
   companyKnowledgeUsed: boolean;
   confidence: SolutionConfidence;
   externalReviewRequired: true;

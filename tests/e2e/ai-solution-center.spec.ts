@@ -280,3 +280,92 @@ test("Gate 12-3 E: copy and Markdown download export the active result without e
   expect(objectUrls?.revoked).toEqual(objectUrls?.created);
   expectNoBrowserProblems(problems);
 });
+
+test("Gate 12-4 A: an unsupported MP4 note drives a local recommendation and input evidence", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await openCenter(page);
+  await page.getByTestId("ai-file-input").setInputFiles({ name: "process-video.mp4", mimeType: "video/mp4", buffer: Buffer.from("not-a-real-video") });
+  await expect(page.locator("[data-testid^='file-note-']")).toHaveCount(1);
+  await page.locator("[data-testid^='file-note-']").fill("검사와 포장 공정에서만 바코드 스캔이 가능합니다. 시작 단계에는 기존 수기 기록 이력도 함께 확인해야 합니다.");
+  await page.getByTestId("ai-consultant-analyze").click();
+  await expect(page.getByTestId("ai-result")).toBeVisible();
+  await expect(page.getByTestId("ai-result-phased-plan")).toContainText("process-video.mp4 메모");
+  await expect(page.getByTestId("input-evidence-file-1-note")).toContainText("process-video.mp4");
+  await expect(page.getByTestId("input-evidence-file-1-note")).toContainText("추천 반영: 사용됨");
+  expectNoBrowserProblems(problems);
+});
+
+test("Gate 12-4 B: extracted TXT and an added note remain separate evidence entries", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  await page.getByTestId("ai-file-input").setInputFiles(resolve("tests/e2e/fixtures/ai-solution-consultant.txt"));
+  await expect(page.getByTestId("ai-file-list")).toContainText("자동 텍스트 추출 가능");
+  await page.locator("[data-testid^='file-note-']").fill("LOT 생성은 입고 시점에 확정하고 검사 이력까지 연결해야 합니다.");
+  await page.getByTestId("ai-consultant-analyze").click();
+  await expect(page.getByTestId("input-evidence-file-1-extracted")).toBeVisible();
+  await expect(page.getByTestId("input-evidence-file-1-note")).toBeVisible();
+  await expect(page.getByTestId("input-evidence-file-1-extracted")).toContainText("자동 추출 텍스트");
+  await expect(page.getByTestId("input-evidence-file-1-note")).toContainText("파일별 주요 내용·의사결정");
+  await expect(page.getByTestId("input-evidence-file-1-note")).toHaveCount(1);
+  expectNoBrowserProblems(problems);
+});
+
+test("Gate 12-4 C: removing a file retains the prior result until a new analysis omits its evidence", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  await page.getByTestId("ai-file-input").setInputFiles({ name: "process-video.mp4", mimeType: "video/mp4", buffer: Buffer.from("not-a-real-video") });
+  await page.locator("[data-testid^='file-note-']").fill("검사와 포장 공정에서 바코드 스캔을 적용합니다.");
+  await page.getByTestId("ai-consultant-analyze").click();
+  await expect(page.getByTestId("input-evidence-file-1-note")).toBeVisible();
+  await page.getByRole("button", { name: "process-video.mp4 제거" }).click();
+  await expect(page.getByTestId("ai-file-list")).toHaveCount(0);
+  await expect(page.getByTestId("input-evidence-file-1-note")).toBeVisible();
+  await page.getByTestId("ai-situation-input").fill("검사 공정의 입력 시점과 작업 이력을 정리해야 합니다.");
+  await page.getByTestId("ai-consultant-analyze").click();
+  await expect(page.getByTestId("ai-result")).toBeVisible();
+  await expect(page.getByTestId("input-evidence")).not.toContainText("process-video.mp4");
+  expectNoBrowserProblems(problems);
+});
+
+test("Gate 12-4 D: customer analysis exposes and copies a consultant handover summary", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://127.0.0.1:5173" });
+  await openCustomerAnalysis(page);
+  await fillTwoFollowupAnswers(page);
+  await page.getByTestId("followup-refine").click();
+  await expect(page.getByTestId("analysis-revision-status")).toContainText("2 / 3");
+  await expect(page.getByTestId("consultant-handover")).toContainText("현재 상황");
+  await expect(page.getByTestId("consultant-handover")).toContainText("추천 기본 방향");
+  await expect(page.getByTestId("consultant-handover")).toContainText("아직 확인이 필요한 사항");
+  await page.getByTestId("handover-copy").focus();
+  await expect(page.getByTestId("handover-copy")).toBeFocused();
+  await page.getByTestId("handover-copy").click();
+  await expect(page.getByTestId("handover-copy-status")).toHaveText("컨설턴트 인계 요약을 복사했습니다.");
+  const clipboard = await page.evaluate(() => navigator.clipboard.readText());
+  expect(clipboard).toContain("# 컨설턴트 인계 요약");
+  expect(clipboard).toContain("분석 차수: 2차 분석");
+  expectNoBrowserProblems(problems);
+});
+
+test("Gate 12-4 E: full Markdown includes evidence and handover without copying the whole inquiry", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://127.0.0.1:5173" });
+  await applyCompanyKnowledgeSample(page);
+  await page.getByRole("tab").nth(1).click();
+  const fullInquiry = `LOT traceability needs inspection and packaging evidence. ${"비공개전체본문".repeat(90)}`;
+  await page.getByTestId("ai-customer-inquiry").fill(fullInquiry);
+  await page.getByTestId("ai-customer-current-management").fill("Receiving and packaging records are separated.");
+  await page.getByTestId("ai-customer-guide").click();
+  await expect(page.getByTestId("company-knowledge-reference")).toBeVisible();
+  await page.getByTestId("result-copy").click();
+  const clipboard = await page.evaluate(() => navigator.clipboard.readText());
+  expect(clipboard).toContain("## 분석에 사용한 입력 근거");
+  expect(clipboard).toContain("## 참고한 지식 근거");
+  expect(clipboard).toContain("## 컨설턴트 인계 요약");
+  expect(clipboard).not.toContain(fullInquiry);
+  expect(clipboard).not.toContain("C:\\Users\\");
+  expectNoBrowserProblems(problems);
+});

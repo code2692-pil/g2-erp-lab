@@ -1,5 +1,5 @@
 import { solutionKnowledge } from "./solutionKnowledge";
-import type { BusinessDomain, ClarifyingQuestion, CompanyKnowledgeArticle, KnowledgeArticle, KnowledgeSourceType, RecommendationEvidence, SolutionConfidence, SolutionRequest, SolutionResult } from "./solutionTypes";
+import type { BusinessDomain, ClarifyingQuestion, CompanyKnowledgeArticle, InputEvidence, InputEvidenceSourceType, KnowledgeArticle, KnowledgeSourceType, RecommendationEvidence, SolutionConfidence, SolutionRequest, SolutionResult } from "./solutionTypes";
 
 interface KnowledgeCandidate {
   id: string;
@@ -29,11 +29,95 @@ const domainKeywords: ReadonlyArray<readonly [BusinessDomain, readonly string[]]
 ];
 
 function combinedInput(request: SolutionRequest) {
-  return [request.situation, request.extractedText, request.currentManagement, request.desiredStandard, request.fieldConstraints]
+  const fileValues = request.fileInputs?.flatMap((file) => [file.extractedText, file.note]) ?? [];
+  return [request.situation, request.extractedText, request.currentManagement, request.desiredStandard, request.fieldConstraints, ...fileValues]
     .concat((request.clarificationAnswers ?? []).map((answer) => `${answer.question}\n${answer.answer}`))
     .filter(Boolean)
     .join("\n")
     .trim();
+}
+
+const inputEvidencePriority: Record<InputEvidenceSourceType, number> = {
+  FILE_NOTE: 1,
+  EXTRACTED_FILE_TEXT: 2,
+  CUSTOMER_QUESTION: 3,
+  CUSTOMER_CONTEXT: 4,
+  COMMON_CONTEXT: 5,
+  CLARIFICATION_ANSWER: 6,
+  COMPANY_KNOWLEDGE: 7,
+  GENERAL_KNOWLEDGE: 8
+};
+
+function compactExcerpt(value: string) {
+  const compact = value.trim().replace(/\s+/g, " ");
+  if (compact.length === 0) return "";
+  return compact.length > 300 ? `${compact.slice(0, 297)}...` : compact;
+}
+
+function relatedKeywordsFor(value: string, candidate: KnowledgeCandidate) {
+  const normalized = value.toLocaleLowerCase("ko-KR");
+  return candidate.keywords.filter((keyword) => normalized.includes(keyword.toLocaleLowerCase("ko-KR")));
+}
+
+function inputEvidenceFor(request: SolutionRequest, candidate: KnowledgeCandidate): readonly InputEvidence[] {
+  const raw: InputEvidence[] = [];
+  const append = (id: string, sourceType: InputEvidenceSourceType, sourceLabel: string, value: string | undefined, fileName?: string) => {
+    const excerpt = compactExcerpt(value ?? "");
+    if (excerpt.length === 0) return;
+    const relatedKeywords = relatedKeywordsFor(excerpt, candidate);
+    raw.push({
+      id,
+      sourceType,
+      sourceLabel,
+      fileName,
+      excerpt,
+      relatedKeywords,
+      usedInRecommendation: relatedKeywords.length > 0 || symptomMatchCount(candidate.symptoms, excerpt) > 0
+    });
+  };
+
+  const files = [...(request.fileInputs ?? [])].sort((left, right) => left.attachmentOrder - right.attachmentOrder || left.id.localeCompare(right.id));
+  files.forEach((file) => {
+    append(`${file.id}-extracted`, "EXTRACTED_FILE_TEXT", "자동 추출 텍스트", file.extractedText, file.fileName);
+    append(`${file.id}-note`, "FILE_NOTE", "파일별 주요 내용·의사결정", file.note, file.fileName);
+  });
+  if (files.length === 0) append("legacy-extracted-text", "EXTRACTED_FILE_TEXT", "자동 추출 텍스트", request.extractedText);
+
+  if (request.source === "consultant-file") {
+    append("common-context", "COMMON_CONTEXT", "공통 상황 설명", request.situation);
+  } else {
+    append("customer-question", "CUSTOMER_QUESTION", "고객 문의", request.situation);
+    append("customer-current-management", "CUSTOMER_CONTEXT", "현재 관리 방식", request.currentManagement);
+    append("customer-desired-standard", "CUSTOMER_CONTEXT", "희망 기준", request.desiredStandard);
+    append("customer-field-constraints", "CUSTOMER_CONTEXT", "현장 제약", request.fieldConstraints);
+  }
+  (request.clarificationAnswers ?? []).forEach((answer) => append(`clarification-${answer.questionId}`, "CLARIFICATION_ANSWER", "후속 질문 답변", answer.answer));
+
+  const seenExcerpts = new Set<string>();
+  return raw
+    .filter((item) => !seenExcerpts.has(item.excerpt) && (seenExcerpts.add(item.excerpt), true))
+    .sort((left, right) => Number(right.usedInRecommendation) - Number(left.usedInRecommendation)
+      || right.relatedKeywords.length - left.relatedKeywords.length
+      || inputEvidencePriority[left.sourceType] - inputEvidencePriority[right.sourceType]
+      || left.id.localeCompare(right.id))
+    .slice(0, 8);
+}
+
+function inputSummaryFor(request: SolutionRequest) {
+  if (request.source === "consultant-file") {
+    const files = request.fileInputs ?? [];
+    const extractedCount = files.filter((file) => file.extractedText?.trim()).length;
+    const noteCount = files.filter((file) => file.note?.trim()).length;
+    const parts = [`첨부 파일 ${files.length}건`, `자동 추출 텍스트 ${extractedCount}건`, `파일별 메모 ${noteCount}건`];
+    if (request.situation.trim()) parts.push("공통 상황 설명 반영");
+    return parts.join(" · ");
+  }
+  const parts = ["고객 문의"];
+  if (request.currentManagement?.trim()) parts.push("현재 관리 방식");
+  if (request.desiredStandard?.trim()) parts.push("희망 기준");
+  if (request.fieldConstraints?.trim()) parts.push("현장 제약");
+  if ((request.clarificationAnswers ?? []).length > 0) parts.push("후속 질문 답변");
+  return `${parts.join(" · ")} 반영`;
 }
 
 function generalCandidate(article: KnowledgeArticle): KnowledgeCandidate {
@@ -149,21 +233,26 @@ export function buildSolutionResult(request: SolutionRequest, companyKnowledge: 
   const input = combinedInput(request);
   const ranked = rankedCandidates(request, input, companyKnowledge);
   const primary = ranked[0];
+  const inputEvidence = inputEvidenceFor(request, primary.candidate);
   const confidence = confidenceFor(input, primary.matchedKeywords.length, request.domain !== "");
   const evidence = ranked.filter((entry, index) => index === 0 || entry.score > 0).slice(0, 3).map(evidenceFor);
   const companyKnowledgeUsed = evidence.some((item) => item.sourceType === "COMPANY");
   const questions = questionSets(primary.candidate, confidence, companyKnowledgeUsed);
+  const noteDrivenSteps = inputEvidence
+    .filter((item) => item.sourceType === "FILE_NOTE" && item.usedInRecommendation)
+    .slice(0, 2)
+    .map((item) => `${item.fileName ?? "파일"} 메모에서 확인한 ${item.relatedKeywords.join("·")} 조건을 적용 범위와 입력 시점에 반영합니다.`);
   const clarifyingQuestions: ClarifyingQuestion[] = [
     ...questions.consultant.map((question, index) => ({ id: `${primary.candidate.id}-consultant-${index + 1}`, audience: "컨설턴트" as const, question, required: index === 0, purpose: "실제 업무 기준과 현장 적용 가능성을 확인합니다." })),
     ...questions.development.map((question, index) => ({ id: `${primary.candidate.id}-development-${index + 1}`, audience: "개발 담당자" as const, question, required: false, purpose: "기존 ERP 화면·데이터·예외 처리 영향을 확인합니다." }))
   ];
 
   return {
-    inputSummary: input.length > 220 ? `${input.slice(0, 220)}…` : input,
+    inputSummary: inputSummaryFor(request),
     inferredDomain: inferDomain(request, input, primary.candidate),
     mainProblem: `${primary.candidate.category} 업무에서 관리 기준과 현장 실행 부담을 함께 확인해야 하는 상황으로 정리했습니다.`,
     recommendation: { title: primary.candidate.title, rationale: primary.candidate.summary, actions: primary.candidate.recommendations },
-    phasedPlan: primary.candidate.phasedPlan.length > 0 ? primary.candidate.phasedPlan : primary.candidate.recommendations,
+    phasedPlan: [...noteDrivenSteps, ...(primary.candidate.phasedPlan.length > 0 ? primary.candidate.phasedPlan : primary.candidate.recommendations)],
     priorities: primary.candidate.priorities.length > 0 ? primary.candidate.priorities : primary.candidate.requiredInformation,
     additionalInfo: primary.candidate.additionalInfo.length > 0 ? primary.candidate.additionalInfo : primary.candidate.requiredInformation,
     alternatives: primary.candidate.alternatives,
@@ -172,6 +261,7 @@ export function buildSolutionResult(request: SolutionRequest, companyKnowledge: 
     consultantQuestions: questions.consultant,
     developmentQuestions: questions.development,
     evidence,
+    inputEvidence,
     companyKnowledgeUsed,
     confidence,
     externalReviewRequired: true,

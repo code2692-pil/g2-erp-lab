@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Building2, ChevronRight, FileText, Trash2 } from "lucide-react";
-import { businessDomains, type BusinessDomain, type SolutionRequest, type SolutionResult } from "./solutionTypes";
+import { businessDomains, type BusinessDomain, type CompanyKnowledgeArticle, type SolutionRequest, type SolutionResult } from "./solutionTypes";
 import { buildSolutionResult } from "./solutionEngine";
+import { CompanyKnowledgeSettings } from "./CompanyKnowledgeSettings";
+import { solutionKnowledge } from "./solutionKnowledge";
 
 type NavigationPage = "sales" | "purchase" | "work" | "development" | "ai";
 type ActiveTab = "consultant" | "customer";
@@ -68,7 +70,8 @@ function ResultPanel({ result }: { result: SolutionResult }) {
       <section><h3>추가 확인 정보</h3><List items={result.additionalInfo} /></section>
       <section><h3>위험·주의사항</h3><List items={result.risks} /></section>
     </div>
-    <section><h3 data-testid="ai-result-questions">컨설턴트·개발 담당자 확인 질문</h3>{result.clarifyingQuestions.length > 0 ? <ul>{result.clarifyingQuestions.map((item) => <li key={`${item.audience}-${item.question}`}><strong>{item.audience}</strong> {item.question}</li>)}</ul> : <p>입력 정보가 비교적 구체적입니다. 적용 전에도 회사의 기준과 보안 조건을 확인해 주세요.</p>}</section>
+    <section data-testid="ai-result-questions"><h3>컨설턴트·개발 담당자 확인 질문</h3>{result.clarifyingQuestions.length > 0 ? <div className="ai-solution-center__question-columns"><div><h4>컨설턴트 확인</h4><List items={result.consultantQuestions} /></div><div><h4>개발 담당자 확인</h4><List items={result.developmentQuestions} /></div></div> : <p>입력 정보가 비교적 구체적입니다. 적용 전에도 회사의 기준과 보안 조건을 확인해 주세요.</p>}</section>
+    <section className="ai-solution-center__evidence" data-testid="ai-result-evidence"><h3>참고한 지식 근거</h3><ul>{result.evidence.map((evidence) => <li key={evidence.id} data-testid={`ai-evidence-${evidence.id}`}><strong>{evidence.title}</strong><span>{evidence.category} · {evidence.sourceType === "COMPANY" ? "회사 지식" : "일반 지식"}</span><p>일치 주요 키워드: {evidence.matchedKeywords.length > 0 ? evidence.matchedKeywords.join(", ") : "업무영역 기준"}</p><p>{evidence.reason} (신뢰 가중치 {evidence.confidenceWeight.toFixed(2)})</p></li>)}</ul>{result.companyKnowledgeUsed && <p className="ai-solution-center__company-reference" data-testid="company-knowledge-reference">회사 지식도 실제 업무 적용 전 해당 컨설턴트와 개발자의 검토가 필요합니다.</p>}</section>
   </section>;
 }
 
@@ -84,6 +87,7 @@ export function AiSolutionCenterPage({ onNavigate }: AiSolutionCenterPageProps) 
   const [consultantError, setConsultantError] = useState("");
   const [consultantProcessing, setConsultantProcessing] = useState(false);
   const [consultantResult, setConsultantResult] = useState<SolutionResult>();
+  const [companyKnowledge, setCompanyKnowledge] = useState<readonly CompanyKnowledgeArticle[]>([]);
   const [inquiry, setInquiry] = useState("");
   const [currentManagement, setCurrentManagement] = useState("");
   const [desiredStandard, setDesiredStandard] = useState("");
@@ -123,7 +127,7 @@ export function AiSolutionCenterPage({ onNavigate }: AiSolutionCenterPageProps) 
     setConsultantError("");
     try {
       const request: SolutionRequest = { source: "consultant-file", domain, situation, extractedText };
-      setConsultantResult(buildSolutionResult(request));
+      setConsultantResult(buildSolutionResult(request, companyKnowledge));
     } catch {
       setConsultantError("기본 검토 가이드를 만들지 못했습니다. 입력을 유지한 채 다시 시도해 주세요.");
     } finally {
@@ -148,12 +152,24 @@ export function AiSolutionCenterPage({ onNavigate }: AiSolutionCenterPageProps) 
     setCustomerProcessing(true);
     setCustomerError("");
     try {
-      setCustomerResult(buildSolutionResult({ source: "customer-qa", domain: "", situation: inquiry, currentManagement, desiredStandard, fieldConstraints }));
+      setCustomerResult(buildSolutionResult({ source: "customer-qa", domain: "", situation: inquiry, currentManagement, desiredStandard, fieldConstraints }, companyKnowledge));
     } catch {
       setCustomerError("기본 검토 가이드를 만들지 못했습니다. 입력을 유지한 채 다시 시도해 주세요.");
     } finally {
       setCustomerProcessing(false);
     }
+  };
+
+  const applyCompanyKnowledge = (articles: readonly CompanyKnowledgeArticle[]) => {
+    setCompanyKnowledge(articles);
+    setConsultantResult(undefined);
+    setCustomerResult(undefined);
+  };
+
+  const resetCompanyKnowledge = () => {
+    setCompanyKnowledge([]);
+    setConsultantResult(undefined);
+    setCustomerResult(undefined);
   };
 
   return <div className="erp-shell">
@@ -169,6 +185,7 @@ export function AiSolutionCenterPage({ onNavigate }: AiSolutionCenterPageProps) 
     <main className="ai-solution-center" aria-busy={consultantProcessing || customerProcessing}>
       <header className="page-header"><div><h1 data-testid="ai-solution-center-title">AI 솔루션 센터</h1><p>ERP·MES 업무 상황을 정리하고 검토 가능한 기본 가이드와 추가 확인사항을 제공합니다.</p></div></header>
       <aside className="ai-solution-center__top-note" aria-label="PoC 안내">현재 버전은 로컬 지식 템플릿 기반 PoC입니다.<br />실제 회사 지식과 보안 확인 후 AI를 연결하면 확장할 수 있습니다.</aside>
+      <CompanyKnowledgeSettings companyKnowledge={companyKnowledge} generalKnowledgeCount={solutionKnowledge.length} onApply={applyCompanyKnowledge} onReset={resetCompanyKnowledge} />
       <div className="ai-solution-center__tabs" role="tablist" aria-label="AI 솔루션 방식">
         <button type="button" role="tab" id="consultant-tab" aria-controls="consultant-panel" aria-selected={activeTab === "consultant"} className={activeTab === "consultant" ? "is-active" : ""} onClick={() => setActiveTab("consultant")}>컨설턴트 파일 분석</button>
         <button type="button" role="tab" id="customer-tab" aria-controls="customer-panel" aria-selected={activeTab === "customer"} className={activeTab === "customer" ? "is-active" : ""} onClick={() => setActiveTab("customer")}>고객 업무 Q&amp;A</button>

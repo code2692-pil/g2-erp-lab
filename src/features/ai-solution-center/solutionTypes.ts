@@ -3,6 +3,7 @@ export const businessDomains = ["자재", "재고", "LOT", "추적성", "생산"
 export type BusinessDomain = (typeof businessDomains)[number] | "";
 export type SolutionSource = "consultant-file" | "customer-qa";
 export type SolutionConfidence = "높음" | "보통" | "낮음";
+export type KnowledgeSourceType = "GENERAL" | "COMPANY";
 
 export interface SolutionRequest {
   source: SolutionSource;
@@ -29,7 +30,16 @@ export interface KnowledgeArticle {
   id: string;
   title: string;
   domains: readonly BusinessDomain[];
+  category?: string;
   keywords: readonly string[];
+  symptoms?: readonly string[];
+  recommendations?: readonly string[];
+  alternatives?: readonly string[];
+  requiredInformation?: readonly string[];
+  applicableProcesses?: readonly string[];
+  sourceType?: KnowledgeSourceType;
+  companySpecific?: boolean;
+  confidenceWeight?: number;
   summary: string;
   basicPlan: readonly string[];
   phasedPlan: readonly string[];
@@ -38,6 +48,33 @@ export interface KnowledgeArticle {
   risks: readonly string[];
   consultantQuestions: readonly string[];
   developmentQuestions: readonly string[];
+}
+
+export interface CompanyKnowledgeArticle {
+  id: string;
+  title: string;
+  category: string;
+  keywords: readonly string[];
+  symptoms: readonly string[];
+  recommendations: readonly string[];
+  alternatives: readonly string[];
+  requiredInformation: readonly string[];
+  risks: readonly string[];
+  applicableProcesses: readonly string[];
+  confidenceWeight: number;
+  sourceType: "COMPANY";
+  companySpecific: true;
+}
+
+export interface RecommendationEvidence {
+  id: string;
+  title: string;
+  category: string;
+  sourceType: KnowledgeSourceType;
+  companySpecific: boolean;
+  matchedKeywords: readonly string[];
+  reason: string;
+  confidenceWeight: number;
 }
 
 export interface SolutionResult {
@@ -50,6 +87,10 @@ export interface SolutionResult {
   additionalInfo: readonly string[];
   risks: readonly string[];
   clarifyingQuestions: readonly ClarifyingQuestion[];
+  consultantQuestions: readonly string[];
+  developmentQuestions: readonly string[];
+  evidence: readonly RecommendationEvidence[];
+  companyKnowledgeUsed: boolean;
   confidence: SolutionConfidence;
   externalReviewRequired: true;
   guideNotice: string;

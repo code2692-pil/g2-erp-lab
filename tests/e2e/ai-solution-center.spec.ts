@@ -26,6 +26,71 @@ function expectNoBrowserProblems(problems: ReturnType<typeof collectBrowserProbl
   expect(problems.externalRequests).toEqual([]);
 }
 
+async function applyCompanyKnowledgeSample(page: Page) {
+  await page.getByTestId("company-knowledge-input").setInputFiles(resolve("docs/ai-solution-center/company-knowledge-sample.json"));
+  await expect(page.getByTestId("company-knowledge-count")).toHaveText("현재 적용된 회사 지식 3개");
+  await expect(page.getByTestId("company-knowledge-list")).toContainText("PoC 예시: 자재 LOT 연결 관리");
+}
+
+async function openCompanyLotQuestion(page: Page) {
+  await page.getByRole("tab", { name: "고객 업무 Q&A" }).click();
+  await page.getByTestId("ai-customer-inquiry").fill("공급업체 LOT와 내부 LOT 연결 기준이 달라 입고 이후 추적이 어렵습니다. 현장에 부담이 적은 관리 방식을 검토하고 싶습니다.");
+  await page.getByTestId("ai-customer-current-management").fill("입고 때 공급업체 LOT를 확인하지만 내부 관리 기준은 분리되어 있습니다.");
+  await page.getByTestId("ai-customer-guide").click();
+}
+
+test("회사 지식 A: 정상 JSON을 적용하면 두 탭의 추천 근거에 회사 지식이 표시된다", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  await expect(page.getByTestId("company-knowledge-input")).toHaveAttribute("accept", ".json,application/json");
+  await applyCompanyKnowledgeSample(page);
+  await page.getByTestId("ai-situation-input").fill("공급업체 LOT와 내부 LOT 연결 기준을 입고 단계에서 정리하고 싶습니다.");
+  await page.getByTestId("ai-consultant-analyze").click();
+  await expect(page.getByTestId("ai-evidence-poc-material-lot-001")).toContainText("회사 지식");
+  await openCompanyLotQuestion(page);
+  await expect(page.getByTestId("ai-evidence-poc-material-lot-001")).toContainText("회사 지식");
+  await expect(page.getByTestId("company-knowledge-reference")).toContainText("컨설턴트와 개발자의 검토가 필요합니다.");
+  await expect(page.getByTestId("ai-result-questions")).toContainText("컨설턴트 확인");
+  await expect(page.getByTestId("ai-result-questions")).toContainText("개발 담당자 확인");
+  expectNoBrowserProblems(problems);
+});
+
+test("회사 지식 B: JSON parse 오류는 기존 적용 지식을 보존하고 추천에 계속 사용한다", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  await applyCompanyKnowledgeSample(page);
+  await page.getByTestId("company-knowledge-input").setInputFiles({ name: "broken.json", mimeType: "application/json", buffer: Buffer.from("{") });
+  await expect(page.getByTestId("company-knowledge-error")).toContainText("JSON 형식을 읽지 못했습니다.");
+  await expect(page.getByTestId("company-knowledge-count")).toHaveText("현재 적용된 회사 지식 3개");
+  await openCompanyLotQuestion(page);
+  await expect(page.getByTestId("ai-evidence-poc-material-lot-001")).toBeVisible();
+  expectNoBrowserProblems(problems);
+});
+
+test("회사 지식 C: schema 오류는 문제 field를 안내하고 부분 적용하지 않는다", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  await page.getByTestId("company-knowledge-input").setInputFiles({ name: "missing-field.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify([{ id: "missing-title" }])) });
+  await expect(page.getByTestId("company-knowledge-error")).toContainText("필수 field 'title'");
+  await expect(page.getByTestId("company-knowledge-count")).toHaveText("현재 적용된 회사 지식 0개");
+  await expect(page.getByTestId("company-knowledge-input")).toHaveAttribute("aria-invalid", "true");
+  expectNoBrowserProblems(problems);
+});
+
+test("회사 지식 D: 초기화하면 기본 지식만 남고 회사 지식 근거가 사라진다", async ({ page }) => {
+  const problems = collectBrowserProblems(page);
+  await openCenter(page);
+  await applyCompanyKnowledgeSample(page);
+  await page.getByTestId("company-knowledge-reset").focus();
+  await expect(page.getByTestId("company-knowledge-reset")).toBeFocused();
+  await page.getByTestId("company-knowledge-reset").click();
+  await expect(page.getByTestId("company-knowledge-count")).toHaveText("현재 적용된 회사 지식 0개");
+  await openCompanyLotQuestion(page);
+  await expect(page.getByTestId("company-knowledge-reference")).toHaveCount(0);
+  await expect(page.getByTestId("ai-result-evidence")).toContainText("일반 지식");
+  expectNoBrowserProblems(problems);
+});
+
 test("AI 센터 A: 컨설턴트 TXT를 로컬에서 읽어 기본 가이드를 만든다", async ({ page }) => {
   const problems = collectBrowserProblems(page);
   await page.setViewportSize({ width: 1280, height: 720 });

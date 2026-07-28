@@ -23,7 +23,7 @@ function processCell(page: Page, key: string, field: string) {
 }
 
 async function openWorkOrder(page: Page) {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByTestId("nav-work-order").click();
   await expect(page.getByTestId("work-order-page-title")).toHaveText("작업지시등록");
 }
@@ -262,14 +262,10 @@ test("G: Header 삭제와 저장 처리 중 버튼 비활성화를 확인한다"
   await page.getByTestId("wo-btn-save").click();
   await page.getByTestId("confirm-dialog-confirm").click();
   await expect.poll(() => getMockResponseStartedAt(page)).toBeDefined();
-  const startedAt = await getMockResponseStartedAt(page);
   await expect(page.getByTestId("wo-btn-save")).toBeDisabled();
-  const disabledAt = await page.evaluate(() => performance.now());
   await releaseMockResponse(page);
   await expect(page.getByRole("status")).toContainText("저장되었습니다.");
   await expect(page.getByTestId("wo-btn-save")).toBeEnabled();
-  const completedAt = await page.evaluate(() => performance.now());
-  console.log(`work-order mock save timing: started=${startedAt}ms, disabled=${disabledAt}ms, completed=${completedAt}ms`);
 });
 
 test("Paste: work order process detail applies lookup codes through Ctrl+V", async ({ page }) => {

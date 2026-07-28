@@ -22,7 +22,7 @@ function lineCell(page: Page, rowKey: string, field: string) {
 }
 
 async function openSalesOrder(page: Page) {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("page-title")).toBeVisible();
 }
 

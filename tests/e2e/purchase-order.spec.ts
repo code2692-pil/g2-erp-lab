@@ -5,7 +5,7 @@ const lineKey = "1000::PO2026070001::1";
 const remainingLineKey = "1000::PO2026070001::2";
 
 async function openPurchaseOrder(page: import("@playwright/test").Page) {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByTestId("nav-purchase-order").click();
   await expect(page.getByTestId("purchase-page-title")).toHaveText("발주등록");
 }

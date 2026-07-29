@@ -17,6 +17,7 @@ function quickCommands() {
     command("git diff --check", "git", ["diff", "--check"]),
     command("pnpm run typecheck", process.execPath, ["./node_modules/typescript/bin/tsc", "--noEmit", "-p", "tsconfig.json"]),
     command("pnpm run build", process.execPath, ["./node_modules/vite/bin/vite.js", "build"]),
+    command("bundle budget", process.execPath, ["scripts/performance/check-bundle-budget.mjs"]),
     command("dotnet build server/G2Erp.sln", "dotnet", ["build", "server/G2Erp.sln"]),
     command("Mock smoke", process.execPath, ["scripts/run-mode.mjs", "test", "mock"], { PLAYWRIGHT_TEST_FILE: "tests/e2e/sales-order.spec.ts", PLAYWRIGHT_GREP: "A: 기본 화면에서 조회 후 수주정보와 수주상세를 표시한다", PLAYWRIGHT_WORKERS: "1" }),
     command("InMemory smoke", process.execPath, ["scripts/run-mode.mjs", "test", "inmemory"], { PLAYWRIGHT_TEST_FILE: "tests/e2e/api-mode.spec.ts", PLAYWRIGHT_GREP: "API mode: sales order CRUD, lookup, validation, and server amounts", PLAYWRIGHT_WORKERS: "1" })

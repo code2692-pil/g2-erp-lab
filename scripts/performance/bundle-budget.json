@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "entry": {
+    "maxRawBytes": 315000,
+    "maxGzipBytes": 98600
+  },
+  "initial": {
+    "maxRawBytes": 315000,
+    "maxGzipBytes": 98600,
+    "maxNonDefaultScreenModules": 0,
+    "nonDefaultScreenSources": [
+      "src/features/purchase-order/PurchaseOrderRegistration.tsx",
+      "src/features/work-order/WorkOrderRegistration.tsx",
+      "src/features/development-data/DevelopmentDataManager.tsx",
+      "src/features/ai-solution-center/AiSolutionCenterPage.tsx",
+      "src/features/sales-order/CompactSalesOrderPage.tsx"
+    ],
+    "nonDefaultScreenMarkers": {
+      "src/features/purchase-order/PurchaseOrderRegistration.tsx": "purchase-page-title",
+      "src/features/work-order/WorkOrderRegistration.tsx": "work-order-page-title",
+      "src/features/development-data/DevelopmentDataManager.tsx": "development-data-page-title",
+      "src/features/ai-solution-center/AiSolutionCenterPage.tsx": "ai-solution-center-title",
+      "src/features/sales-order/CompactSalesOrderPage.tsx": "mobile-sales-page"
+    }
+  },
+  "dynamicChunk": {
+    "warningRawBytes": 175000
+  }
+}

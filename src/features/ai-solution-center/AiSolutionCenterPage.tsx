@@ -1,6 +1,7 @@
 import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Building2, ChevronRight, ClipboardCopy, Download, FileText, RotateCcw } from "lucide-react";
 import { useConfirm } from "../../hooks/useConfirm";
+import type { ScreenModuleId } from "../../screenModules";
 import { CompanyKnowledgeSettings } from "./CompanyKnowledgeSettings";
 import { FileAnalysisCards, FileProcessingResult, SensitiveDataNotice } from "./FileAnalysisCards";
 import { ReviewPackageImportPanel } from "./ReviewPackageImportPanel";
@@ -21,6 +22,7 @@ type NavigationPage = "sales" | "purchase" | "work" | "development" | "ai";
 type ActiveTab = "consultant" | "customer";
 interface AiSolutionCenterPageProps {
   onNavigate: (page: NavigationPage) => void;
+  onScreenIntent?: (screen: ScreenModuleId) => void;
 }
 
 interface ResultPanelProps {
@@ -111,7 +113,12 @@ function ResultPanel({ session, answerMap, answerError, refining, exportStatus, 
   </section>;
 }
 
-export function AiSolutionCenterPage({ onNavigate }: AiSolutionCenterPageProps) {
+export function AiSolutionCenterPage({ onNavigate, onScreenIntent }: AiSolutionCenterPageProps) {
+  const screenIntentProps = (screen: ScreenModuleId) => ({
+    onMouseEnter: () => onScreenIntent?.(screen),
+    onFocus: () => onScreenIntent?.(screen),
+    onPointerDown: () => onScreenIntent?.(screen)
+  });
   const { confirm } = useConfirm();
   const [activeTab, setActiveTab] = useState<ActiveTab>("consultant");
   const [attachments, setAttachments] = useState<FileAnalysisAttachment[]>([]);
@@ -398,7 +405,7 @@ export function AiSolutionCenterPage({ onNavigate }: AiSolutionCenterPageProps) 
   const renderResult = (session: SolutionSession, answerMap: Record<string, string>, answerError: string, refining: boolean, mode: SolutionSource) => { const review = mode === "consultant-file" ? consultantReview : customerReview; const setReview = mode === "consultant-file" ? setConsultantReview : setCustomerReview; return <ResultPanel session={session} answerMap={answerMap} answerError={answerError} refining={refining} exportStatus={exportStatus} handoverStatus={handoverStatus} comparisonStatus={comparisonStatus} comparing={comparing} review={review} onAnswerChange={(id, answer) => { if (mode === "consultant-file") { setConsultantAnswers((current) => ({ ...current, [id]: answer })); setConsultantFollowupError(""); } else { setCustomerAnswers((current) => ({ ...current, [id]: answer })); setCustomerFollowupError(""); } }} onRefine={() => refine(mode)} onCopy={() => void copyResultMarkdown(session, answerMap, review)} onDownload={() => downloadMarkdown(session, answerMap, review)} onHandoverCopy={() => void copyHandoverMarkdown(session, answerMap, review)} onRecompare={() => recompare(mode)} onReviewRecord={setReview} onReviewPackageDownload={downloadReviewPackage} />; };
 
   return <div className="erp-shell">
-    <aside className="side-nav"><div className="brand"><Building2 size={20} /><strong>SMART ERP</strong></div><nav><div className="menu-title">영업관리</div><button className="menu-item" data-testid="nav-sales-order" onClick={() => onNavigate("sales")} type="button">수주등록</button><div className="menu-title">구매관리</div><div className="menu-group"><ChevronRight size={14} /><span>발주관리</span></div><button className="menu-item" data-testid="nav-purchase-order" onClick={() => onNavigate("purchase")} type="button">발주등록</button><div className="menu-title">생산관리</div><div className="menu-group"><ChevronRight size={14} /><span>작업지시관리</span></div><button className="menu-item" data-testid="nav-work-order" onClick={() => onNavigate("work")} type="button">작업지시등록</button><div className="menu-title">AI 도구</div><button className="menu-item active" data-testid="nav-ai-solution-center" type="button">AI 솔루션 센터</button></nav></aside>
+    <aside className="side-nav"><div className="brand"><Building2 size={20} /><strong>SMART ERP</strong></div><nav><div className="menu-title">영업관리</div><button className="menu-item" data-testid="nav-sales-order" onClick={() => onNavigate("sales")} type="button">수주등록</button><div className="menu-title">구매관리</div><div className="menu-group"><ChevronRight size={14} /><span>발주관리</span></div><button {...screenIntentProps("purchase")} className="menu-item" data-testid="nav-purchase-order" onClick={() => onNavigate("purchase")} type="button">발주등록</button><div className="menu-title">생산관리</div><div className="menu-group"><ChevronRight size={14} /><span>작업지시관리</span></div><button {...screenIntentProps("work")} className="menu-item" data-testid="nav-work-order" onClick={() => onNavigate("work")} type="button">작업지시등록</button><div className="menu-title">AI 도구</div><button className="menu-item active" data-testid="nav-ai-solution-center" type="button">AI 솔루션 센터</button></nav></aside>
     <main className="ai-solution-center" aria-busy={consultantBusy || customerBusy}>
       <header className="page-header"><div><h1 data-testid="ai-solution-center-title">AI 솔루션 센터</h1><p>ERP·MES 업무 상황을 정리하고 검토 가능한 기본 가이드와 추가 확인사항을 제공합니다.</p></div><button className="ai-solution-center__reset-button" data-testid="analysis-session-reset" type="button" onClick={resetAnalysisSession}><RotateCcw size={15} />분석 세션 초기화</button></header>
       <aside className="ai-solution-center__top-note" aria-label="PoC 안내">현재 버전은 로컬 지식 템플릿 기반 PoC입니다.<br />실제 회사 지식과 보안 확인 후 AI를 연결하면 확장할 수 있습니다.</aside>

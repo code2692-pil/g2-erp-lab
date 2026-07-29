@@ -55,6 +55,7 @@ import { useConfirm } from "../../hooks/useConfirm";
 import { useDirtyState } from "../../hooks/useDirtyState";
 import { useNotification } from "../../hooks/useNotification";
 import { useMasterDetailSelection } from "../../hooks/useMasterDetailSelection";
+import type { ScreenModuleId } from "../../screenModules";
 
 type HeaderEditableField = Exclude<keyof SalesOrderHeader, "NO_SO">;
 type LineEditableField = Exclude<
@@ -133,10 +134,16 @@ function isLineEditableField(field: keyof SalesOrderLine): field is LineEditable
 
 interface SalesOrderRegistrationProps {
   onNavigate?: (page: "sales" | "mobileSales" | "pdaSales" | "purchase" | "work" | "development" | "ai") => void;
+  onScreenIntent?: (screen: ScreenModuleId) => void;
   showDevelopmentDataManager?: boolean;
 }
 
-export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager = false }: SalesOrderRegistrationProps) {
+export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelopmentDataManager = false }: SalesOrderRegistrationProps) {
+  const screenIntentProps = (screen: ScreenModuleId) => ({
+    onMouseEnter: () => onScreenIntent?.(screen),
+    onFocus: () => onScreenIntent?.(screen),
+    onPointerDown: () => onScreenIntent?.(screen)
+  });
   const [headers, setHeaders] = useState<SalesOrderHeader[]>([]);
   const [lines, setLines] = useState<SalesOrderLine[]>([]);
   const {
@@ -898,7 +905,7 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
             <strong>SMART ERP</strong>
           </div>
           <nav>
-            <button className="menu-item" data-testid="nav-purchase-order" onClick={handleNavigateToPurchase} type="button">
+            <button {...screenIntentProps("purchase")} className="menu-item" data-testid="nav-purchase-order" onClick={handleNavigateToPurchase} type="button">
               구매관리 / 발주등록
             </button>
             <div className="menu-title">영업관리</div>
@@ -907,10 +914,10 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
               <span>수주관리</span>
             </div>
             <button className="menu-item active">수주등록</button>
-            <button className="menu-item" data-testid="nav-mobile-sales-order" onClick={() => void handleNavigateToCompactSales("mobileSales")} type="button">
+            <button {...screenIntentProps("mobileSales")} className="menu-item" data-testid="nav-mobile-sales-order" onClick={() => void handleNavigateToCompactSales("mobileSales")} type="button">
               모바일 수주등록
             </button>
-            <button className="menu-item" data-testid="nav-pda-sales-order" onClick={() => void handleNavigateToCompactSales("pdaSales")} type="button">
+            <button {...screenIntentProps("pdaSales")} className="menu-item" data-testid="nav-pda-sales-order" onClick={() => void handleNavigateToCompactSales("pdaSales")} type="button">
               PDA 수주등록
             </button>
             <div className="menu-title">생산관리</div>
@@ -918,12 +925,12 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
               <ChevronRight size={14} />
               <span>작업지시관리</span>
             </div>
-            <button className="menu-item" data-testid="nav-work-order" onClick={handleNavigateToWorkOrder} type="button">
+            <button {...screenIntentProps("work")} className="menu-item" data-testid="nav-work-order" onClick={handleNavigateToWorkOrder} type="button">
               작업지시등록
             </button>
             <div className="menu-title">AI 솔루션</div>
-            <button className="menu-item" data-testid="nav-ai-solution-center" onClick={handleNavigateToAiSolutionCenter} type="button">AI 솔루션 센터</button>
-            {showDevelopmentDataManager && <><div className="menu-title">개발 도구</div><button className="menu-item" data-testid="nav-development-data" onClick={handleNavigateToDevelopmentData} type="button">테스트 데이터 관리</button></>}
+            <button {...screenIntentProps("ai")} className="menu-item" data-testid="nav-ai-solution-center" onClick={handleNavigateToAiSolutionCenter} type="button">AI 솔루션 센터</button>
+            {showDevelopmentDataManager && <><div className="menu-title">개발 도구</div><button {...screenIntentProps("development")} className="menu-item" data-testid="nav-development-data" onClick={handleNavigateToDevelopmentData} type="button">테스트 데이터 관리</button></>}
           </nav>
         </aside>
 

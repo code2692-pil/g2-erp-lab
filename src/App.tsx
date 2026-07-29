@@ -1,15 +1,16 @@
-import { Component, lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { Component, Suspense, useEffect, useState, type ReactNode } from "react";
 import { apiPurchaseOrderAdapter } from "./features/purchase-order/apiPurchaseOrderAdapter";
 import { mockPurchaseOrderAdapter } from "./features/purchase-order/mockPurchaseOrderAdapter";
 import { SalesOrderRegistration } from "./features/sales-order/SalesOrderRegistration";
 import { isApiMode } from "./api/apiClient";
 import { canShowDevelopmentDataManagerClient, developmentDataApi } from "./api/developmentDataApi";
+import { preloadScreenModule, screenModules, type ScreenModuleId } from "./screenModules";
 
-const PurchaseOrderRegistration = lazy(() => import("./features/purchase-order/PurchaseOrderRegistration").then(({ PurchaseOrderRegistration }) => ({ default: PurchaseOrderRegistration })));
-const WorkOrderRegistration = lazy(() => import("./features/work-order/WorkOrderRegistration").then(({ WorkOrderRegistration }) => ({ default: WorkOrderRegistration })));
-const DevelopmentDataManager = lazy(() => import("./features/development-data/DevelopmentDataManager").then(({ DevelopmentDataManager }) => ({ default: DevelopmentDataManager })));
-const AiSolutionCenterPage = lazy(() => import("./features/ai-solution-center/AiSolutionCenterPage").then(({ AiSolutionCenterPage }) => ({ default: AiSolutionCenterPage })));
-const CompactSalesOrderPage = lazy(() => import("./features/sales-order/CompactSalesOrderPage").then(({ CompactSalesOrderPage }) => ({ default: CompactSalesOrderPage })));
+const PurchaseOrderRegistration = screenModules.purchase.component;
+const WorkOrderRegistration = screenModules.work.component;
+const DevelopmentDataManager = screenModules.development.component;
+const AiSolutionCenterPage = screenModules.ai.component;
+const CompactSalesOrderPage = screenModules.mobileSales.component;
 
 type AppPage = "sales" | "mobileSales" | "pdaSales" | "purchase" | "work" | "development" | "ai";
 
@@ -83,7 +84,13 @@ export default function App() {
     setPage(nextPage);
   };
 
-  if (page === "sales") return <SalesOrderRegistration onNavigate={navigate} showDevelopmentDataManager={showDevelopmentDataManager} />;
+  const handleScreenIntent = (screen: ScreenModuleId) => {
+    void preloadScreenModule(screen).catch(() => {
+      // A failed intent preload must not interrupt the current page. Actual navigation owns visible recovery.
+    });
+  };
+
+  if (page === "sales") return <SalesOrderRegistration onNavigate={navigate} onScreenIntent={handleScreenIntent} showDevelopmentDataManager={showDevelopmentDataManager} />;
 
   return (
     <PageLoadErrorBoundary>
@@ -91,14 +98,14 @@ export default function App() {
         {page === "development" && showDevelopmentDataManager
           ? <DevelopmentDataManager onNavigate={navigate} />
           : page === "ai"
-            ? <AiSolutionCenterPage onNavigate={navigate} />
+            ? <AiSolutionCenterPage onNavigate={navigate} onScreenIntent={handleScreenIntent} />
             : page === "mobileSales"
               ? <CompactSalesOrderPage mode="mobile" onNavigate={navigate} />
               : page === "pdaSales"
                 ? <CompactSalesOrderPage mode="pda" onNavigate={navigate} />
                 : page === "purchase"
-                  ? <PurchaseOrderRegistration adapter={purchaseOrderAdapter} onNavigate={navigate} showDevelopmentDataManager={showDevelopmentDataManager} />
-                  : <WorkOrderRegistration onNavigate={navigate} showDevelopmentDataManager={showDevelopmentDataManager} />}
+                  ? <PurchaseOrderRegistration adapter={purchaseOrderAdapter} onNavigate={navigate} onScreenIntent={handleScreenIntent} showDevelopmentDataManager={showDevelopmentDataManager} />
+                  : <WorkOrderRegistration onNavigate={navigate} onScreenIntent={handleScreenIntent} showDevelopmentDataManager={showDevelopmentDataManager} />}
       </Suspense>
     </PageLoadErrorBoundary>
   );

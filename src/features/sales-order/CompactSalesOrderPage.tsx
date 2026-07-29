@@ -97,6 +97,10 @@ function parseNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function isAbortError(error: unknown) {
+  return (error instanceof DOMException || error instanceof Error) && error.name === "AbortError";
+}
+
 function recordMatches(
   record: SalesOrderRecord,
   filters: { noSo: string; partner: string; date: string; status: string }
@@ -143,6 +147,9 @@ export function CompactSalesOrderPage({ mode, onNavigate }: Props) {
   const [quickError, setQuickError] = useState("");
   const [tempSequence, setTempSequence] = useState(1);
   const operationLock = useRef(false);
+  const mountedRef = useRef(true);
+  const queryAbortControllerRef = useRef<AbortController | null>(null);
+  const latestQuerySequenceRef = useRef(0);
   const quickCodeRef = useRef<HTMLInputElement>(null);
   const quickQuantityRef = useRef<HTMLInputElement>(null);
   const quickUnitPriceRef = useRef<HTMLInputElement>(null);
@@ -150,6 +157,25 @@ export function CompactSalesOrderPage({ mode, onNavigate }: Props) {
   const validationRefs = useRef(new Map<string, HTMLElement>());
   const { confirm } = useConfirm();
   const { isDirty, markDirty, clearDirty } = useDirtyState();
+
+  const abortActiveQuery = () => {
+    latestQuerySequenceRef.current += 1;
+    queryAbortControllerRef.current?.abort();
+    queryAbortControllerRef.current = null;
+  };
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      abortActiveQuery();
+    };
+  }, []);
+
+  useEffect(() => {
+    setOperation("idle");
+    return () => abortActiveQuery();
+  }, [mode]);
 
   const filteredRecords = useMemo(
     () => records.filter((record) => recordMatches(record, filters)),
@@ -235,32 +261,48 @@ export function CompactSalesOrderPage({ mode, onNavigate }: Props) {
     clearDirty();
   };
 
-  const refreshRecords = async () => {
-    const nextRecords = await loadSalesOrderRecords();
-    setRecords(nextRecords);
+  const refreshRecords = async (signal?: AbortSignal) => {
+    const nextRecords = await loadSalesOrderRecords(signal);
+    if (mountedRef.current) setRecords(nextRecords);
     return nextRecords;
   };
 
   const handleSearch = async () => {
     if (operationLock.current || !(await confirmDiscard())) return;
-    operationLock.current = true;
+    queryAbortControllerRef.current?.abort();
+    const abortController = new AbortController();
+    queryAbortControllerRef.current = abortController;
+    const requestSequence = ++latestQuerySequenceRef.current;
+    const requestedFilters = filters;
     setOperation("querying");
     setMessage("");
     try {
-      const nextRecords = await refreshRecords();
-      const matched = nextRecords.filter((record) => recordMatches(record, filters));
+      const nextRecords = await loadSalesOrderRecords(abortController.signal);
+      if (!mountedRef.current || requestSequence !== latestQuerySequenceRef.current) return;
+      const matched = nextRecords.filter((record) => recordMatches(record, requestedFilters));
+      setRecords(nextRecords);
       setHeader(null);
       setLines([]);
       setOriginalOrderNo(null);
       setValidationAttempted(false);
       clearDirty();
       setMessage(matched.length ? `${matched.length}건을 조회했습니다.` : "조회된 수주가 없습니다.");
-      if (!isMobile && matched.length === 1) await openRecord(matched[0]);
-    } catch {
-      setMessage("조회 중 오류가 발생했습니다. 다시 시도하세요.");
+      if (!isMobile && matched.length === 1) {
+        const draft = cloneRecord(matched[0]);
+        setHeader(draft.Header);
+        setLines(draft.Lines);
+        setOriginalOrderNo(draft.Header.NO_SO);
+        setDeliveryDate(draft.Lines[0]?.DT_DLV ?? draft.Header.DT_SO);
+      }
+    } catch (error) {
+      if (mountedRef.current && requestSequence === latestQuerySequenceRef.current && !isAbortError(error)) {
+        setMessage("조회 중 오류가 발생했습니다. 다시 시도하세요.");
+      }
     } finally {
-      setOperation("idle");
-      operationLock.current = false;
+      if (mountedRef.current && requestSequence === latestQuerySequenceRef.current) {
+        queryAbortControllerRef.current = null;
+        setOperation("idle");
+      }
     }
   };
 
@@ -496,7 +538,7 @@ export function CompactSalesOrderPage({ mode, onNavigate }: Props) {
   };
 
   const handleSave = async () => {
-    if (operationLock.current || !validateBeforeSave() || !header) return;
+    if (operationLock.current || operation === "querying" || !validateBeforeSave() || !header) return;
     if (!(await confirm({
       title: "저장 확인",
       message: "수주정보를 저장하시겠습니까?",
@@ -552,7 +594,7 @@ export function CompactSalesOrderPage({ mode, onNavigate }: Props) {
   };
 
   const handleDeleteOrder = async () => {
-    if (operationLock.current || !header) {
+    if (operationLock.current || operation === "querying" || !header) {
       if (!header) setMessage("삭제할 수주를 먼저 선택하세요.");
       return;
     }
@@ -596,6 +638,8 @@ export function CompactSalesOrderPage({ mode, onNavigate }: Props) {
 
   const navigate = async (page: SalesPage) => {
     if (!(await confirmDiscard())) return;
+    abortActiveQuery();
+    setOperation("idle");
     clearDirty();
     onNavigate(page);
   };
@@ -819,7 +863,7 @@ export function CompactSalesOrderPage({ mode, onNavigate }: Props) {
               </label>
             </>}
             <div className="compact-sales__search-actions">
-              <button data-testid={`${prefix}-search`} disabled={operation !== "idle"} onClick={() => void handleSearch()} type="button"><Search size={17} />{operation === "querying" ? "조회 중" : "조회"}</button>
+              <button data-testid={`${prefix}-search`} disabled={operation === "saving" || operation === "deleting"} onClick={() => void handleSearch()} type="button"><Search size={17} />{operation === "querying" ? "조회 중" : "조회"}</button>
               <button data-testid={`${prefix}-reset`} disabled={operation !== "idle"} onClick={() => void handleReset()} type="button">초기화</button>
               <button className="primary" data-testid={`${prefix}-new`} disabled={operation !== "idle"} onClick={() => void handleNew()} type="button"><Plus size={17} />신규</button>
             </div>

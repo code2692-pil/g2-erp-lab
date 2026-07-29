@@ -218,9 +218,12 @@ test("Gate 12-8 shared data: PC save, mobile update, PDA update, and PC requery 
 test("Gate 12-8 responsive: mobile and PDA keep key controls inside four target viewports", async ({ page }) => {
   const targets = [
     { path: "/mobile/sales-orders", width: 360, height: 800, prefix: "mobile-sales" },
+    { path: "/mobile/sales-orders", width: 375, height: 812, prefix: "mobile-sales" },
     { path: "/mobile/sales-orders", width: 390, height: 844, prefix: "mobile-sales" },
+    { path: "/mobile/sales-orders", width: 412, height: 915, prefix: "mobile-sales" },
     { path: "/pda/sales-orders", width: 320, height: 480, prefix: "pda-sales" },
-    { path: "/pda/sales-orders", width: 360, height: 640, prefix: "pda-sales" }
+    { path: "/pda/sales-orders", width: 360, height: 640, prefix: "pda-sales" },
+    { path: "/pda/sales-orders", width: 480, height: 800, prefix: "pda-sales" }
   ] as const;
 
   for (const target of targets) {

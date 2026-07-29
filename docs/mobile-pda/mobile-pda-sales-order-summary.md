@@ -35,3 +35,12 @@ PDA 수주등록 ─┘
 - 실제 PDA SDK, 바코드 스캐너, 카메라, 블루투스 장비를 연결하지 않는다.
 - 오프라인 저장, PWA, Service Worker를 지원하지 않는다.
 - 실장비의 키 배열, 스캐너 suffix, 화면 밝기·장갑 조작성은 향후 실제 장비에서 검증해야 한다.
+
+## 관문 12-9 통합 안정화 검증
+
+- PC·모바일·PDA는 계속 하나의 수주 API와 Repository를 사용하며, 별도 동기화나 복제 데이터는 추가하지 않았다.
+- 모바일·PDA 조회에는 이전 요청 취소와 최신 요청 순번 방어를 적용했다. 연속 조회에서 먼저 시작한 요청의 늦은 응답은 화면 상태를 덮어쓰지 않으며, 화면 전환 시 진행 중인 조회는 취소된다.
+- 저장과 삭제는 기존 단일 실행 잠금을 유지한다. 400·500 오류 또는 네트워크 오류가 발생해도 현재 입력과 수정됨 표시를 보존해 사용자가 바로 다시 시도할 수 있다.
+- 로컬 SQL Server `G2ERP_DEV_LOCAL_TEST`에서 PC 생성 → 모바일 수정 → PDA 수정 → PC 재조회 → PDA 삭제를 제품 UI/API로 검증했다. 외부 SQL은 `SAL_SOH`·`SAL_SOL`의 읽기 전용 SELECT 확인에만 사용했고, 삭제 후 두 테이블의 전용 테스트 표식은 모두 0건이었다.
+
+상세 실행 근거와 데모 순서는 [통합 검증 요약](../report-evidence/mobile-pda-sales-order-integration-summary.md), [데모 시나리오](../report-evidence/mobile-pda-sales-order-demo.md), [한계와 후속 검증](../report-evidence/mobile-pda-sales-order-limitations.md)에 기록한다.

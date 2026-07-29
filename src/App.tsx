@@ -1,14 +1,15 @@
-import { useEffect, useState } from "react";
-import { PurchaseOrderRegistration } from "./features/purchase-order/PurchaseOrderRegistration";
+import { Component, lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { apiPurchaseOrderAdapter } from "./features/purchase-order/apiPurchaseOrderAdapter";
 import { mockPurchaseOrderAdapter } from "./features/purchase-order/mockPurchaseOrderAdapter";
 import { SalesOrderRegistration } from "./features/sales-order/SalesOrderRegistration";
-import { WorkOrderRegistration } from "./features/work-order/WorkOrderRegistration";
 import { isApiMode } from "./api/apiClient";
 import { canShowDevelopmentDataManagerClient, developmentDataApi } from "./api/developmentDataApi";
-import { DevelopmentDataManager } from "./features/development-data/DevelopmentDataManager";
-import { AiSolutionCenterPage } from "./features/ai-solution-center/AiSolutionCenterPage";
-import { CompactSalesOrderPage } from "./features/sales-order/CompactSalesOrderPage";
+
+const PurchaseOrderRegistration = lazy(() => import("./features/purchase-order/PurchaseOrderRegistration").then(({ PurchaseOrderRegistration }) => ({ default: PurchaseOrderRegistration })));
+const WorkOrderRegistration = lazy(() => import("./features/work-order/WorkOrderRegistration").then(({ WorkOrderRegistration }) => ({ default: WorkOrderRegistration })));
+const DevelopmentDataManager = lazy(() => import("./features/development-data/DevelopmentDataManager").then(({ DevelopmentDataManager }) => ({ default: DevelopmentDataManager })));
+const AiSolutionCenterPage = lazy(() => import("./features/ai-solution-center/AiSolutionCenterPage").then(({ AiSolutionCenterPage }) => ({ default: AiSolutionCenterPage })));
+const CompactSalesOrderPage = lazy(() => import("./features/sales-order/CompactSalesOrderPage").then(({ CompactSalesOrderPage }) => ({ default: CompactSalesOrderPage })));
 
 type AppPage = "sales" | "mobileSales" | "pdaSales" | "purchase" | "work" | "development" | "ai";
 
@@ -22,6 +23,39 @@ function pathForPage(page: AppPage) {
   if (page === "mobileSales") return "/mobile/sales-orders";
   if (page === "pdaSales") return "/pda/sales-orders";
   return "/";
+}
+
+function PageLoadingFallback() {
+  return (
+    <main className="app-page-loading" data-testid="app-page-loading" aria-busy="true">
+      <p role="status">화면을 불러오는 중입니다.</p>
+    </main>
+  );
+}
+
+class PageLoadErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  private retry = () => {
+    window.location.reload();
+  };
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <main className="app-page-loading" data-testid="app-page-load-error">
+          <p role="alert">화면을 불러오지 못했습니다. 네트워크를 확인한 후 다시 시도해 주세요.</p>
+          <button type="button" onClick={this.retry}>다시 시도</button>
+        </main>
+      );
+    }
+
+    return this.props.children;
+  }
 }
 
 export default function App() {
@@ -49,13 +83,23 @@ export default function App() {
     setPage(nextPage);
   };
 
-  if (page === "development" && showDevelopmentDataManager) return <DevelopmentDataManager onNavigate={navigate} />;
-  if (page === "ai") return <AiSolutionCenterPage onNavigate={navigate} />;
-  if (page === "mobileSales") return <CompactSalesOrderPage mode="mobile" onNavigate={navigate} />;
-  if (page === "pdaSales") return <CompactSalesOrderPage mode="pda" onNavigate={navigate} />;
-  return page === "sales"
-    ? <SalesOrderRegistration onNavigate={navigate} showDevelopmentDataManager={showDevelopmentDataManager} />
-    : page === "purchase"
-      ? <PurchaseOrderRegistration adapter={purchaseOrderAdapter} onNavigate={navigate} showDevelopmentDataManager={showDevelopmentDataManager} />
-      : <WorkOrderRegistration onNavigate={navigate} showDevelopmentDataManager={showDevelopmentDataManager} />;
+  if (page === "sales") return <SalesOrderRegistration onNavigate={navigate} showDevelopmentDataManager={showDevelopmentDataManager} />;
+
+  return (
+    <PageLoadErrorBoundary>
+      <Suspense fallback={<PageLoadingFallback />}>
+        {page === "development" && showDevelopmentDataManager
+          ? <DevelopmentDataManager onNavigate={navigate} />
+          : page === "ai"
+            ? <AiSolutionCenterPage onNavigate={navigate} />
+            : page === "mobileSales"
+              ? <CompactSalesOrderPage mode="mobile" onNavigate={navigate} />
+              : page === "pdaSales"
+                ? <CompactSalesOrderPage mode="pda" onNavigate={navigate} />
+                : page === "purchase"
+                  ? <PurchaseOrderRegistration adapter={purchaseOrderAdapter} onNavigate={navigate} showDevelopmentDataManager={showDevelopmentDataManager} />
+                  : <WorkOrderRegistration onNavigate={navigate} showDevelopmentDataManager={showDevelopmentDataManager} />}
+      </Suspense>
+    </PageLoadErrorBoundary>
+  );
 }

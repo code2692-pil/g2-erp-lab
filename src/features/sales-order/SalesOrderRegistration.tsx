@@ -22,7 +22,6 @@ import { mockItems } from "../common-code/item/mockData";
 import type { Item } from "../common-code/item/types";
 import { mockPartners } from "../common-code/partner/mockData";
 import type { Partner } from "../common-code/partner/types";
-import { mockSalesOrderHeaders, mockSalesOrderLines } from "./mockData";
 import { MailOrderImportDialog } from "../mail-order/MailOrderImportDialog";
 import { mapParsedOrderToSalesOrder } from "../mail-order/mailMapping";
 import type { MailParseResult } from "../mail-order/types";
@@ -38,11 +37,19 @@ import { isApiMode } from "../../api/apiClient";
 import { getItems } from "../../api/itemApi";
 import { getPartners } from "../../api/partnerApi";
 import {
-  createSalesOrder,
-  deleteSalesOrder,
-  getSalesOrders,
-  updateSalesOrder
-} from "../../api/salesOrderApi";
+  deleteSalesOrderRecord,
+  loadSalesOrderRecords,
+  replaceMockSalesOrderRecords,
+  saveSalesOrderRecord
+} from "./salesOrderDataService";
+import {
+  createEmptySalesOrderHeader,
+  createEmptySalesOrderLine,
+  createSavedSalesOrderNo,
+  createTempSalesOrderNo,
+  getNextSavedSalesOrderIndex,
+  salesOrderToday
+} from "./salesOrderDraft";
 import { useCrudPage } from "../../hooks/useCrudPage";
 import { useConfirm } from "../../hooks/useConfirm";
 import { useDirtyState } from "../../hooks/useDirtyState";
@@ -83,61 +90,6 @@ const partnerSearchFields: readonly (keyof Partner)[] = [
   "NO_COMPANY"
 ];
 const itemSearchFields: readonly (keyof Item)[] = ["CD_ITEM", "NM_ITEM", "STND_ITEM"];
-
-function today() {
-  const now = new Date();
-  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 10);
-}
-
-function createTempOrderNo(index: number) {
-  return `TEMP_SO_${String(index).padStart(3, "0")}`;
-}
-
-function createSavedOrderNo(yearMonth: string, index: number) {
-  return `SO${yearMonth}${String(index).padStart(4, "0")}`;
-}
-
-function getNextSavedOrderIndex(headers: SalesOrderHeader[], yearMonth: string) {
-  const numbers = headers
-    .map((header) => header.NO_SO.match(new RegExp(`^SO${yearMonth}(\\d{4})$`))?.[1])
-    .filter((value): value is string => Boolean(value))
-    .map(Number);
-
-  return numbers.length === 0 ? 1 : Math.max(...numbers) + 1;
-}
-
-function createEmptyHeader(noSo: string): SalesOrderHeader {
-  return {
-    CD_FIRM: "1000",
-    NO_SO: noSo,
-    DT_SO: today(),
-    CD_PARTNER: "",
-    NM_PARTNER: "",
-    CD_EMP: "",
-    ST_SO: "신규",
-    DC_RMK: ""
-  };
-}
-
-function createEmptyLine(header: SalesOrderHeader, noLine: number): SalesOrderLine {
-  return {
-    CD_FIRM: header.CD_FIRM,
-    NO_SO: header.NO_SO,
-    NO_LINE: noLine,
-    CD_ITEM: "",
-    NM_ITEM: "",
-    STND_ITEM: "",
-    UNIT_ITEM: "",
-    QT_SO: 0,
-    UM_SO: 0,
-    AM_SUPPLY: 0,
-    AM_VAT: 0,
-    AM_TOTAL: 0,
-    DT_DLV: today(),
-    DC_RMK: ""
-  };
-}
 
 function statusClass(status: SalesOrderStatus) {
   const classMap: Record<SalesOrderStatus, string> = {
@@ -180,7 +132,7 @@ function isLineEditableField(field: keyof SalesOrderLine): field is LineEditable
 }
 
 interface SalesOrderRegistrationProps {
-  onNavigate?: (page: "sales" | "purchase" | "work" | "development" | "ai") => void;
+  onNavigate?: (page: "sales" | "mobileSales" | "pdaSales" | "purchase" | "work" | "development" | "ai") => void;
   showDevelopmentDataManager?: boolean;
 }
 
@@ -365,7 +317,7 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
     const draftLines = selectedLines.map((line) => ({ ...line }));
     let nextLineNo = draftLines.length === 0 ? 1 : Math.max(...draftLines.map((line) => line.NO_LINE)) + 1;
     while (draftLines.length < request.startRowIndex + request.matrix.length) {
-      draftLines.push(createEmptyLine(selectedHeader, nextLineNo));
+      draftLines.push(createEmptySalesOrderLine(selectedHeader, nextLineNo));
       nextLineNo += 1;
     }
 
@@ -410,19 +362,11 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
   };
 
   const loadSalesOrderData = async (signal?: AbortSignal) => {
-    if (isApiMode()) {
-      const orders = await getSalesOrders(signal);
-      return {
-        headers: orders.map((order) => order.Header),
-        lines: orders.flatMap((order) => order.Lines),
-        source: "api" as const
-      };
-    }
-
+    const orders = await loadSalesOrderRecords(signal);
     return {
-      headers: mockSalesOrderHeaders.map((header) => ({ ...header })),
-      lines: mockSalesOrderLines.map((line) => ({ ...line })),
-      source: "mock" as const
+      headers: orders.map((order) => order.Header),
+      lines: orders.flatMap((order) => order.Lines),
+      source: isApiMode() ? "api" as const : "mock" as const
     };
   };
 
@@ -516,8 +460,8 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
 
   const handleNew = async () => {
     if (!(await confirmDiscardChanges())) return;
-    const tempNo = createTempOrderNo(tempSeq);
-    const nextHeader = createEmptyHeader(tempNo);
+    const tempNo = createTempSalesOrderNo(tempSeq);
+    const nextHeader = createEmptySalesOrderHeader(tempNo);
     setFeatureMessage("");
     await executeCreate({
       execute: () => {
@@ -541,7 +485,7 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
       return { success: false, message: "동일 MAIL_ID가 이미 반영되었습니다. 중복 반영할 수 없습니다." };
     }
 
-    const temporaryOrderNo = createTempOrderNo(tempSeq);
+    const temporaryOrderNo = createTempSalesOrderNo(tempSeq);
     const mappedOrder = mapParsedOrderToSalesOrder(result, temporaryOrderNo);
     if (!mappedOrder) return { success: false, message: "파싱 결과가 완전하지 않아 수주등록에 반영할 수 없습니다." };
 
@@ -578,7 +522,7 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
     const currentLines = lines.filter((line) => line.NO_SO === selectedHeader.NO_SO);
     const nextNoLine =
       currentLines.length === 0 ? 1 : Math.max(...currentLines.map((line) => line.NO_LINE)) + 1;
-    const nextLine = createEmptyLine(selectedHeader, nextNoLine);
+    const nextLine = createEmptySalesOrderLine(selectedHeader, nextNoLine);
     setLines((current) => [...current, nextLine]);
     selectDetail(nextNoLine);
     setCheckedLineKeys([]);
@@ -660,9 +604,9 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
       }
 
       const isNewOrder = selectedHeader.NO_SO.startsWith("TEMP_SO_");
-      const yearMonth = today().slice(0, 7).replace("-", "");
+      const yearMonth = salesOrderToday().slice(0, 7).replace("-", "");
       const savedOrderNo = isNewOrder
-        ? createSavedOrderNo(yearMonth, getNextSavedOrderIndex(headers, yearMonth))
+        ? createSavedSalesOrderNo(yearMonth, getNextSavedSalesOrderIndex(headers, yearMonth))
         : selectedHeader.NO_SO;
       const headerToSave = {
         ...selectedHeader,
@@ -675,9 +619,10 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
       }));
 
       try {
-        const saved = isNewOrder
-          ? await createSalesOrder({ Header: headerToSave, Lines: linesToSave })
-          : await updateSalesOrder(headerToSave.CD_FIRM, savedOrderNo, { Header: headerToSave, Lines: linesToSave });
+        const saved = await saveSalesOrderRecord(
+          { Header: headerToSave, Lines: linesToSave },
+          isNewOrder ? null : selectedHeader.NO_SO
+        );
         setHeaders((current) => [saved.Header, ...current.filter((header) => header.NO_SO !== selectedHeader.NO_SO)]);
         setLines((current) => [...current.filter((line) => line.NO_SO !== selectedHeader.NO_SO), ...saved.Lines]);
         selectMaster(saved.Header.NO_SO);
@@ -689,14 +634,14 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
       return;
     }
 
-    const yearMonth = today().slice(0, 7).replace("-", "");
-    let nextIndex = getNextSavedOrderIndex(headers, yearMonth);
+    const yearMonth = salesOrderToday().slice(0, 7).replace("-", "");
+    let nextIndex = getNextSavedSalesOrderIndex(headers, yearMonth);
     const noMap = new Map<string, string>();
 
     const savedHeaders = headers.map((header) => {
       if (!header.NO_SO.startsWith("TEMP_SO_")) return header;
 
-      const nextNoSo = createSavedOrderNo(yearMonth, nextIndex);
+      const nextNoSo = createSavedSalesOrderNo(yearMonth, nextIndex);
       nextIndex += 1;
       noMap.set(header.NO_SO, nextNoSo);
 
@@ -721,6 +666,7 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
 
     setHeaders(savedHeaders);
     setLines(savedLines);
+    replaceMockSalesOrderRecords(savedHeaders, savedLines);
     selectMaster(noMap.get(selectedNoSo) ?? selectedNoSo);
     setCheckedLineKeys([]);
     setMessage("저장되었습니다.");
@@ -767,14 +713,12 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
       return;
     }
 
-    if (isApiMode()) {
-      const orderToDelete = headers.find((header) => header.NO_SO === selectedNoSo);
-      if (!orderToDelete) return;
-      try {
-        await deleteSalesOrder(orderToDelete.CD_FIRM, orderToDelete.NO_SO);
-      } catch {
-        throw new Error("API 삭제에 실패했습니다.");
-      }
+    const orderToDelete = headers.find((header) => header.NO_SO === selectedNoSo);
+    if (!orderToDelete) return;
+    try {
+      await deleteSalesOrderRecord(orderToDelete.CD_FIRM, orderToDelete.NO_SO);
+    } catch {
+      throw new Error("수주 삭제에 실패했습니다.");
     }
 
     setHeaders((current) => current.filter((header) => header.NO_SO !== selectedNoSo));
@@ -827,6 +771,13 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
     setValidationAttempted(false);
     clearDirty();
     onNavigate?.("ai");
+  };
+
+  const handleNavigateToCompactSales = async (page: "mobileSales" | "pdaSales") => {
+    if (!(await confirmDiscardChanges())) return;
+    setValidationAttempted(false);
+    clearDirty();
+    onNavigate?.(page);
   };
 
   const headerGridColumns: readonly ErpDataGridColumn<SalesOrderHeader>[] = [
@@ -956,6 +907,12 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
               <span>수주관리</span>
             </div>
             <button className="menu-item active">수주등록</button>
+            <button className="menu-item" data-testid="nav-mobile-sales-order" onClick={() => void handleNavigateToCompactSales("mobileSales")} type="button">
+              모바일 수주등록
+            </button>
+            <button className="menu-item" data-testid="nav-pda-sales-order" onClick={() => void handleNavigateToCompactSales("pdaSales")} type="button">
+              PDA 수주등록
+            </button>
             <div className="menu-title">생산관리</div>
             <div className="menu-group">
               <ChevronRight size={14} />

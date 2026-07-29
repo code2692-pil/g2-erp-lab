@@ -2973,6 +2973,130 @@ button:disabled {
   color: var(--erp-primary);
 }
 
+.erp-data-grid__view-settings {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 0 6px;
+}
+
+.erp-data-grid--with-view-settings {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.erp-data-grid__view-settings button,
+.grid-view-settings__moves button {
+  min-height: 29px;
+  border: 1px solid #bdcad6;
+  border-radius: 3px;
+  color: #33495c;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.erp-data-grid__view-settings button {
+  padding: 0 10px;
+  font-weight: 600;
+}
+
+.erp-data-grid__view-settings button:hover,
+.erp-data-grid__view-settings button:focus-visible,
+.grid-view-settings__moves button:hover:not(:disabled),
+.grid-view-settings__moves button:focus-visible {
+  border-color: #2b73b7;
+  outline: 2px solid #dceeff;
+  outline-offset: 1px;
+}
+
+.grid-view-settings {
+  display: grid;
+  gap: 10px;
+}
+
+.grid-view-settings__hint {
+  margin: 0;
+  color: #5f7183;
+  font-size: 13px;
+}
+
+.grid-view-settings__list {
+  display: grid;
+  gap: 4px;
+  max-height: min(52vh, 480px);
+  margin: 0;
+  padding: 6px;
+  overflow: auto;
+  border: 1px solid #d7e0e8;
+  border-radius: 4px;
+  background: #fbfcfd;
+}
+
+.grid-view-settings__row {
+  display: grid;
+  grid-template-columns: 30px minmax(180px, 1fr) 42px auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 36px;
+  padding: 4px 6px;
+  border-bottom: 1px solid #e7edf2;
+}
+
+.grid-view-settings__row:last-child {
+  border-bottom: 0;
+}
+
+.grid-view-settings__order,
+.grid-view-settings__locked {
+  color: #708294;
+  font-size: 12px;
+  text-align: center;
+}
+
+.grid-view-settings__locked {
+  color: #8a5f18;
+  font-weight: 700;
+}
+
+.grid-view-settings__visibility {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.grid-view-settings__visibility span {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.grid-view-settings__moves {
+  display: flex;
+  gap: 5px;
+}
+
+.grid-view-settings__moves button {
+  min-width: 48px;
+  padding: 0 8px;
+}
+
+.grid-view-settings__moves button:disabled {
+  cursor: default;
+  color: #9aa8b4;
+  border-color: #e0e7ec;
+  background: #f4f6f8;
+}
+
+@media (max-width: 720px) {
+  .grid-view-settings__row {
+    grid-template-columns: 25px minmax(120px, 1fr) auto;
+  }
+
+  .grid-view-settings__locked {
+    display: none;
+  }
+}
+
 .erp-dialog-backdrop {
   background: rgb(22 33 45 / 52%);
 }

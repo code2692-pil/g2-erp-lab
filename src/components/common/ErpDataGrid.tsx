@@ -1,6 +1,19 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ClipboardEvent as ReactClipboardEvent, CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { parseErpGridPasteMatrix } from "./erpGridPaste";
+import { GridViewSettingsDialog } from "./GridViewSettingsDialog";
+import {
+  applyGridViewPreferences,
+  loadGridViewPreferences,
+  normalizeGridViewPreferences,
+  resetGridViewPreferences,
+  revealGridViewColumn,
+  saveGridViewPreferences,
+  toGridViewColumnDefinitions,
+  type GridViewPreferences
+} from "./gridViewPreferences";
+import { useConfirm } from "../../hooks/useConfirm";
+import { useNotification } from "../../hooks/useNotification";
 
 export type ErpDataGridAlign = "left" | "center" | "right";
 export type ErpDataGridDataType = "text" | "number" | "date" | "code" | "boolean";
@@ -38,6 +51,18 @@ const pasteHandlerStore = globalThis as typeof globalThis & {
 };
 const registeredPasteHandlers = pasteHandlerStore.__erpDataGridPasteHandlers ??= new Map<string, ErpDataGridPasteRegistration>();
 
+interface GridViewSettingsDefinition {
+  gridId: string;
+  title: string;
+  lockedFields: readonly string[];
+}
+
+const gridViewSettingsByDataTestId: Record<string, GridViewSettingsDefinition> = {
+  "sales-order-line-grid": { gridId: "sales-order-lines", title: "수주상세 Grid 보기 설정", lockedFields: ["NO_LINE"] },
+  "purchase-line-grid": { gridId: "purchase-order-lines", title: "발주상세 Grid 보기 설정", lockedFields: ["NO_LINE"] },
+  "work-order-process-grid": { gridId: "work-order-lines", title: "공정상세 Grid 보기 설정", lockedFields: ["NO_PROC"] }
+};
+
 export function registerErpDataGridPasteHandler<T extends object>(
   dataTestId: string,
   handler: (request: ErpDataGridPasteRequest<T>) => { error?: string } | void,
@@ -51,6 +76,8 @@ export function registerErpDataGridPasteHandler<T extends object>(
 }
 
 export interface ErpDataGridColumn<T extends object> {
+  /** Stable UI preference identifier. It must not be derived from a display label or position. */
+  id?: string;
   field: keyof T;
   headerName?: ReactNode;
   header?: ReactNode;
@@ -61,6 +88,8 @@ export interface ErpDataGridColumn<T extends object> {
   dataType?: ErpDataGridDataType;
   required?: boolean;
   hidden?: boolean;
+  /** A structural column that remains visible and cannot be moved by Grid view preferences. */
+  locked?: boolean;
   sum?: boolean;
   formatter?: (value: T[keyof T], row: T) => ReactNode;
   summaryFormatter?: (value: number) => ReactNode;
@@ -103,6 +132,8 @@ export interface ErpDataGridProps<T extends object> {
   /** Opt-in keyboard flow for editable detail grids only. */
   keyboardNavigation?: boolean;
   focusRequest?: ErpDataGridFocusRequest | null;
+  /** Lets a parent restore a hidden validation field without changing business data. */
+  onHiddenColumnError?: (columnId: string) => void;
 }
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
@@ -148,7 +179,8 @@ export function ErpDataGrid<T extends object>({
   dataTestId,
   cellErrors,
   keyboardNavigation = false,
-  focusRequest = null
+  focusRequest = null,
+  onHiddenColumnError
 }: ErpDataGridProps<T>) {
   const [uncontrolledCheckedRowKeys, setUncontrolledCheckedRowKeys] = useState<string[]>([]);
   const rowRefs = useRef<Array<HTMLTableRowElement | null>>([]);
@@ -157,9 +189,26 @@ export function ErpDataGrid<T extends object>({
   const previousVisibleRowKeySetRef = useRef<Set<string> | null>(null);
   const pendingPasteFocusRef = useRef<{ rowIndex: number; field: string } | null>(null);
   const pendingPasteStartRowIndexRef = useRef<number | null>(null);
+  const lastFocusedCellRef = useRef<{ rowKey: string; field: string } | null>(null);
   const modifierPasteHeldRef = useRef(false);
+  const gridViewSettings = dataTestId ? gridViewSettingsByDataTestId[dataTestId] : undefined;
+  const gridViewDefinitions = gridViewSettings
+    ? toGridViewColumnDefinitions(columns).map((definition) => ({ ...definition, locked: gridViewSettings.lockedFields.includes(definition.id) }))
+    : [];
+  const gridViewDefinitionSignature = gridViewDefinitions.map((definition) => `${definition.id}:${definition.locked ? "locked" : "open"}`).join("|");
+  const [gridViewPreferences, setGridViewPreferences] = useState<GridViewPreferences | null>(null);
+  const [gridViewSettingsOpen, setGridViewSettingsOpen] = useState(false);
+  const { confirm } = useConfirm();
+  const { notify } = useNotification();
   const keyboardNavigationEnabled = keyboardNavigation || dataTestId === "purchase-line-grid" || dataTestId === "work-order-process-grid";
-  const visibleColumns = columns.filter((column) => !column.hidden);
+  const effectiveGridViewPreferences = gridViewSettings
+    ? normalizeGridViewPreferences(gridViewPreferences, gridViewSettings.gridId, gridViewDefinitions)
+    : null;
+  const configuredColumns = effectiveGridViewPreferences
+    ? applyGridViewPreferences(columns, effectiveGridViewPreferences)
+    : [...columns];
+  const visibleColumns = configuredColumns.filter((column) => !column.hidden);
+  const visibleColumnSignature = visibleColumns.map((column) => `${column.id ?? String(column.field)}:${String(column.field)}`).join("|");
   const visibleRowKeys = rows.map(rowKey);
   const visibleRowKeySet = new Set(visibleRowKeys);
   const sourceCheckedRowKeys = checkedRowKeys ?? uncontrolledCheckedRowKeys;
@@ -177,6 +226,46 @@ export function ErpDataGrid<T extends object>({
   const selectedDocumentNumber = dataTestId?.endsWith("-header-grid") && selectedRowKey
     ? selectedRowKey.split("::").at(-1)
     : null;
+
+  useEffect(() => {
+    if (!gridViewSettings) return;
+    setGridViewPreferences(loadGridViewPreferences(gridViewSettings.gridId, gridViewDefinitions));
+  }, [gridViewDefinitionSignature, gridViewSettings?.gridId]);
+
+  const applyGridViewSettings = (nextPreferences: GridViewPreferences) => {
+    if (!gridViewSettings) return;
+    const saved = saveGridViewPreferences(gridViewSettings.gridId, gridViewDefinitions, nextPreferences);
+    setGridViewPreferences(saved.preferences);
+    setGridViewSettingsOpen(false);
+    notify(saved.persisted ? "success" : "warning", saved.persisted ? "Grid 보기 설정을 적용했습니다." : "보기 설정은 현재 화면에 적용되었습니다.");
+  };
+
+  const resetGridViewSettings = async () => {
+    if (!gridViewSettings) return;
+    const accepted = await confirm({
+      title: "Grid 보기 설정 초기화",
+      message: `${gridViewSettings.title}의 열 표시와 순서를 기본값으로 되돌리시겠습니까?`,
+      description: "행 데이터와 입력값은 변경되지 않습니다.",
+      confirmLabel: "기본값으로 초기화"
+    });
+    if (!accepted) return;
+    const reset = resetGridViewPreferences(gridViewSettings.gridId, gridViewDefinitions);
+    setGridViewPreferences(reset.preferences);
+    notify(reset.persisted ? "success" : "warning", reset.persisted ? "Grid 보기 설정을 기본값으로 초기화했습니다." : "보기 설정을 기본값으로 적용했습니다.");
+  };
+
+  const revealHiddenColumnForValidation = (columnId: string) => {
+    if (!gridViewSettings) {
+      onHiddenColumnError?.(columnId);
+      return;
+    }
+    setGridViewPreferences((current) => {
+      const currentPreferences = normalizeGridViewPreferences(current, gridViewSettings.gridId, gridViewDefinitions);
+      const nextPreferences = revealGridViewColumn(currentPreferences, gridViewSettings.gridId, gridViewDefinitions, columnId);
+      if (currentPreferences.columns.every((column, index) => column.visible === nextPreferences.columns[index]?.visible && column.order === nextPreferences.columns[index]?.order)) return currentPreferences;
+      return saveGridViewPreferences(gridViewSettings.gridId, gridViewDefinitions, nextPreferences).preferences;
+    });
+  };
 
   useEffect(() => {
     if (headerCheckboxRef.current) headerCheckboxRef.current.indeterminate = hasPartiallyCheckedRows;
@@ -260,7 +349,21 @@ export function ErpDataGrid<T extends object>({
   useLayoutEffect(() => {
     if (!focusRequest) return;
     focusGridCell(focusRequest.rowKey, focusRequest.field);
-  }, [focusRequest?.requestId]);
+  }, [focusRequest?.requestId, visibleColumnSignature]);
+
+  useLayoutEffect(() => {
+    const lastFocused = lastFocusedCellRef.current;
+    if (!lastFocused || visibleColumns.some((column) => String(column.field) === lastFocused.field)) return;
+    focusGridCell(lastFocused.rowKey);
+  }, [visibleColumnSignature]);
+
+  useLayoutEffect(() => {
+    if (!cellErrors) return;
+    const hiddenColumnWithError = configuredColumns.find((column) =>
+      column.hidden && Object.values(cellErrors).some((rowErrors) => Boolean(rowErrors[String(column.field)]))
+    );
+    if (hiddenColumnWithError) revealHiddenColumnForValidation(hiddenColumnWithError.id ?? String(hiddenColumnWithError.field));
+  }, [cellErrors, configuredColumns, onHiddenColumnError]);
 
   useLayoutEffect(() => {
     const previousKeys = previousVisibleRowKeySetRef.current;
@@ -460,12 +563,25 @@ export function ErpDataGrid<T extends object>({
   };
 
   return (
-    <div className={`erp-data-grid ${className}`.trim()} data-testid={dataTestId}>
+    <div className={`erp-data-grid${gridViewSettings ? " erp-data-grid--with-view-settings" : ""} ${className}`.trim()} data-testid={dataTestId}>
+      {gridViewSettings && effectiveGridViewPreferences && (
+        <div className="erp-data-grid__view-settings">
+          <button data-testid={`${dataTestId}-view-settings`} onClick={() => setGridViewSettingsOpen(true)} type="button">보기 설정</button>
+        </div>
+      )}
       <div className="erp-data-grid__viewport">
         <table
           aria-label={ariaLabel}
           className="erp-data-grid__table"
           onKeyDownCapture={handleTableKeyDownCapture}
+          onFocusCapture={(event) => {
+            if (!(event.target instanceof Element)) return;
+            const cell = event.target.closest<HTMLTableCellElement>('td[data-erp-grid-field]');
+            const row = cell?.closest<HTMLTableRowElement>('tr[data-row-key]');
+            if (cell?.dataset.erpGridField && row?.dataset.rowKey) {
+              lastFocusedCellRef.current = { field: cell.dataset.erpGridField, rowKey: row.dataset.rowKey };
+            }
+          }}
           onKeyUpCapture={(event) => {
             if (event.key === "Control" || event.key === "Meta") {
               modifierPasteHeldRef.current = false;
@@ -692,6 +808,19 @@ export function ErpDataGrid<T extends object>({
           </span>
           {selectionCount > 0 && <span className="erp-data-grid__selection-status" data-testid={dataTestId ? `${dataTestId}-footer-selected` : undefined}><span data-testid={dataTestId ? `${dataTestId}-selected-count` : undefined}>선택 {numberFormatter.format(selectionCount)}건</span></span>}
         </footer>
+      )}
+      {gridViewSettings && effectiveGridViewPreferences && dataTestId && (
+        <GridViewSettingsDialog
+          columns={gridViewDefinitions}
+          dataTestId={`${dataTestId}-view-settings-dialog`}
+          gridId={gridViewSettings.gridId}
+          onApply={applyGridViewSettings}
+          onClose={() => setGridViewSettingsOpen(false)}
+          onReset={() => void resetGridViewSettings()}
+          open={gridViewSettingsOpen}
+          preferences={effectiveGridViewPreferences}
+          title={gridViewSettings.title}
+        />
       )}
     </div>
   );

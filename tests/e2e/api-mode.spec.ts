@@ -593,6 +593,6 @@ test("Gate 9: an unmounted sales query does not update the next screen", async (
     expect(pageErrors).toEqual([]);
   } finally {
     responseGate.resolve();
-    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await page.unrouteAll();
   }
 });

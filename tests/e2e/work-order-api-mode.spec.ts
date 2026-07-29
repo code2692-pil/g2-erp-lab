@@ -162,7 +162,7 @@ test("API UI: work order save failure recovery and retry", async ({ page }) => {
     await expect(lineName).toHaveValue(/\S/);
     await expect(processName).toHaveValue(/\S/);
     expect(failedPutCount).toBe(1);
-    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await page.unrouteAll();
   });
   await test.step("정상 재저장과 재조회", async () => {
     const updateResponse = page.waitForResponse((response) => response.url().endsWith("/api/work-orders/1000/WO2026070004") && response.request().method() === "PUT");

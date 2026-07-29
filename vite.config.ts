@@ -11,7 +11,10 @@ export default defineConfig({
   },
   server: {
     host: "127.0.0.1",
-    port: 5173
+    port: 5173,
+    watch: {
+      ignored: ["**/.artifacts/**"]
+    }
   },
   preview: {
     host: "127.0.0.1",

@@ -124,7 +124,7 @@ test("Gate 12-12: failed intent preload keeps the current screen and recovers on
     expect(unexpectedConsoleErrors).toEqual([]);
     expect(pageErrors).toEqual([]);
   } finally {
-    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await page.unrouteAll();
   }
 });
 

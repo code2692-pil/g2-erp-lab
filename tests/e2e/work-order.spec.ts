@@ -130,7 +130,7 @@ test("B: 조회 결과와 Header-공정상세 연결, 결과 없음 안내를 �
   await expect(page.getByTestId("work-order-header-grid-total-count")).toHaveText("전체 0건");
 });
 
-test("C: 신규 작업지시와 품목·라인·공정·설비 Lookup을 저장한다", async ({ page }, testInfo) => {
+test("C: 신규 작업지시와 품목·라인·공정·설비 Lookup을 저장한다", async ({ page }) => {
   await openWorkOrder(page);
   await page.getByTestId("wo-btn-new").click();
 
@@ -169,7 +169,6 @@ test("C: 신규 작업지시와 품목·라인·공정·설비 Lookup을 저장�
   await page.getByTestId("confirm-dialog-confirm").click();
   await expect(page.getByRole("status")).toContainText("저장되었습니다.");
   await expect(page.getByTestId("work-order-header-grid-row-1000::WO2026070007")).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath("work-order-save-success.png"), fullPage: true });
 });
 
 test("D: 저장 전 Validation은 ConfirmDialog 없이 요약과 오류 셀을 표시한다", async ({ page }) => {

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, rmSync, statSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
+import { inspectTestCleanup, removePlaywrightArtifacts, reportTestCleanup } from "./qa/check-test-cleanup.mjs";
 
 const [action, mode] = process.argv.slice(2);
 const host = "127.0.0.1";
@@ -36,6 +37,7 @@ function selectedTestFile() {
 function start(command, args, env) {
   const child = spawn(command, args, { stdio: "inherit", windowsHide: true, env: { ...process.env, ...env } });
   children.push(child);
+  console.log(`[test-lifecycle] started PID ${child.pid}: ${command}`);
   return child;
 }
 
@@ -59,13 +61,22 @@ async function waitFor(url, label) {
 }
 
 async function stop(child) {
-  if (child.exitCode !== null || child.killed) return;
+  if (child.exitCode !== null || child.signalCode !== null) return true;
+  const exited = new Promise(resolve => child.once("exit", resolve));
   child.kill();
-  await Promise.race([new Promise(resolve => child.once("exit", resolve)), new Promise(resolve => setTimeout(resolve, 5_000))]);
+  const result = await Promise.race([exited, new Promise(resolve => setTimeout(resolve, 5_000))]);
+  const stopped = result !== undefined || child.exitCode !== null || child.signalCode !== null;
+  if (!stopped) console.error(`[test-lifecycle] graceful shutdown did not finish for PID ${child.pid}.`);
+  return stopped;
 }
 
 async function main() {
   if (!['dev', 'test'].includes(action) || !['mock', 'inmemory', 'sqlserver'].includes(mode)) throw new Error("Usage: node scripts/run-mode.mjs <dev|test> <mock|inmemory|sqlserver>");
+  if (action === "test") {
+    const artifactFailures = removePlaywrightArtifacts();
+    for (const failure of artifactFailures) console.error(`[test-lifecycle] pre-run artifact cleanup failed: ${failure}`);
+    if (artifactFailures.length) process.exitCode = 1;
+  }
   if (isApi) {
     const apiEnv = isSqlServer
       ? { RepositoryMode: "SqlServer", ASPNETCORE_ENVIRONMENT: "Development", G2ERP_POC_ALLOW_UNENCRYPTED_LOCAL: "true", ConnectionStrings__G2Erp: "Server=.;Database=G2ERP_DEV_LOCAL_TEST;Trusted_Connection=True;Encrypt=False;TrustServerCertificate=True" }
@@ -106,6 +117,15 @@ async function main() {
 }
 
 try { await main(); } finally {
-  await Promise.all(children.reverse().map(stop));
+  const trackedPids = children.map((child) => child.pid).filter(Number.isInteger);
+  const stopResults = await Promise.all(children.reverse().map(stop));
+  const runFailed = process.exitCode !== undefined && process.exitCode !== 0;
+  const artifactFailures = !runFailed ? removePlaywrightArtifacts() : [];
+  for (const failure of artifactFailures) console.error(`[test-lifecycle] post-run artifact cleanup failed: ${failure}`);
+  const cleanupPassed = reportTestCleanup(inspectTestCleanup({
+    pids: trackedPids,
+    allowArtifacts: runFailed
+  }));
+  if (stopResults.some((stopped) => !stopped) || artifactFailures.length || !cleanupPassed) process.exitCode = 1;
   removeManagedSessionFile();
 }

@@ -307,7 +307,7 @@ test("Validation E: 오류 값을 수정하면 오류 표시가 즉시 해제된
   await expect(page.getByTestId("sales-order-validation-summary-count")).toHaveText("입력 오류 1건");
 });
 
-test("Validation F: 정상 입력값이면 mock 저장 성공 메시지를 표시하고 화면을 저장한다", async ({ page }, testInfo) => {
+test("Validation F: 정상 입력값이면 mock 저장 성공 메시지를 표시하고 화면을 저장한다", async ({ page }) => {
   await openSalesOrder(page);
   await searchSalesOrders(page);
 
@@ -318,7 +318,6 @@ test("Validation F: 정상 입력값이면 mock 저장 성공 메시지를 표�
 
   await expect(page.getByTestId("sales-order-validation-summary")).toHaveCount(0);
   await expect(page.getByTestId("status-message")).toHaveText("저장되었습니다.");
-  await page.screenshot({ path: testInfo.outputPath("sales-order-validation-success.png"), fullPage: true });
 });
 
 test("UX A: 저장 확인을 취소하면 저장하지 않고, 확인하면 알림을 표시한다", async ({ page }) => {
@@ -384,7 +383,7 @@ async function analyzeMail(page: Page, mailId: string) {
   await expect(page.getByTestId("mail-import-preview")).toBeVisible();
 }
 
-test("Mail A: 정상 수주 메일을 분석하고 신규 수주로 반영한다", async ({ page }, testInfo) => {
+test("Mail A: 정상 수주 메일을 분석하고 신규 수주로 반영한다", async ({ page }) => {
   await openSalesOrder(page);
   await openMailImport(page);
   await analyzeMail(page, "mock-mail-normal-001");
@@ -401,7 +400,6 @@ test("Mail A: 정상 수주 메일을 분석하고 신규 수주로 반영한다
   await expect(page.getByTestId("mail-order-import-dialog")).toHaveCount(0);
   await expect(headerCell(page, importedHeaderKey, "CD_PARTNER")).toHaveValue("P-10021");
   await expect(lineCell(page, importedLineKey, "CD_ITEM")).toHaveValue("ITM-1001");
-  await page.screenshot({ path: testInfo.outputPath("mail-order-import-success.png"), fullPage: true });
 });
 
 test("Mail B: 여러 품목 수주 메일은 상세행을 2건 이상 미리보기로 표시한다", async ({ page }) => {

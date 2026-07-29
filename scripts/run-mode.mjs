@@ -60,6 +60,51 @@ async function waitFor(url, label) {
   throw new Error(`${label} did not start within 60 seconds.`);
 }
 
+async function waitForExit(child, label) {
+  const code = await new Promise(resolve => child.once("exit", exitCode => resolve(exitCode ?? 1)));
+  if (code !== 0) throw new Error(`${label} exited with code ${code}.`);
+}
+
+async function warmFrontendForParallelRun() {
+  const { chromium } = await import("@playwright/test");
+  const browser = await chromium.launch({ headless: true });
+
+  try {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto(frontendUrl, { waitUntil: "domcontentloaded" });
+    await page.getByTestId("page-title").waitFor();
+    await page.getByTestId("btn-search").click();
+    await page.getByTestId("sales-order-header-grid-row-1000::SO2026070001").waitFor();
+
+    await page.getByTestId("nav-purchase-order").click();
+    await page.getByTestId("purchase-page-title").waitFor();
+    await page.getByTestId("po-btn-search").click();
+    await page.getByTestId("purchase-header-grid-row-1000::PO2026070001").waitFor();
+
+    await page.getByTestId("nav-work-order").click();
+    await page.getByTestId("work-order-page-title").waitFor();
+    await page.getByTestId("wo-btn-new").click();
+    await page.getByTestId("work-order-header-grid-row-1000::TEMP-WO-001").waitFor();
+
+    await page.getByTestId("nav-development-data").click();
+    await page.getByTestId("development-data-page-title").waitFor();
+    await page.getByTestId("tdm-btn-preview-all").click();
+    await page.getByTestId("tdm-preview-result").waitFor();
+  } finally {
+    await browser.close();
+  }
+
+  console.log("[test-lifecycle] frontend and lookup paths warmed before the parallel run.");
+}
+
+function orderTestFiles(testFiles) {
+  const order = process.env.PLAYWRIGHT_TEST_ORDER ?? "default";
+  if (order === "default") return testFiles;
+  if (order === "reverse") return [...testFiles].reverse();
+  throw new Error("PLAYWRIGHT_TEST_ORDER must be either default or reverse.");
+}
+
 async function stop(child) {
   if (child.exitCode !== null || child.signalCode !== null) return true;
   const exited = new Promise(resolve => child.once("exit", resolve));
@@ -84,17 +129,26 @@ async function main() {
     start("dotnet", ["run", "--project", "server/G2Erp.Api/G2Erp.Api.csproj", "--urls", backendUrl], apiEnv);
     await waitFor(`${backendUrl}/api/purchase-orders`, "ASP.NET API");
   }
-  start(process.execPath, ["./node_modules/vite/bin/vite.js", "--host", host, "--port", "5173"], isApi ? { VITE_DATA_MODE: "api", VITE_API_BASE_URL: backendUrl } : { VITE_DATA_MODE: "mock" });
+  const frontendEnv = isApi ? { VITE_DATA_MODE: "api", VITE_API_BASE_URL: backendUrl } : { VITE_DATA_MODE: "mock" };
+  if (action === "test") {
+    const build = start(process.execPath, ["./node_modules/vite/bin/vite.js", "build", "--mode", "e2e"], { ...frontendEnv, VITE_E2E_TEST_MODE: "true" });
+    await waitForExit(build, "Vite production build");
+    start(process.execPath, ["./node_modules/vite/bin/vite.js", "preview", "--host", host, "--port", "5173"], frontendEnv);
+  } else {
+    start(process.execPath, ["./node_modules/vite/bin/vite.js", "--host", host, "--port", "5173"], frontendEnv);
+  }
   await waitFor(frontendUrl, "Vite");
   console.log(`Mode: ${mode}`); console.log(`Frontend: ${frontendUrl}`); console.log(`Backend: ${isApi ? backendUrl : "not started"}`); console.log(`Repository: ${isSqlServer ? "SqlServer (localhost / G2ERP_DEV_LOCAL_TEST)" : isApi ? "InMemory" : "Mock"}`);
   openBrowserWhenRequested(frontendUrl);
   if (action === "test") {
+    console.log("[test-lifecycle] frontend production bundle prepared before the parallel run.");
+    await warmFrontendForParallelRun();
     const selectedFile = selectedTestFile();
-    const testFiles = selectedFile
+    const testFiles = orderTestFiles(selectedFile
       ? [selectedFile]
       : isApi
         ? ["tests/e2e/api-mode.spec.ts", "tests/e2e/work-order-api-mode.spec.ts", "tests/e2e/work-order-api-validation.spec.ts", "tests/e2e/development-data.spec.ts"]
-        : ["tests/e2e/sales-order.spec.ts", "tests/e2e/purchase-order.spec.ts", "tests/e2e/work-order.spec.ts", "tests/e2e/development-data.spec.ts"];
+        : ["tests/e2e/sales-order.spec.ts", "tests/e2e/purchase-order.spec.ts", "tests/e2e/work-order.spec.ts", "tests/e2e/development-data.spec.ts"]);
     const grepArgs = process.env.PLAYWRIGHT_GREP ? ["--grep", process.env.PLAYWRIGHT_GREP] : [];
     const workerArgs = process.env.PLAYWRIGHT_WORKERS ? ["--workers", process.env.PLAYWRIGHT_WORKERS] : [];
     const headedArgs = process.env.PLAYWRIGHT_HEADED === "true" ? ["--headed"] : [];

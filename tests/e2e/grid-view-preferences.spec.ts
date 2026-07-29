@@ -10,6 +10,10 @@ function gridHeaders(page: Page, gridTestId: string) {
   return page.getByTestId(gridTestId).locator("thead th").allTextContents();
 }
 
+function gridColumnWidth(page: Page, gridTestId: string, columnId: string) {
+  return page.getByTestId(`${gridTestId}-column-${columnId}`).evaluate((column) => column.style.width);
+}
+
 async function openSalesSettings(page: Page) {
   await page.getByTestId("sales-order-line-grid-view-settings").click();
   await expect(page.getByTestId(salesDialog)).toBeVisible();
@@ -82,12 +86,14 @@ test("Gate 12-13: settings are isolated by Grid and do not trigger the document 
   await expect(page.getByTestId("confirm-dialog")).toHaveCount(0);
   await page.getByTestId("purchase-line-grid-view-settings").click();
   await expect(page.getByTestId("purchase-line-grid-view-settings-dialog-visible-DC_RMK")).toBeChecked();
+  await expect(page.getByTestId("purchase-line-grid-view-settings-dialog-width-DC_RMK")).toHaveValue("140");
   await page.getByTestId("purchase-line-grid-view-settings-dialog-cancel").click();
 
   await page.getByTestId("nav-work-order").click();
   await expect(page.getByTestId("work-order-page-title")).toHaveText("작업지시등록");
   await page.getByTestId("work-order-process-grid-view-settings").click();
   await expect(page.getByTestId("work-order-process-grid-view-settings-dialog-visible-DC_RMK")).toBeChecked();
+  await expect(page.getByTestId("work-order-process-grid-view-settings-dialog-width-DC_RMK")).toHaveValue("170");
 });
 
 test("Gate 12-13: reset confirms, restores defaults, and keeps document rows", async ({ page }) => {
@@ -124,6 +130,54 @@ test("Gate 12-13: malformed stored settings recover and a hidden required field 
   await expect(itemCode).toHaveAttribute("aria-invalid", "true");
 });
 
+test("Gate 12-15: sales detail column width saves, reloads, and resets without storing business data", async ({ page }) => {
+  await page.getByTestId("btn-search").click();
+  await openSalesSettings(page);
+  const remarkWidth = page.getByTestId(`${salesDialog}-width-DC_RMK`);
+  await expect(remarkWidth).toHaveValue("190");
+  await remarkWidth.fill("248");
+  await expect(remarkWidth).toHaveValue("248");
+  await page.getByTestId(`${salesDialog}-apply`).click();
+  await expect.poll(() => gridColumnWidth(page, salesGrid, "DC_RMK")).toBe("248px");
+
+  const saved = await page.evaluate(() => localStorage.getItem("g2-erp.grid-view-preferences.v1.sales-order-lines"));
+  expect(saved).not.toBeNull();
+  const savedColumn = JSON.parse(saved!).columns.find((column: { id: string }) => column.id === "DC_RMK");
+  expect(savedColumn.width).toBe(248);
+  expect(saved).not.toContain("SO2026");
+
+  await page.reload();
+  await expect(page.getByTestId("page-title")).toHaveText("수주등록");
+  await expect.poll(() => gridColumnWidth(page, salesGrid, "DC_RMK")).toBe("248px");
+  await openSalesSettings(page);
+  await expect(page.getByTestId(`${salesDialog}-width-DC_RMK`)).toHaveValue("248");
+  await page.getByTestId(`${salesDialog}-reset`).click();
+  await page.getByTestId("confirm-dialog-confirm").click();
+  await expect.poll(() => gridColumnWidth(page, salesGrid, "DC_RMK")).toBe("190px");
+  await expect(page.getByTestId(`${salesDialog}-width-DC_RMK`)).toHaveValue("190");
+});
+
+test("Gate 12-15: malformed and out-of-range saved column widths recover safely", async ({ page }) => {
+  await page.evaluate(() => localStorage.setItem("g2-erp.grid-view-preferences.v1.sales-order-lines", JSON.stringify({
+    schemaVersion: 1,
+    gridId: "sales-order-lines",
+    columns: [{ id: "DC_RMK", visible: true, order: 14, width: "wide" }]
+  })));
+  await page.reload();
+  await openSalesSettings(page);
+  const remarkWidth = page.getByTestId(`${salesDialog}-width-DC_RMK`);
+  await expect(remarkWidth).toHaveValue("190");
+  await remarkWidth.fill("1");
+  await expect(remarkWidth).toHaveValue("48");
+  await page.getByTestId(`${salesDialog}-apply`).click();
+  await expect.poll(() => gridColumnWidth(page, salesGrid, "DC_RMK")).toBe("48px");
+
+  await openSalesSettings(page);
+  await page.getByTestId(`${salesDialog}-width-DC_RMK`).fill("999");
+  await page.getByTestId(`${salesDialog}-apply`).click();
+  await expect.poll(() => gridColumnWidth(page, salesGrid, "DC_RMK")).toBe("480px");
+});
+
 test("Gate 12-13: view settings dialog remains usable in the four supported PC widths", async ({ page }) => {
   for (const viewport of [
     { width: 1920, height: 1080 },
@@ -136,6 +190,7 @@ test("Gate 12-13: view settings dialog remains usable in the four supported PC w
     await expect(page.getByTestId(`${salesDialog}-apply`)).toBeVisible();
     await expect(page.getByTestId(`${salesDialog}-cancel`)).toBeVisible();
     await expect(page.getByTestId(`${salesDialog}-reset`)).toBeVisible();
+    await expect(page.getByTestId(`${salesDialog}-width-DC_RMK`)).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBeTruthy();
     await page.getByTestId(`${salesDialog}-cancel`).click();
   }

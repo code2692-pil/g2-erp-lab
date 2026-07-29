@@ -195,7 +195,7 @@ export function ErpDataGrid<T extends object>({
   const gridViewDefinitions = gridViewSettings
     ? toGridViewColumnDefinitions(columns).map((definition) => ({ ...definition, locked: gridViewSettings.lockedFields.includes(definition.id) }))
     : [];
-  const gridViewDefinitionSignature = gridViewDefinitions.map((definition) => `${definition.id}:${definition.locked ? "locked" : "open"}`).join("|");
+  const gridViewDefinitionSignature = gridViewDefinitions.map((definition) => `${definition.id}:${definition.locked ? "locked" : "open"}:${definition.defaultWidth ?? "auto"}`).join("|");
   const [gridViewPreferences, setGridViewPreferences] = useState<GridViewPreferences | null>(null);
   const [gridViewSettingsOpen, setGridViewSettingsOpen] = useState(false);
   const { confirm } = useConfirm();
@@ -598,6 +598,7 @@ export function ErpDataGrid<T extends object>({
             {showCheckboxes && <col className="erp-data-grid__checkbox-column" />}
             {visibleColumns.map((column) => (
               <col
+                data-testid={dataTestId ? `${dataTestId}-column-${String(column.id ?? column.field)}` : undefined}
                 key={String(column.field)}
                 style={
                   column.width === undefined

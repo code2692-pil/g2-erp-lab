@@ -3032,7 +3032,7 @@ button:disabled {
 
 .grid-view-settings__row {
   display: grid;
-  grid-template-columns: 30px minmax(180px, 1fr) 42px auto;
+  grid-template-columns: 30px minmax(130px, 1fr) 42px 98px auto;
   gap: 8px;
   align-items: center;
   min-height: 36px;
@@ -3075,6 +3075,22 @@ button:disabled {
   gap: 5px;
 }
 
+.grid-view-settings__width {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #5f7183;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.grid-view-settings__width input {
+  width: 52px;
+  min-height: 29px;
+  padding: 0 4px;
+  text-align: right;
+}
+
 .grid-view-settings__moves button {
   min-width: 48px;
   padding: 0 8px;
@@ -3089,7 +3105,7 @@ button:disabled {
 
 @media (max-width: 720px) {
   .grid-view-settings__row {
-    grid-template-columns: 25px minmax(120px, 1fr) auto;
+    grid-template-columns: 25px minmax(90px, 1fr) 88px auto;
   }
 
   .grid-view-settings__locked {

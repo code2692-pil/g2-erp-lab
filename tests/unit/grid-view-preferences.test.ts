@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   applyGridViewPreferences,
+  GRID_VIEW_MAX_COLUMN_WIDTH,
+  GRID_VIEW_MIN_COLUMN_WIDTH,
   GRID_VIEW_PREFERENCES_SCHEMA_VERSION,
   createDefaultGridViewPreferences,
   getGridViewPreferencesStorageKey,
@@ -11,6 +13,7 @@ import {
   resetGridViewPreferences,
   revealGridViewColumn,
   saveGridViewPreferences,
+  setGridViewColumnWidth,
   setGridViewColumnVisibility,
   type GridViewColumnDefinition,
   type GridViewStorage
@@ -22,6 +25,13 @@ const definitions: readonly GridViewColumnDefinition[] = [
   { id: "itemCode", label: "품목코드" },
   { id: "quantity", label: "수량" },
   { id: "remark", label: "비고" }
+];
+
+const widthDefinitions: readonly GridViewColumnDefinition[] = [
+  { id: "lineNumber", label: "라인", locked: true, defaultWidth: 55 },
+  { id: "itemCode", label: "품목코드", defaultWidth: 110 },
+  { id: "quantity", label: "수량", defaultWidth: 85 },
+  { id: "remark", label: "비고", defaultWidth: 160 }
 ];
 
 class MemoryStorage implements GridViewStorage {
@@ -227,4 +237,68 @@ test("잠금 열은 저장된 숨김과 이동 요청 이후에도 첫 위치와
 
   assert.equal(moved.columns[0].id, "lineNumber");
   assert.equal(moved.columns[0].visible, true);
+});
+
+test("column widths save with view preferences and legacy settings expand to defaults", () => {
+  const storage = new MemoryStorage();
+  let preferences = createDefaultGridViewPreferences(gridId, widthDefinitions);
+  preferences = setGridViewColumnWidth(preferences, gridId, widthDefinitions, "remark", 238);
+  saveGridViewPreferences(gridId, widthDefinitions, preferences, storage);
+
+  const restored = loadGridViewPreferences(gridId, widthDefinitions, storage);
+  assert.equal(restored.columns.find((column) => column.id === "remark")?.width, 238);
+  assert.equal(restored.columns.find((column) => column.id === "itemCode")?.width, 110);
+
+  const legacy = normalizeGridViewPreferences({
+    schemaVersion: GRID_VIEW_PREFERENCES_SCHEMA_VERSION,
+    gridId,
+    columns: [
+      { id: "lineNumber", visible: true, order: 0 },
+      { id: "itemCode", visible: true, order: 1 },
+      { id: "quantity", visible: true, order: 2 },
+      { id: "remark", visible: true, order: 3 }
+    ]
+  }, gridId, widthDefinitions);
+  assert.equal(legacy.columns.find((column) => column.id === "remark")?.width, 160);
+});
+
+test("malformed widths recover to the default and entered widths stay within the safe range", () => {
+  const malformed = normalizeGridViewPreferences({
+    schemaVersion: GRID_VIEW_PREFERENCES_SCHEMA_VERSION,
+    gridId,
+    columns: [
+      { id: "lineNumber", visible: true, order: 0, width: 55 },
+      { id: "itemCode", visible: true, order: 1, width: 110 },
+      { id: "quantity", visible: true, order: 2, width: 85 },
+      { id: "remark", visible: true, order: 3, width: "wide" }
+    ]
+  }, gridId, widthDefinitions);
+  assert.equal(malformed.columns.find((column) => column.id === "remark")?.width, 160);
+
+  const tooNarrow = setGridViewColumnWidth(malformed, gridId, widthDefinitions, "remark", 1);
+  const tooWide = setGridViewColumnWidth(tooNarrow, gridId, widthDefinitions, "remark", 999);
+  const emptyInput = setGridViewColumnWidth(tooWide, gridId, widthDefinitions, "remark", Number.NaN);
+  assert.equal(tooNarrow.columns.find((column) => column.id === "remark")?.width, GRID_VIEW_MIN_COLUMN_WIDTH);
+  assert.equal(tooWide.columns.find((column) => column.id === "remark")?.width, GRID_VIEW_MAX_COLUMN_WIDTH);
+  assert.equal(emptyInput.columns.find((column) => column.id === "remark")?.width, 160);
+});
+
+test("stored column widths only change the display column and never add business row data", () => {
+  const columns = [
+    { id: "lineNumber", field: "lineNumber" as const, width: 55 },
+    { id: "itemCode", field: "itemCode" as const, width: 110 },
+    { id: "remark", field: "remark" as const, width: 160 }
+  ];
+  const preferences = setGridViewColumnWidth(
+    createDefaultGridViewPreferences(gridId, widthDefinitions),
+    gridId,
+    widthDefinitions,
+    "remark",
+    240
+  );
+  const configured = applyGridViewPreferences(columns, preferences);
+
+  assert.equal(configured.find((column) => column.id === "remark")?.width, 240);
+  assert.equal(configured.find((column) => column.id === "itemCode")?.width, 110);
+  assert.equal(Object.keys(configured[0]).includes("value"), false);
 });

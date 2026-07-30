@@ -30,7 +30,15 @@
     "qa:maintenance:test": "node --test scripts/qa/tests/*.test.mjs",
     "qa:maintenance:scan": "node scripts/qa/collect-maintenance-signals.mjs",
     "qa:maintenance:report": "node scripts/qa/build-maintenance-report.mjs",
-    "qa:quality:quick": "node scripts/qa/run-quality-gates.mjs quick"
+    "qa:quality:quick": "node scripts/qa/run-quality-gates.mjs quick",
+    "qa:sql:local": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/verify-local-sql.ps1",
+    "qa:sql:worker:install": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install-local-sql-verify-worker.ps1",
+    "qa:sql:worker:install:validate": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install-local-sql-verify-worker.ps1 -ValidateOnly",
+    "qa:sql:worker:start": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/start-local-sql-verify-worker.ps1",
+    "qa:sql:worker:status": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/get-local-sql-verify-worker-status.ps1",
+    "qa:sql:worker:stop": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/stop-local-sql-verify-worker.ps1",
+    "qa:sql:worker:uninstall": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/uninstall-local-sql-verify-worker.ps1",
+    "qa:sql:request": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/request-local-sql-verify.ps1 -Reason \"manual SQL verification\" -Wait"
   },
   "dependencies": {
     "lucide-react": "^1.23.0",

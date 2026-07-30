@@ -26,6 +26,9 @@ pnpm-debug.log*
 # Local desktop-launcher state
 .runtime/
 
+# Local SQL verification worker requests, results, and logs.
+.local-runtime/
+
 # Playwright test artifacts
 test-results/
 playwright-report/

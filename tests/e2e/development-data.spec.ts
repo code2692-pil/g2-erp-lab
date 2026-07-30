@@ -1,4 +1,6 @@
-import { expect, test, type Page } from "@playwright/test";
+import { consumeWorkerPreparedPage, createWorkerWarmupTest, expect, type Page } from "./worker-frontend-warmup.fixture";
+
+const test = createWorkerWarmupTest("development-data");
 
 async function text(page: Page, selector: string) {
   const values = await page.locator(selector).allTextContents();
@@ -18,9 +20,11 @@ async function diagnostic(page: Page, error: unknown) {
 }
 
 async function openDevelopmentDataManager(page: Page) {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  await expect(page.getByTestId("nav-development-data")).toBeVisible();
-  await page.getByTestId("nav-development-data").click();
+  if (!consumeWorkerPreparedPage(page)) {
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("nav-development-data")).toBeVisible();
+    await page.getByTestId("nav-development-data").click();
+  }
   await expect(page.getByTestId("development-data-page-title")).toHaveText("테스트 데이터 관리");
 }
 

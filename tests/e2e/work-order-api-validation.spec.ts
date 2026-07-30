@@ -1,4 +1,6 @@
-import { expect, test } from "@playwright/test";
+import { createWorkerWarmupTest, expect } from "./worker-frontend-warmup.fixture";
+
+const test = createWorkerWarmupTest("work-order");
 
 test("API UI: work order menu, search, and validation", async ({ page }) => {
   await page.goto("/");

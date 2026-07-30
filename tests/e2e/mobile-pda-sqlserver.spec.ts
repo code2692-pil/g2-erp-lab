@@ -49,6 +49,7 @@ test("Gate 12-9 SQL cross A: PC creates, mobile and PDA update, and PC sees the 
   await page.getByTestId("nav-mobile-sales-order").click();
   await page.getByTestId("mobile-sales-filter-order-no").fill(salesOrderNo!);
   await page.getByTestId("mobile-sales-search").click();
+  await expect(page.getByTestId("mobile-sales-page")).toHaveAttribute("data-processing-state", "idle");
   await page.getByTestId(`mobile-sales-result-${salesOrderNo}`).click();
   await expect(page.getByTestId("mobile-sales-line-quantity-1")).toHaveValue("3");
   await page.getByTestId("mobile-sales-line-quantity-1").fill("7");
@@ -57,16 +58,36 @@ test("Gate 12-9 SQL cross A: PC creates, mobile and PDA update, and PC sees the 
   await page.getByTestId("mobile-sales-nav-pda").click();
   await page.getByTestId("pda-sales-filter-order-no").fill(salesOrderNo!);
   await page.getByTestId("pda-sales-search").click();
+  await expect(page.getByTestId("pda-sales-page")).toHaveAttribute("data-processing-state", "idle");
   await expect(page.getByTestId("pda-sales-order-no")).toHaveValue(salesOrderNo!);
   await expect(page.getByTestId("pda-sales-line-quantity-1")).toHaveValue("7");
+  await expect(page.getByTestId("pda-sales-line-price-1")).toHaveValue("1000");
+  await expect(page.getByTestId("pda-sales-line-quantity-1")).toBeEnabled();
   await page.getByTestId("pda-sales-line-quantity-1").fill("9");
+  await expect(page.getByTestId("pda-sales-line-quantity-1")).toHaveValue("9");
+  await expect(page.getByTestId("pda-sales-save")).toBeEnabled();
   await saveCompactOrder(page, "pda-sales", "PUT");
+  const updatedOrdersResponse = await page.request.get(`${apiBaseUrl}/api/sales-orders`);
+  expect(updatedOrdersResponse.ok()).toBeTruthy();
+  const updatedOrders = await updatedOrdersResponse.json() as Array<{
+    Header: { CD_FIRM: string; NO_SO: string };
+    Lines: Array<{ QT_SO: number }>;
+  }>;
+  const updatedOrder = updatedOrders.find((current) => current.Header.CD_FIRM === "1000" && current.Header.NO_SO === salesOrderNo);
+  expect(updatedOrder?.Lines[0]?.QT_SO).toBe(9);
 
   await page.getByTestId("pda-sales-nav-pc").click();
   await page.getByTestId("btn-search").click();
   await page.getByTestId(`sales-order-header-grid-row-1000::${salesOrderNo}`).click();
   await expect(page.getByTestId(`sales-order-line-grid-cell-1000::${salesOrderNo}::1-QT_SO`)).toHaveValue("9");
   await expect(page.getByTestId("sales-order-total-summary")).toContainText("9,900");
+
+  await page.getByTestId("nav-mobile-sales-order").click();
+  await page.getByTestId("mobile-sales-filter-order-no").fill(salesOrderNo!);
+  await page.getByTestId("mobile-sales-search").click();
+  await expect(page.getByTestId("mobile-sales-page")).toHaveAttribute("data-processing-state", "idle");
+  await page.getByTestId(`mobile-sales-result-${salesOrderNo}`).click();
+  await expect(page.getByTestId("mobile-sales-line-quantity-1")).toHaveValue("9");
 });
 
 test("Gate 12-9 SQL cross D: PDA deletes the same order and all screens no longer find it", async ({ page, request }) => {
@@ -85,6 +106,7 @@ test("Gate 12-9 SQL cross D: PDA deletes the same order and all screens no longe
   await page.getByTestId("mobile-sales-nav-pda").click();
   await page.getByTestId("pda-sales-filter-order-no").fill(salesOrderNo);
   await page.getByTestId("pda-sales-search").click();
+  await expect(page.getByTestId("pda-sales-page")).toHaveAttribute("data-processing-state", "idle");
   await expect(page.getByTestId("pda-sales-order-no")).toHaveValue(salesOrderNo);
   const deleteResponse = page.waitForResponse((current) =>
     current.request().method() === "DELETE" && new URL(current.url()).pathname === `/api/sales-orders/1000/${salesOrderNo}`

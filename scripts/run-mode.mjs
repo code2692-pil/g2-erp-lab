@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync, rmSync, statSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 import { inspectTestCleanup, removePlaywrightArtifacts, reportTestCleanup } from "./qa/check-test-cleanup.mjs";
+import { verifyApiReadiness, verifyFrontendReadiness, waitForReadiness } from "./run-mode-readiness.mjs";
 
 const [action, mode] = process.argv.slice(2);
 const host = "127.0.0.1";
@@ -51,13 +52,20 @@ function openBrowserWhenRequested(url) {
   console.log(`Opening browser: ${url}`);
 }
 
-async function waitFor(url, label) {
-  const deadline = Date.now() + 60_000;
-  while (Date.now() < deadline) {
-    try { if ((await fetch(url)).ok) return; } catch { /* still starting */ }
-    await new Promise(resolve => setTimeout(resolve, 250));
-  }
-  throw new Error(`${label} did not start within 60 seconds.`);
+async function waitForApi(api) {
+  await waitForReadiness({
+    label: "ASP.NET API",
+    child: api,
+    check: (signal) => verifyApiReadiness(`${backendUrl}/api/development-data/status`, { signal })
+  });
+}
+
+async function waitForFrontend(frontend) {
+  await waitForReadiness({
+    label: "Vite",
+    child: frontend,
+    check: (signal) => verifyFrontendReadiness(frontendUrl, { signal })
+  });
 }
 
 async function waitForExit(child, label) {
@@ -126,23 +134,30 @@ async function main() {
     const apiEnv = isSqlServer
       ? { RepositoryMode: "SqlServer", ASPNETCORE_ENVIRONMENT: "Development", G2ERP_POC_ALLOW_UNENCRYPTED_LOCAL: "true", ConnectionStrings__G2Erp: "Server=.;Database=G2ERP_DEV_LOCAL_TEST;Trusted_Connection=True;Encrypt=False;TrustServerCertificate=True" }
       : { RepositoryMode: "InMemory", ASPNETCORE_ENVIRONMENT: "Development" };
-    start("dotnet", ["run", "--project", "server/G2Erp.Api/G2Erp.Api.csproj", "--urls", backendUrl], apiEnv);
-    await waitFor(`${backendUrl}/api/purchase-orders`, "ASP.NET API");
+    const apiBuild = start("dotnet", ["build", "--no-restore", "server/G2Erp.Api/G2Erp.Api.csproj"], apiEnv);
+    await waitForExit(apiBuild, "ASP.NET API build");
+    const api = start("dotnet", ["run", "--no-build", "--project", "server/G2Erp.Api/G2Erp.Api.csproj", "--urls", backendUrl], apiEnv);
+    await waitForApi(api);
   }
   const frontendEnv = isApi ? { VITE_DATA_MODE: "api", VITE_API_BASE_URL: backendUrl } : { VITE_DATA_MODE: "mock" };
   if (action === "test") {
     const build = start(process.execPath, ["./node_modules/vite/bin/vite.js", "build", "--mode", "e2e"], { ...frontendEnv, VITE_E2E_TEST_MODE: "true" });
     await waitForExit(build, "Vite production build");
-    start(process.execPath, ["./node_modules/vite/bin/vite.js", "preview", "--host", host, "--port", "5173"], frontendEnv);
+    const frontend = start(process.execPath, ["./node_modules/vite/bin/vite.js", "preview", "--host", host, "--port", "5173"], frontendEnv);
+    await waitForFrontend(frontend);
   } else {
-    start(process.execPath, ["./node_modules/vite/bin/vite.js", "--host", host, "--port", "5173"], frontendEnv);
+    const frontend = start(process.execPath, ["./node_modules/vite/bin/vite.js", "--host", host, "--port", "5173"], frontendEnv);
+    await waitForFrontend(frontend);
   }
-  await waitFor(frontendUrl, "Vite");
   console.log(`Mode: ${mode}`); console.log(`Frontend: ${frontendUrl}`); console.log(`Backend: ${isApi ? backendUrl : "not started"}`); console.log(`Repository: ${isSqlServer ? "SqlServer (localhost / G2ERP_DEV_LOCAL_TEST)" : isApi ? "InMemory" : "Mock"}`);
   openBrowserWhenRequested(frontendUrl);
   if (action === "test") {
     console.log("[test-lifecycle] frontend production bundle prepared before the parallel run.");
-    await warmFrontendForParallelRun();
+    if (isSqlServer) {
+      console.log("[test-lifecycle] SQL Server run skips fixture-specific frontend warmup.");
+    } else {
+      await warmFrontendForParallelRun();
+    }
     const selectedFile = selectedTestFile();
     const testFiles = orderTestFiles(selectedFile
       ? [selectedFile]

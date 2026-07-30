@@ -1,5 +1,6 @@
-import { expect, test } from "@playwright/test";
-import type { Page } from "@playwright/test";
+import { consumeWorkerPreparedPage, createWorkerWarmupTest, expect, type Page } from "./worker-frontend-warmup.fixture";
+
+const test = createWorkerWarmupTest("work-order");
 
 const firstHeaderKey = "1000::WO2026070001";
 const secondHeaderKey = "1000::WO2026070002";
@@ -23,8 +24,10 @@ function processCell(page: Page, key: string, field: string) {
 }
 
 async function openWorkOrder(page: Page) {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByTestId("nav-work-order").click();
+  if (!consumeWorkerPreparedPage(page)) {
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.getByTestId("nav-work-order").click();
+  }
   await expect(page.getByTestId("work-order-page-title")).toHaveText("작업지시등록");
 }
 

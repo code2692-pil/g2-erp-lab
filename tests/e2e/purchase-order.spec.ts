@@ -1,12 +1,16 @@
-import { expect, test } from "@playwright/test";
+import { consumeWorkerPreparedPage, createWorkerWarmupTest, expect, type Page } from "./worker-frontend-warmup.fixture";
+
+const test = createWorkerWarmupTest("purchase");
 
 const headerKey = "1000::PO2026070001";
 const lineKey = "1000::PO2026070001::1";
 const remainingLineKey = "1000::PO2026070001::2";
 
-async function openPurchaseOrder(page: import("@playwright/test").Page) {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByTestId("nav-purchase-order").click();
+async function openPurchaseOrder(page: Page) {
+  if (!consumeWorkerPreparedPage(page)) {
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.getByTestId("nav-purchase-order").click();
+  }
   await expect(page.getByTestId("purchase-page-title")).toHaveText("발주등록");
 }
 

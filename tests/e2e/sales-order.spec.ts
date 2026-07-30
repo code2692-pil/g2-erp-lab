@@ -1,5 +1,6 @@
-import { expect, test } from "@playwright/test";
-import type { Page } from "@playwright/test";
+import { consumeWorkerPreparedPage, createWorkerWarmupTest, expect, type Page } from "./worker-frontend-warmup.fixture";
+
+const test = createWorkerWarmupTest("sales");
 
 const headerRowKey = "1000::SO2026070001";
 const firstLineKey = "1000::SO2026070001::1";
@@ -22,7 +23,7 @@ function lineCell(page: Page, rowKey: string, field: string) {
 }
 
 async function openSalesOrder(page: Page) {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
+  if (!consumeWorkerPreparedPage(page)) await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("page-title")).toBeVisible();
 }
 

@@ -1,23 +1,23 @@
 import { expect, test, type Page, type Request, type Route } from "@playwright/test";
 
-const modulePaths = {
-  purchase: "/src/features/purchase-order/PurchaseOrderRegistration.tsx",
-  work: "/src/features/work-order/WorkOrderRegistration.tsx",
-  development: "/src/features/development-data/DevelopmentDataManager.tsx",
-  ai: "/src/features/ai-solution-center/AiSolutionCenterPage.tsx",
-  compact: "/src/features/sales-order/CompactSalesOrderPage.tsx"
+const moduleNames = {
+  purchase: "PurchaseOrderRegistration",
+  work: "WorkOrderRegistration",
+  development: "DevelopmentDataManager",
+  ai: "AiSolutionCenterPage",
+  compact: "CompactSalesOrderPage"
 } as const;
 
 const firstSalesLineKey = "1000::SO2026070001::1";
 
-function requestsFor(pathname: string, requests: Request[]) {
-  return requests.filter((request) => new URL(request.url()).pathname === pathname);
+function requestsFor(moduleName: string, requests: Request[]) {
+  return requests.filter((request) => new URL(request.url()).pathname.includes(moduleName));
 }
 
 function trackModuleRequests(page: Page) {
   const requests: Request[] = [];
   page.on("request", (request) => {
-    if (Object.values(modulePaths).includes(new URL(request.url()).pathname as typeof modulePaths[keyof typeof modulePaths])) requests.push(request);
+    if (Object.values(moduleNames).some((moduleName) => new URL(request.url()).pathname.includes(moduleName))) requests.push(request);
   });
   return requests;
 }
@@ -32,23 +32,23 @@ test("Gate 12-12: initial entry excludes non-default modules, then hover preload
 
   await page.goto("/");
   await expect(page.getByTestId("page-title")).toHaveText("수주등록");
-  for (const pathname of Object.values(modulePaths)) expect(requestsFor(pathname, moduleRequests)).toHaveLength(0);
+  for (const moduleName of Object.values(moduleNames)) expect(requestsFor(moduleName, moduleRequests)).toHaveLength(0);
 
   const purchaseMenu = page.getByTestId("nav-purchase-order");
   await purchaseMenu.hover();
-  await expect.poll(() => requestsFor(modulePaths.purchase, moduleRequests).length).toBe(1);
+  await expect.poll(() => requestsFor(moduleNames.purchase, moduleRequests).length).toBe(1);
   expect(purchaseApiRequests).toHaveLength(0);
 
   await purchaseMenu.hover();
   await purchaseMenu.focus();
-  expect(requestsFor(modulePaths.purchase, moduleRequests)).toHaveLength(1);
-  expect(requestsFor(modulePaths.work, moduleRequests)).toHaveLength(0);
-  expect(requestsFor(modulePaths.ai, moduleRequests)).toHaveLength(0);
-  expect(requestsFor(modulePaths.compact, moduleRequests)).toHaveLength(0);
+  expect(requestsFor(moduleNames.purchase, moduleRequests)).toHaveLength(1);
+  expect(requestsFor(moduleNames.work, moduleRequests)).toHaveLength(0);
+  expect(requestsFor(moduleNames.ai, moduleRequests)).toHaveLength(0);
+  expect(requestsFor(moduleNames.compact, moduleRequests)).toHaveLength(0);
 
   await purchaseMenu.click();
   await expect(page.getByTestId("purchase-page-title")).toHaveText("발주등록");
-  expect(requestsFor(modulePaths.purchase, moduleRequests)).toHaveLength(1);
+  expect(requestsFor(moduleNames.purchase, moduleRequests)).toHaveLength(1);
 });
 
 test("Gate 12-12: keyboard focus preloads work once before Enter navigation", async ({ page }) => {
@@ -58,12 +58,12 @@ test("Gate 12-12: keyboard focus preloads work once before Enter navigation", as
 
   await workMenu.focus();
   await expect(workMenu).toBeFocused();
-  await expect.poll(() => requestsFor(modulePaths.work, moduleRequests).length).toBe(1);
+  await expect.poll(() => requestsFor(moduleNames.work, moduleRequests).length).toBe(1);
   await workMenu.press("Enter");
 
   await expect(page.getByTestId("work-order-page-title")).toHaveText("작업지시등록");
-  expect(requestsFor(modulePaths.work, moduleRequests)).toHaveLength(1);
-  expect(requestsFor(modulePaths.ai, moduleRequests)).toHaveLength(0);
+  expect(requestsFor(moduleNames.work, moduleRequests)).toHaveLength(1);
+  expect(requestsFor(moduleNames.ai, moduleRequests)).toHaveLength(0);
 });
 
 test("Gate 12-12: touch-compatible pointer intent preloads the compact screen once without other screens", async ({ page }) => {
@@ -72,14 +72,14 @@ test("Gate 12-12: touch-compatible pointer intent preloads the compact screen on
 
   const mobileMenu = page.getByTestId("nav-mobile-sales-order");
   await mobileMenu.dispatchEvent("pointerdown", { pointerType: "touch" });
-  await expect.poll(() => requestsFor(modulePaths.compact, moduleRequests).length).toBe(1);
+  await expect.poll(() => requestsFor(moduleNames.compact, moduleRequests).length).toBe(1);
 
   await mobileMenu.click();
   await expect(page.getByTestId("mobile-sales-page")).toBeVisible();
-  expect(requestsFor(modulePaths.compact, moduleRequests)).toHaveLength(1);
-  expect(requestsFor(modulePaths.purchase, moduleRequests)).toHaveLength(0);
-  expect(requestsFor(modulePaths.work, moduleRequests)).toHaveLength(0);
-  expect(requestsFor(modulePaths.ai, moduleRequests)).toHaveLength(0);
+  expect(requestsFor(moduleNames.compact, moduleRequests)).toHaveLength(1);
+  expect(requestsFor(moduleNames.purchase, moduleRequests)).toHaveLength(0);
+  expect(requestsFor(moduleNames.work, moduleRequests)).toHaveLength(0);
+  expect(requestsFor(moduleNames.ai, moduleRequests)).toHaveLength(0);
 });
 
 test("Gate 12-12: failed intent preload keeps the current screen and recovers on actual navigation", async ({ page }) => {
@@ -98,7 +98,7 @@ test("Gate 12-12: failed intent preload keeps the current screen and recovers on
   page.on("console", (message) => { if (message.type() === "error") consoleErrors.push(message.text()); });
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.goto("/");
-  await page.route(`**${modulePaths.purchase}*`, failFirstPurchaseModule);
+  await page.route(`**/*${moduleNames.purchase}*`, failFirstPurchaseModule);
   try {
     await page.getByTestId("nav-purchase-order").hover();
     await expect.poll(() => failedPreloadCount).toBe(1);
@@ -110,7 +110,7 @@ test("Gate 12-12: failed intent preload keeps the current screen and recovers on
     await page.getByTestId("nav-sales-order").click();
     await expect(page.getByTestId("page-title")).toHaveText("수주등록");
 
-    await page.unroute(`**${modulePaths.purchase}*`, failFirstPurchaseModule);
+    await page.unroute(`**/*${moduleNames.purchase}*`, failFirstPurchaseModule);
     await page.getByTestId("nav-purchase-order").click();
     await expect.poll(async () => (await page.getByTestId("purchase-page-title").count()) + (await page.getByTestId("app-page-load-error").count())).toBeGreaterThan(0);
     if (await page.getByTestId("app-page-load-error").count()) {
@@ -138,7 +138,7 @@ test("Gate 12-12: dirty sales hover only preloads code, while click still uses t
 
   const purchaseMenu = page.getByTestId("nav-purchase-order");
   await purchaseMenu.hover();
-  await expect.poll(() => requestsFor(modulePaths.purchase, moduleRequests).length).toBe(1);
+  await expect.poll(() => requestsFor(moduleNames.purchase, moduleRequests).length).toBe(1);
   await expect(page.getByTestId("confirm-dialog")).toHaveCount(0);
   await expect(quantity).toHaveValue("3");
 

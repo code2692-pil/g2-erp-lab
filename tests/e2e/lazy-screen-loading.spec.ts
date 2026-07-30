@@ -6,7 +6,7 @@ function deferred() {
   return { promise, resolve };
 }
 
-const purchaseScreenModule = "**/src/features/purchase-order/PurchaseOrderRegistration.tsx*";
+const purchaseScreenModule = "**/*PurchaseOrderRegistration*";
 
 test("Gate 12-11: delayed purchase screen shows an accessible loading state before rendering", async ({ page }) => {
   const moduleStarted = deferred();

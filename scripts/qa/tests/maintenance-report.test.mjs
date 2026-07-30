@@ -24,7 +24,7 @@ test("report has decision queue fields and fixed quality profiles", () => {
   assert.equal(report.humanDecisionRequired, true);
   assert.equal(queue.candidates[0].finalDecision, "");
   assert.match(markdown, /Final decision: empty/);
-  assert.equal(listQualityGateCommands("quick").length, 6);
+  assert.equal(listQualityGateCommands("quick").length, 7);
   for (const file of ["pr-quality.yml", "nightly-quality.yml", "maintenance-scan.yml", "ai-predevelopment.yml"]) {
     const content = readFileSync(resolve(".github", "workflows", file), "utf8");
     assert.match(content, /contents: read/);

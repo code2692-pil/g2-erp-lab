@@ -1,4 +1,6 @@
-import { expect, test } from "@playwright/test";
+import { createWorkerWarmupTest, expect } from "./worker-frontend-warmup.fixture";
+
+const test = createWorkerWarmupTest("sales");
 
 const apiBaseUrl = "http://127.0.0.1:5080";
 

@@ -1,4 +1,6 @@
-import { expect, test, type Page } from "@playwright/test";
+import { consumeWorkerPreparedPage, createWorkerWarmupTest, expect, type Page } from "./worker-frontend-warmup.fixture";
+
+const test = createWorkerWarmupTest("work-order");
 
 function temporaryHeaderCell(page: Page, field: string) {
   return page.getByTestId(new RegExp(`work-order-header-grid-cell-1000::TEMP-WO-\\d+-${field}`));
@@ -9,8 +11,10 @@ function temporaryProcessCell(page: Page, field: string) {
 }
 
 async function openNewWorkOrder(page: Page, addProcess = false) {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByTestId("nav-work-order").click();
+  if (!consumeWorkerPreparedPage(page)) {
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.getByTestId("nav-work-order").click();
+  }
   await page.getByTestId("wo-btn-new").click();
   if (addProcess) await page.getByTestId("wo-btn-add-process").click();
 }

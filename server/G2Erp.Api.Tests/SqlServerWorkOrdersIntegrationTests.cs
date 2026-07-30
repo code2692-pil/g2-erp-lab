@@ -15,7 +15,7 @@ namespace G2Erp.Api.Tests;
 
 public sealed class SqlServerWorkOrdersIntegrationTests
 {
-    private const string ConnectionString = "Server=.;Database=G2ERP_DEV_LOCAL_TEST;Trusted_Connection=True;Encrypt=False;TrustServerCertificate=True";
+    private const string ConnectionString = "Server=.;Database=G2ERP_DEV_LOCAL_TEST;Trusted_Connection=True;Encrypt=True;TrustServerCertificate=True";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     [Fact]
@@ -121,7 +121,6 @@ public sealed class SqlServerWorkOrdersIntegrationTests
             builder.UseEnvironment("Development");
             builder.UseSetting("RepositoryMode", "SqlServer");
             builder.UseSetting("ConnectionStrings:G2Erp", ConnectionString);
-            builder.UseSetting("G2ERP_POC_ALLOW_UNENCRYPTED_LOCAL", "true");
         });
         using var client = factory.CreateClient();
 

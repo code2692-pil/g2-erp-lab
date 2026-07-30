@@ -36,7 +36,9 @@ function selectedTestFile() {
 }
 
 function start(command, args, env) {
-  const child = spawn(command, args, { stdio: "inherit", windowsHide: true, env: { ...process.env, ...env } });
+  const childEnv = { ...process.env, ...env };
+  delete childEnv.G2ERP_POC_ALLOW_UNENCRYPTED_LOCAL;
+  const child = spawn(command, args, { stdio: "inherit", windowsHide: true, env: childEnv });
   children.push(child);
   console.log(`[test-lifecycle] started PID ${child.pid}: ${command}`);
   return child;
@@ -132,7 +134,7 @@ async function main() {
   }
   if (isApi) {
     const apiEnv = isSqlServer
-      ? { RepositoryMode: "SqlServer", ASPNETCORE_ENVIRONMENT: "Development", G2ERP_POC_ALLOW_UNENCRYPTED_LOCAL: "true", ConnectionStrings__G2Erp: "Server=.;Database=G2ERP_DEV_LOCAL_TEST;Trusted_Connection=True;Encrypt=False;TrustServerCertificate=True" }
+      ? { RepositoryMode: "SqlServer", ASPNETCORE_ENVIRONMENT: "Development", ConnectionStrings__G2Erp: "Server=.;Database=G2ERP_DEV_LOCAL_TEST;Trusted_Connection=True;Encrypt=True;TrustServerCertificate=True" }
       : { RepositoryMode: "InMemory", ASPNETCORE_ENVIRONMENT: "Development" };
     const apiBuild = start("dotnet", ["build", "--no-restore", "server/G2Erp.Api/G2Erp.Api.csproj"], apiEnv);
     await waitForExit(apiBuild, "ASP.NET API build");

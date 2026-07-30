@@ -15,7 +15,7 @@ public sealed class SqlServerSalesOrdersIntegrationTests
     [Trait("Category", "SqlServerIntegration")]
     public async Task SqlServerRepository_DirectCrud_ReportsDatabaseErrorsWithoutHttpMasking()
     {
-        var repository = new SqlServerSalesOrderRepository(new SqlServerConnectionFactory("Server=.;Database=G2ERP_DEV_LOCAL_TEST;Trusted_Connection=True;Encrypt=False;TrustServerCertificate=True"));
+        var repository = new SqlServerSalesOrderRepository(new SqlServerConnectionFactory("Server=.;Database=G2ERP_DEV_LOCAL_TEST;Trusted_Connection=True;Encrypt=True;TrustServerCertificate=True"));
         var orderNo = $"SO-R-{Guid.NewGuid():N}"[..30];
         var created = CreateDomainOrder(orderNo, "New", 2, 100);
 
@@ -41,9 +41,8 @@ public sealed class SqlServerSalesOrdersIntegrationTests
         using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Development");
-            builder.UseSetting("G2ERP_POC_ALLOW_UNENCRYPTED_LOCAL", "true");
             builder.UseSetting("RepositoryMode", "SqlServer");
-            builder.UseSetting("ConnectionStrings:G2Erp", "Server=.;Database=G2ERP_DEV_LOCAL_TEST;Trusted_Connection=True;Encrypt=False;TrustServerCertificate=True");
+            builder.UseSetting("ConnectionStrings:G2Erp", "Server=.;Database=G2ERP_DEV_LOCAL_TEST;Trusted_Connection=True;Encrypt=True;TrustServerCertificate=True");
         });
         using var client = factory.CreateClient();
         var request = CreateRequest();

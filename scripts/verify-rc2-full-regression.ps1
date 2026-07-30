@@ -180,10 +180,10 @@ try {
     Invoke-External "Non-SQL .NET tests" "dotnet" @("test", "server/G2Erp.Api.Tests/G2Erp.Api.Tests.csproj", "--no-restore", "--filter", "FullyQualifiedName!~SqlServer", "--logger", "console;verbosity=minimal")
     Invoke-External "Mock core Playwright" $nodeExecutable @("scripts/run-mode.mjs", "test", "mock")
     Invoke-External "InMemory core Playwright" $nodeExecutable @("scripts/run-mode.mjs", "test", "inmemory")
-    $mockUxFiles = @("tests/e2e/ai-solution-center.spec.ts", "tests/e2e/grid-view-preferences.spec.ts", "tests/e2e/lazy-screen-loading.spec.ts", "tests/e2e/mobile-pda-sales-order.spec.ts", "tests/e2e/release-candidate-menu-smoke.spec.ts", "tests/e2e/screen-module-prefetch.spec.ts") -join ";"
+    $mockUxFiles = @("tests/e2e/ai-solution-center.spec.ts", "tests/e2e/grid-view-preferences.spec.ts", "tests/e2e/lazy-screen-loading.spec.ts", "tests/e2e/mobile-pda-sales-order.spec.ts", "tests/e2e/release-candidate-menu-smoke.spec.ts", "tests/e2e/screen-module-prefetch.spec.ts", "tests/e2e/unsaved-navigation-guard.spec.ts") -join ";"
     Invoke-External "Mock UX Playwright" $nodeExecutable @("scripts/run-mode.mjs", "test", "mock") @{ PLAYWRIGHT_TEST_FILES = $mockUxFiles; PLAYWRIGHT_WORKERS = "1" }
     Invoke-External "Production development-data Playwright" $nodeExecutable @("scripts/run-mode.mjs", "test", "mock") @{ PLAYWRIGHT_TEST_FILE = "tests/e2e/production-development-data.spec.ts"; PLAYWRIGHT_PRODUCTION_MODE = "true"; PLAYWRIGHT_WORKERS = "1" }
-    $apiUxFiles = @("tests/e2e/mobile-pda-api-hardening.spec.ts", "tests/e2e/mobile-pda-api-inmemory.spec.ts") -join ";"
+    $apiUxFiles = @("tests/e2e/mobile-pda-api-hardening.spec.ts", "tests/e2e/mobile-pda-api-inmemory.spec.ts", "tests/e2e/unsaved-navigation-saving.spec.ts") -join ";"
     Invoke-External "InMemory mobile/PDA Playwright" $nodeExecutable @("scripts/run-mode.mjs", "test", "inmemory") @{ PLAYWRIGHT_TEST_FILES = $apiUxFiles; PLAYWRIGHT_WORKERS = "1" }
     Invoke-External "Local SQL worker verification" "powershell.exe" @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $requestScript, "-RepositoryRoot", $RepositoryRoot, "-Reason", "RC2 full regression", "-Wait", "-TimeoutSeconds", "1800")
     Invoke-Internal "Final ports and Git state" {

@@ -10,6 +10,7 @@ const frontendUrl = `http://${host}:5173`;
 const backendUrl = `http://${host}:5080`;
 const isApi = mode !== "mock";
 const isSqlServer = mode === "sqlserver";
+const isProductionContract = process.env.PLAYWRIGHT_PRODUCTION_MODE === "true";
 const children = [];
 const e2eDirectory = resolve("tests", "e2e");
 
@@ -21,18 +22,22 @@ function removeManagedSessionFile() {
 
 process.once("exit", removeManagedSessionFile);
 
-function selectedTestFile() {
-  const requestedFile = process.env.PLAYWRIGHT_TEST_FILE;
-  if (!requestedFile) return null;
+function selectedTestFiles() {
+  const requestedFiles = process.env.PLAYWRIGHT_TEST_FILES ?? process.env.PLAYWRIGHT_TEST_FILE;
+  if (!requestedFiles) return null;
 
-  const resolvedFile = resolve(requestedFile);
-  const relativeFile = relative(e2eDirectory, resolvedFile);
-  const isE2eSpec = relativeFile && !relativeFile.startsWith(`..${sep}`) && relativeFile !== ".." && resolvedFile.endsWith(".spec.ts");
-  if (!isE2eSpec || !existsSync(resolvedFile) || !statSync(resolvedFile).isFile()) {
-    throw new Error("PLAYWRIGHT_TEST_FILE must reference an existing .spec.ts file under tests/e2e.");
-  }
+  const values = requestedFiles.split(";").map((value) => value.trim()).filter(Boolean);
+  if (!values.length) throw new Error("PLAYWRIGHT_TEST_FILE(S) must include at least one .spec.ts file.");
 
-  return relative(process.cwd(), resolvedFile).split(sep).join("/");
+  return values.map((requestedFile) => {
+    const resolvedFile = resolve(requestedFile);
+    const relativeFile = relative(e2eDirectory, resolvedFile);
+    const isE2eSpec = relativeFile && !relativeFile.startsWith(`..${sep}`) && relativeFile !== ".." && resolvedFile.endsWith(".spec.ts");
+    if (!isE2eSpec || !existsSync(resolvedFile) || !statSync(resolvedFile).isFile()) {
+      throw new Error("PLAYWRIGHT_TEST_FILE(S) must reference existing .spec.ts files under tests/e2e.");
+    }
+    return relative(process.cwd(), resolvedFile).split(sep).join("/");
+  });
 }
 
 function start(command, args, env) {
@@ -143,7 +148,10 @@ async function main() {
   }
   const frontendEnv = isApi ? { VITE_DATA_MODE: "api", VITE_API_BASE_URL: backendUrl } : { VITE_DATA_MODE: "mock" };
   if (action === "test") {
-    const build = start(process.execPath, ["./node_modules/vite/bin/vite.js", "build", "--mode", "e2e"], { ...frontendEnv, VITE_E2E_TEST_MODE: "true" });
+    const e2eBuildEnvironment = isProductionContract
+      ? frontendEnv
+      : { ...frontendEnv, VITE_E2E_TEST_MODE: "true" };
+    const build = start(process.execPath, ["./node_modules/vite/bin/vite.js", "build", "--mode", "e2e"], e2eBuildEnvironment);
     await waitForExit(build, "Vite production build");
     const frontend = start(process.execPath, ["./node_modules/vite/bin/vite.js", "preview", "--host", host, "--port", "5173"], frontendEnv);
     await waitForFrontend(frontend);
@@ -155,14 +163,14 @@ async function main() {
   openBrowserWhenRequested(frontendUrl);
   if (action === "test") {
     console.log("[test-lifecycle] frontend production bundle prepared before the parallel run.");
-    if (isSqlServer) {
-      console.log("[test-lifecycle] SQL Server run skips fixture-specific frontend warmup.");
+    if (isSqlServer || isProductionContract) {
+      console.log(`[test-lifecycle] ${isSqlServer ? "SQL Server" : "production-contract"} run skips fixture-specific frontend warmup.`);
     } else {
       await warmFrontendForParallelRun();
     }
-    const selectedFile = selectedTestFile();
-    const testFiles = orderTestFiles(selectedFile
-      ? [selectedFile]
+    const selectedFiles = selectedTestFiles();
+    const testFiles = orderTestFiles(selectedFiles
+      ? selectedFiles
       : isApi
         ? ["tests/e2e/api-mode.spec.ts", "tests/e2e/work-order-api-mode.spec.ts", "tests/e2e/work-order-api-validation.spec.ts", "tests/e2e/development-data.spec.ts"]
         : ["tests/e2e/sales-order.spec.ts", "tests/e2e/purchase-order.spec.ts", "tests/e2e/work-order.spec.ts", "tests/e2e/development-data.spec.ts"]);

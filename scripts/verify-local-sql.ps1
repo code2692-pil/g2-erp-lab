@@ -131,6 +131,8 @@ function Get-MarkerResidue {
     $definitions = @(
         [pscustomobject]@{ table = "POC.SAL_SOL"; marker = "SO-R-% or SO-S-%"; where = "CD_FIRM = '1000' AND (NO_SO LIKE 'SO-R-%' OR NO_SO LIKE 'SO-S-%')" },
         [pscustomobject]@{ table = "POC.SAL_SOH"; marker = "SO-R-% or SO-S-%"; where = "CD_FIRM = '1000' AND (NO_SO LIKE 'SO-R-%' OR NO_SO LIKE 'SO-S-%')" },
+        [pscustomobject]@{ table = "POC.SAL_SOL"; marker = "G2-MPDA-%"; where = "CD_FIRM = '1000' AND NO_SO IN (SELECT NO_SO FROM POC.SAL_SOH WHERE CD_FIRM = '1000' AND DC_RMK LIKE 'G2-MPDA-%')" },
+        [pscustomobject]@{ table = "POC.SAL_SOH"; marker = "G2-MPDA-%"; where = "CD_FIRM = '1000' AND DC_RMK LIKE 'G2-MPDA-%'" },
         [pscustomobject]@{ table = "POC.PUR_POL"; marker = "PO-R-% or PO-S-%"; where = "CD_FIRM = '1000' AND (NO_PO LIKE 'PO-R-%' OR NO_PO LIKE 'PO-S-%')" },
         [pscustomobject]@{ table = "POC.PUR_POH"; marker = "PO-R-% or PO-S-%"; where = "CD_FIRM = '1000' AND (NO_PO LIKE 'PO-R-%' OR NO_PO LIKE 'PO-S-%')" },
         [pscustomobject]@{ table = "POC.PRT_WOPROC"; marker = "E2E-WO-%"; where = "CD_FIRM = '1000' AND NO_WO LIKE 'E2E-WO-%'" },
@@ -413,11 +415,32 @@ try {
                     break
                 }
             }
+            $connectionPolicyPassed = $true
             if ($writeTestsPassed) {
-                [void](Invoke-Step "5/6 SQL test: SqlServerConnectionFactoryTests" {
+                $connectionPolicyPassed = Invoke-Step "5/6 SQL test: SqlServerConnectionFactoryTests" {
                         $output = & dotnet test "server/G2Erp.Api.Tests/G2Erp.Api.Tests.csproj" --no-restore --filter "FullyQualifiedName~SqlServerConnectionFactoryTests" --logger "console;verbosity=minimal" 2>&1
                         if ($LASTEXITCODE -ne 0) { throw "dotnet test exited with code ${LASTEXITCODE}: $($output -join [Environment]::NewLine)" }
                         "SqlServerConnectionFactoryTests passed."
+                    }
+            }
+            if ($writeTestsPassed -and $connectionPolicyPassed) {
+                [void](Invoke-Step "5/6 SQL test: mobile-pda-sqlserver" {
+                        $previousMarker = $env:G2ERP_SQL_MARKER
+                        $previousTestFile = $env:PLAYWRIGHT_TEST_FILE
+                        $previousWorkers = $env:PLAYWRIGHT_WORKERS
+                        try {
+                            $env:G2ERP_SQL_MARKER = "G2-MPDA-$([Guid]::NewGuid().ToString('N'))"
+                            $env:PLAYWRIGHT_TEST_FILE = "tests/e2e/mobile-pda-sqlserver.spec.ts"
+                            $env:PLAYWRIGHT_WORKERS = "1"
+                            $output = & node "scripts/run-mode.mjs" "test" "sqlserver" 2>&1
+                            if ($LASTEXITCODE -ne 0) { throw "SQL mobile/PDA Playwright exited with code ${LASTEXITCODE}: $($output -join [Environment]::NewLine)" }
+                            "mobile-pda-sqlserver passed."
+                        }
+                        finally {
+                            $env:G2ERP_SQL_MARKER = $previousMarker
+                            $env:PLAYWRIGHT_TEST_FILE = $previousTestFile
+                            $env:PLAYWRIGHT_WORKERS = $previousWorkers
+                        }
                     })
             }
         }

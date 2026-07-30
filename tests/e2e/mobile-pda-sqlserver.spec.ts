@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type APIRequestContext } from "@playwright/test";
 
 const apiBaseUrl = "http://127.0.0.1:5080";
 const marker = process.env.G2ERP_SQL_MARKER;
@@ -7,6 +7,31 @@ function requireMarker() {
   expect(marker, "G2ERP_SQL_MARKER must identify this isolated local SQL Server test row.").toMatch(/^G2-MPDA-[A-Za-z0-9-]+$/);
   return marker!;
 }
+
+async function cleanupMarkedOrders(request: APIRequestContext, testMarker: string) {
+  const listResponse = await request.get(`${apiBaseUrl}/api/sales-orders`);
+  if (!listResponse.ok()) throw new Error(`Marker cleanup could not read sales orders: HTTP ${listResponse.status()}.`);
+  const orders = await listResponse.json() as Array<{ Header: { CD_FIRM: string; NO_SO: string; DC_RMK: string } }>;
+  const matches = orders.filter((current) => current.Header.CD_FIRM === "1000" && current.Header.DC_RMK === testMarker);
+  for (const current of matches) {
+    const deleteResponse = await request.delete(`${apiBaseUrl}/api/sales-orders/1000/${current.Header.NO_SO}`);
+    if (!deleteResponse.ok() && deleteResponse.status() !== 404) {
+      throw new Error(`Marker cleanup could not delete ${current.Header.NO_SO}: HTTP ${deleteResponse.status()}.`);
+    }
+  }
+  const verifyResponse = await request.get(`${apiBaseUrl}/api/sales-orders`);
+  if (!verifyResponse.ok()) throw new Error(`Marker cleanup could not verify sales orders: HTTP ${verifyResponse.status()}.`);
+  const remaining = await verifyResponse.json() as Array<{ Header: { CD_FIRM: string; DC_RMK: string } }>;
+  if (remaining.some((current) => current.Header.CD_FIRM === "1000" && current.Header.DC_RMK === testMarker)) {
+    throw new Error(`Marker cleanup left the SQL Server sales order '${testMarker}'.`);
+  }
+}
+
+test.describe.configure({ mode: "serial" });
+
+test.afterAll(async ({ request }) => {
+  if (marker) await cleanupMarkedOrders(request, marker);
+});
 
 async function saveCompactOrder(page: import("@playwright/test").Page, prefix: "mobile-sales" | "pda-sales", method: "POST" | "PUT") {
   const response = page.waitForResponse((current) =>

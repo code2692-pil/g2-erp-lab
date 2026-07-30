@@ -31,3 +31,21 @@
 성공 시 마지막 출력은 `RC2 FULL REGRESSION: PASS`, 종료 코드는 0이다. 실패 시 `RC2 FULL REGRESSION: FAIL`, 종료 코드는 1이며, 이후 단계는 실행하지 않는다. SQL worker 결과에는 encrypted TCP/TLS, API endpoint, 11개 marker scope, runner 종료와 5173/5080 해제 상태가 별도로 기록된다.
 
 이 명령은 worker 설치·재시작, SQL Server 설정 변경, 인증서 변경, 자동 데이터 정리, push, PR, merge, rebase, 배포를 수행하지 않는다.
+
+## 2026-07-31 실행 결과
+
+- 기준: `test/rc2-full-regression-evidence-v1` / `838c930e1e4b5ea4e8668213fe15d85a324a6397`
+- 실행: 2026-07-31 05:24:36–05:42:06 KST, 1,049.9초
+- 최종: `RC2 FULL REGRESSION: PASS` (exit 0), 23개 단계 모두 PASS
+- TypeScript typecheck, production build, bundle budget, PowerShell parser·validate 모두 PASS
+- Node 단위/QA: Grid 17건, AI 파일 인텔리전스 14건, bundle budget 8건, maintenance 17건 PASS
+- .NET: solution build 경고 0·오류 0, 비SQL API 테스트 49건 PASS
+- Playwright: Mock core 50건, InMemory core, Mock UX, production-contract, InMemory mobile/PDA 묶음 모두 PASS
+- SQL request: `b0dc3e97-b69c-4388-8bed-7747dcd5c27b`, `PASS` / exit 0
+  - `tcp:localhost,1433` encrypted TCP/TLS probe PASS
+  - development status, sales orders, purchase orders, work orders GET 모두 HTTP 200
+  - 발주·수주·작업지시 SQL 통합, 연결 정책, mobile/PDA SQL cross 모두 PASS
+  - 11개 marker scope는 실행 전·후 모두 0건
+  - runner 종료와 5173/5080 포트 해제를 확인
+
+원본 요약은 [latest-summary.json](../../.local-runtime/rc2-full-regression/latest-summary.json)과 해당 로그 디렉터리에 남는다. `.local-runtime`은 의도적으로 Git 추적에서 제외된다.

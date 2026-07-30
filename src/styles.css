@@ -1,8 +1,10 @@
 :root {
   color: #1d2733;
   font-family:
-    "Segoe UI",
+    "Segoe UI Variable",
     "Noto Sans KR",
+    "Malgun Gothic",
+    "Segoe UI",
     Arial,
     sans-serif;
   background: #edf1f5;
@@ -14,6 +16,7 @@
 
 body {
   margin: 0;
+  line-height: 1.45;
 }
 
 button,
@@ -3694,4 +3697,91 @@ button:disabled {
   background: #ffffff;
   color: #1d5b8f;
   cursor: pointer;
+}
+
+/* RC2 usability pass: retain the compact ERP density while making state and keyboard use easier to follow. */
+:root {
+  --erp-font-ui: "Segoe UI Variable", "Noto Sans KR", "Malgun Gothic", "Segoe UI", Arial, sans-serif;
+  --erp-line-height: 1.45;
+  --erp-focus-width: 3px;
+  --erp-focus-offset: 2px;
+}
+
+body,
+button,
+input,
+select,
+textarea {
+  font-family: var(--erp-font-ui);
+}
+
+textarea {
+  min-width: 0;
+  border-color: var(--erp-border-strong);
+}
+
+textarea:focus-visible {
+  border-color: var(--erp-focus);
+  outline: var(--erp-focus-width) solid var(--erp-focus-ring);
+  outline-offset: var(--erp-focus-offset);
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+.erp-data-grid__row:focus-visible,
+.compact-sales__order-card:focus-visible {
+  scroll-margin-block: 12px;
+}
+
+.erp-data-grid__empty-cell,
+.compact-sales__empty {
+  line-height: var(--erp-line-height);
+}
+
+.compact-sales__actions {
+  box-shadow: 0 -8px 18px rgb(243 246 250 / 82%);
+}
+
+.compact-sales__actions button:focus-visible,
+.compact-sales__nav button:focus-visible,
+.compact-sales__input-action > button:focus-visible,
+.compact-sales__line-title > button:focus-visible {
+  outline: var(--erp-focus-width) solid #9fd3ff;
+  outline-offset: 2px;
+}
+
+@media (prefers-contrast: more) {
+  .page-header,
+  .search-panel,
+  .grid-section,
+  .erp-data-grid__header,
+  .erp-data-grid__cell,
+  .compact-sales__search,
+  .compact-sales__section,
+  .compact-sales__results,
+  .compact-sales__totals,
+  .compact-sales__validation,
+  .compact-sales__order-card,
+  .compact-sales__line-card {
+    border-color: #607286;
+  }
+
+  .erp-data-grid__row--selected .erp-data-grid__cell,
+  .erp-data-grid__row--selected .erp-data-grid__row-number-cell,
+  .erp-data-grid__row--selected .erp-data-grid__checkbox-cell {
+    box-shadow: inset 4px 0 0 #164d7d;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }

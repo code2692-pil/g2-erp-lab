@@ -115,8 +115,7 @@ test("Gate 12-12: failed intent preload keeps the current screen and recovers on
     await expect.poll(async () => (await page.getByTestId("purchase-page-title").count()) + (await page.getByTestId("app-page-load-error").count())).toBeGreaterThan(0);
     if (await page.getByTestId("app-page-load-error").count()) {
       await page.getByRole("button", { name: "다시 시도" }).click();
-      await expect(page.getByTestId("page-title")).toHaveText("수주등록");
-      await page.getByTestId("nav-purchase-order").click();
+      await expect(page).toHaveURL(/\/purchase-orders$/);
     }
     await expect(page.getByTestId("purchase-page-title")).toHaveText("발주등록");
 

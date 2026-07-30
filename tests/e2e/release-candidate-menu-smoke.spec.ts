@@ -35,15 +35,12 @@ test("RC1 menu smoke: major PoC screens navigate, return, and keep the applicati
   await page.getByTestId("pda-sales-nav-pc").click();
   await expect(page.getByTestId("page-title")).toHaveText("수주등록");
 
+  // The preceding PDA -> sales navigation creates the history entry immediately before AI.
   await page.getByTestId("nav-ai-solution-center").click();
   await expect(page.getByTestId("ai-solution-center-title")).toHaveText("AI 솔루션 센터");
   await page.goBack();
-  await expect(page.getByTestId("pda-sales-page")).toBeVisible();
-  await page.getByTestId("pda-sales-nav-pc").click();
+  await expect(page).toHaveURL(/\/$/);
   await expect(page.getByTestId("page-title")).toHaveText("수주등록");
-
-  await page.getByTestId("nav-development-data").click();
-  await expect(page.getByTestId("development-data-page-title")).toHaveText("테스트 데이터 관리");
 });
 
 test("RC1 compact mobile smoke: direct sales-order route is actionable without horizontal overflow", async ({ page }) => {

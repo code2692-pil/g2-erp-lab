@@ -57,7 +57,6 @@ test("Gate 12-11: one failed screen-module request exposes recovery and succeeds
 
   await page.unroute(purchaseScreenModule, failFirstPurchaseModule);
   await page.getByRole("button", { name: "다시 시도" }).click();
-  await expect(page.getByTestId("page-title")).toHaveText("수주등록");
-  await page.getByTestId("nav-purchase-order").click();
+  await expect(page).toHaveURL(/\/purchase-orders$/);
   await expect(page.getByTestId("purchase-page-title")).toHaveText("발주등록");
 });

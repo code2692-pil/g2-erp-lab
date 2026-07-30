@@ -31,6 +31,7 @@
     "qa:maintenance:scan": "node scripts/qa/collect-maintenance-signals.mjs",
     "qa:maintenance:report": "node scripts/qa/build-maintenance-report.mjs",
     "qa:quality:quick": "node scripts/qa/run-quality-gates.mjs quick",
+    "qa:rc2:preflight": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/verify-rc2-preflight.ps1",
     "qa:sql:local": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/verify-local-sql.ps1",
     "qa:sql:worker:install": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install-local-sql-verify-worker.ps1",
     "qa:sql:worker:install:validate": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install-local-sql-verify-worker.ps1 -ValidateOnly",

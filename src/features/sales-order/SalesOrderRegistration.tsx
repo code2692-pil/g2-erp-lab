@@ -186,7 +186,7 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
     nmPartner: ""
   });
   const { confirm } = useConfirm();
-  const { isDirty, markDirty, clearDirty } = useDirtyState();
+  const { isDirty, markDirty, clearDirty } = useDirtyState({ label: "수주 등록", saving: isSaving });
   const { notify } = useNotification();
 
   const confirmDiscardChanges = () =>
@@ -752,40 +752,11 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
     });
   };
 
-  const handleNavigateToPurchase = async () => {
-    if (!(await confirmDiscardChanges())) return;
-    setValidationAttempted(false);
-    clearDirty();
-    onNavigate?.("purchase");
-  };
-
-  const handleNavigateToWorkOrder = async () => {
-    if (!(await confirmDiscardChanges())) return;
-    setValidationAttempted(false);
-    clearDirty();
-    onNavigate?.("work");
-  };
-
-  const handleNavigateToDevelopmentData = async () => {
-    if (!(await confirmDiscardChanges())) return;
-    setValidationAttempted(false);
-    clearDirty();
-    onNavigate?.("development");
-  };
-
-  const handleNavigateToAiSolutionCenter = async () => {
-    if (!(await confirmDiscardChanges())) return;
-    setValidationAttempted(false);
-    clearDirty();
-    onNavigate?.("ai");
-  };
-
-  const handleNavigateToCompactSales = async (page: "mobileSales" | "pdaSales") => {
-    if (!(await confirmDiscardChanges())) return;
-    setValidationAttempted(false);
-    clearDirty();
-    onNavigate?.(page);
-  };
+  const handleNavigateToPurchase = () => onNavigate?.("purchase");
+  const handleNavigateToWorkOrder = () => onNavigate?.("work");
+  const handleNavigateToDevelopmentData = () => onNavigate?.("development");
+  const handleNavigateToAiSolutionCenter = () => onNavigate?.("ai");
+  const handleNavigateToCompactSales = (page: "mobileSales" | "pdaSales") => onNavigate?.(page);
 
   const headerGridColumns: readonly ErpDataGridColumn<SalesOrderHeader>[] = [
     { field: "CD_FIRM", headerName: "회사코드", width: 90, dataType: "code", editable: true, required: true },

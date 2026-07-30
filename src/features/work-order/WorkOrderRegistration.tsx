@@ -199,7 +199,7 @@ export function WorkOrderRegistration({ onNavigate, onScreenIntent, showDevelopm
     executeSave,
     executeSearch
   } = useCrudPage();
-  const { isDirty, markDirty, clearDirty } = useDirtyState();
+  const { isDirty, markDirty, clearDirty } = useDirtyState({ label: "작업지시 등록", saving: isSaving });
   const { confirm } = useConfirm();
   const { notify } = useNotification();
   const markWorkOrderDirty = () => { setServerWarnings([]); markDirty(); };
@@ -620,12 +620,7 @@ export function WorkOrderRegistration({ onNavigate, onScreenIntent, showDevelopm
     notify("success", "설비 선택이 반영되었습니다.");
   };
 
-  const handleNavigate = async (page: NavigationPage) => {
-    if (!(await confirmDiscardChanges())) return;
-    setValidationAttempted(false);
-    clearDirty();
-    onNavigate(page);
-  };
+  const handleNavigate = (page: NavigationPage) => onNavigate(page);
 
   const headerColumns: readonly ErpDataGridColumn<WorkOrderHeader>[] = [
     { field: "CD_FIRM", headerName: "회사", width: 78, dataType: "code", editable: true, required: true },

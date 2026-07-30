@@ -73,7 +73,7 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, onScreenIntent,
     const [lineFocusRequest, setLineFocusRequest] = useState<ErpDataGridFocusRequest | null>(null);
     const validationFocusRequestId = useRef(0);
     const { confirm } = useConfirm();
-    const { isDirty, markDirty, clearDirty } = useDirtyState();
+    const { isDirty, markDirty, clearDirty } = useDirtyState({ label: "발주 등록", saving: isSaving });
     const { notify } = useNotification();
     const selectedHeader = headers.find((header) => header.NO_PO === selectedNoPo);
     const selectedLine = lines.find((line) => line.NO_PO === selectedNoPo && line.NO_LINE === selectedLineNo);
@@ -183,31 +183,6 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, onScreenIntent,
         return undefined;
     };
     useLayoutEffect(() => registerErpDataGridPasteHandler("purchase-line-grid", handleLinePaste, (pasteMessage) => notify("error", pasteMessage)), [handleLinePaste, notify]);
-    useEffect(() => {
-    const guardNavigation = async (event: MouseEvent) => {
-            const button = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-testid^='nav-']") : null;
-            const nextPage = button?.dataset.testid === "nav-sales-order"
-                ? "sales"
-                : button?.dataset.testid === "nav-work-order"
-                    ? "work"
-                : button?.dataset.testid === "nav-development-data"
-                    ? "development"
-                    : button?.dataset.testid === "nav-ai-solution-center"
-                        ? "ai"
-                        : null;
-            if (!nextPage || !isDirty)
-                return;
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            if (!(await confirmDiscardChanges()))
-                return;
-            setValidationAttempted(false);
-            clearDirty();
-            onNavigate(nextPage);
-        };
-        document.addEventListener("click", guardNavigation, true);
-        return () => document.removeEventListener("click", guardNavigation, true);
-    }, [clearDirty, confirmDiscardChanges, isDirty, onNavigate]);
     const handleSearch = async () => {
         if (!(await confirmDiscardChanges())) return;
         setFeatureMessage("");
@@ -339,10 +314,8 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, onScreenIntent,
             successMessage: "저장되었습니다.",
             errorMessage: "저장 중 오류가 발생했습니다. 입력값을 확인하고 다시 시도하세요."
         }); };
-    const navigateWorkOrder = async () => { if (!(await confirmDiscardChanges()))
-        return; setValidationAttempted(false); clearDirty(); onNavigate("work"); };
-    const navigateAiSolutionCenter = async () => { if (!(await confirmDiscardChanges()))
-        return; setValidationAttempted(false); clearDirty(); onNavigate("ai"); };
+    const navigateWorkOrder = () => onNavigate("work");
+    const navigateAiSolutionCenter = () => onNavigate("ai");
     const handleDelete = async () => { if (!selectedNoPo || !selectedHeader) {
         setMessage("선택된 항목이 없습니다.");
         notify("info", "선택된 항목이 없습니다.");

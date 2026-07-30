@@ -4,9 +4,10 @@ import type { ConfirmationOptions } from "./types";
 
 interface Props extends ConfirmationOptions { open: boolean; pending?: boolean; onConfirm: () => void; onCancel: () => void; }
 
-export function ConfirmDialog({ open, pending = false, title, message, description, confirmLabel = "확인", cancelLabel = "취소", danger = false, onConfirm, onCancel }: Props) {
+export function ConfirmDialog({ open, pending = false, title, message, description, confirmLabel = "확인", cancelLabel = "취소", danger = false, showCancel = true, onConfirm, onCancel }: Props) {
   const cancelRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => { if (open) queueMicrotask(() => cancelRef.current?.focus()); }, [open]);
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => { if (open) queueMicrotask(() => (showCancel ? cancelRef.current : confirmRef.current)?.focus()); }, [open, showCancel]);
   useEffect(() => {
     if (!open) return;
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -16,5 +17,5 @@ export function ConfirmDialog({ open, pending = false, title, message, descripti
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [open, pending, onCancel, onConfirm]);
-  return <ErpDialog open={open} title={title} onClose={pending ? () => undefined : onCancel} dataTestId="confirm-dialog" footer={<><button data-testid="confirm-dialog-confirm" type="button" className={danger ? "danger" : "primary"} onClick={onConfirm} disabled={pending}>{pending ? "처리 중..." : confirmLabel}</button><button data-testid="confirm-dialog-cancel" ref={cancelRef} type="button" onClick={onCancel} disabled={pending}>{cancelLabel}</button></>}><p>{message}</p>{description && <p className="muted">{description}</p>}</ErpDialog>;
+  return <ErpDialog open={open} title={title} onClose={pending ? () => undefined : onCancel} dataTestId="confirm-dialog" footer={<><button data-testid="confirm-dialog-confirm" ref={confirmRef} type="button" className={danger ? "danger" : "primary"} onClick={onConfirm} disabled={pending}>{pending ? "처리 중..." : confirmLabel}</button>{showCancel && <button data-testid="confirm-dialog-cancel" ref={cancelRef} type="button" onClick={onCancel} disabled={pending}>{cancelLabel}</button>}</>}><p>{message}</p>{description && <p className="muted">{description}</p>}</ErpDialog>;
 }

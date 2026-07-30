@@ -1,10 +1,12 @@
-import { Component, Suspense, useEffect, useState, type ReactNode } from "react";
+import { Component, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { apiPurchaseOrderAdapter } from "./features/purchase-order/apiPurchaseOrderAdapter";
 import { mockPurchaseOrderAdapter } from "./features/purchase-order/mockPurchaseOrderAdapter";
 import { SalesOrderRegistration } from "./features/sales-order/SalesOrderRegistration";
 import { isApiMode } from "./api/apiClient";
 import { canShowDevelopmentDataManagerClient, developmentDataApi } from "./api/developmentDataApi";
 import { preloadScreenModule, screenModules, type ScreenModuleId } from "./screenModules";
+import { DirtyNavigationProvider, useDirtyNavigation } from "./navigation/DirtyNavigationProvider";
+import { navigationDelta, readAppHistoryEntry, type AppHistoryEntry, withAppHistoryEntry } from "./navigation/appHistory";
 
 const PurchaseOrderRegistration = screenModules.purchase.component;
 const WorkOrderRegistration = screenModules.work.component;
@@ -17,13 +19,25 @@ type AppPage = "sales" | "mobileSales" | "pdaSales" | "purchase" | "work" | "dev
 function pageFromPath(pathname: string): AppPage {
   if (pathname === "/mobile/sales-orders") return "mobileSales";
   if (pathname === "/pda/sales-orders") return "pdaSales";
+  if (pathname === "/purchase-orders") return "purchase";
+  if (pathname === "/work-orders") return "work";
+  if (pathname === "/development-data") return "development";
+  if (pathname === "/ai-solution-center") return "ai";
   return "sales";
 }
 
 function pathForPage(page: AppPage) {
   if (page === "mobileSales") return "/mobile/sales-orders";
   if (page === "pdaSales") return "/pda/sales-orders";
+  if (page === "purchase") return "/purchase-orders";
+  if (page === "work") return "/work-orders";
+  if (page === "development") return "/development-data";
+  if (page === "ai") return "/ai-solution-center";
   return "/";
+}
+
+function historyEntry(page: AppPage, index: number): AppHistoryEntry<AppPage> {
+  return { version: 1, id: `g2erp-${crypto.randomUUID()}`, index, page };
 }
 
 function PageLoadingFallback() {
@@ -59,9 +73,13 @@ class PageLoadErrorBoundary extends Component<{ children: ReactNode }, { hasErro
   }
 }
 
-export default function App() {
+function AppRouter() {
   const [page, setPage] = useState<AppPage>(() => pageFromPath(window.location.pathname));
   const [showDevelopmentDataManager, setShowDevelopmentDataManager] = useState(false);
+  const currentEntryRef = useRef<AppHistoryEntry<AppPage> | null>(null);
+  const restoreTargetRef = useRef<AppHistoryEntry<AppPage> | null>(null);
+  const replayTargetRef = useRef<AppHistoryEntry<AppPage> | null>(null);
+  const { requestNavigation } = useDirtyNavigation();
   const purchaseOrderAdapter = isApiMode() ? apiPurchaseOrderAdapter : mockPurchaseOrderAdapter;
 
   useEffect(() => {
@@ -73,16 +91,64 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const handlePopState = () => setPage(pageFromPath(window.location.pathname));
+    const existing = readAppHistoryEntry<AppPage>(window.history.state);
+    const initial = existing ?? historyEntry(pageFromPath(window.location.pathname), 0);
+    if (!existing) window.history.replaceState(withAppHistoryEntry(window.history.state, initial), "", window.location.href);
+    currentEntryRef.current = initial;
+
+    const applyTarget = (target: AppHistoryEntry<AppPage>) => {
+      currentEntryRef.current = target;
+      setPage(target.page);
+    };
+
+    const handlePopState = (event: PopStateEvent) => {
+      const target = readAppHistoryEntry<AppPage>(event.state);
+      const current = currentEntryRef.current;
+      if (!target || !current) {
+        setPage(pageFromPath(window.location.pathname));
+        return;
+      }
+      if (replayTargetRef.current?.id === target.id) {
+        replayTargetRef.current = null;
+        applyTarget(target);
+        return;
+      }
+      if (restoreTargetRef.current && target.id === current.id) {
+        const intendedTarget = restoreTargetRef.current;
+        restoreTargetRef.current = null;
+        requestNavigation({
+          id: `history-${intendedTarget.id}`,
+          targetLabel: "이전 화면",
+          execute: () => {
+            replayTargetRef.current = intendedTarget;
+            window.history.go(navigationDelta(current, intendedTarget));
+          }
+        });
+        return;
+      }
+      if (target.id === current.id) return;
+      restoreTargetRef.current = target;
+      window.history.go(-navigationDelta(current, target));
+    };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
-  }, []);
+  }, [requestNavigation]);
 
-  const navigate = (nextPage: AppPage) => {
+  const commitNavigation = useCallback((nextPage: AppPage) => {
+    const current = currentEntryRef.current ?? historyEntry(page, 0);
     const nextPath = pathForPage(nextPage);
-    if (window.location.pathname !== nextPath) window.history.pushState({}, "", nextPath);
+    if (window.location.pathname !== nextPath) {
+      const nextEntry = historyEntry(nextPage, current.index + 1);
+      window.history.pushState(withAppHistoryEntry(window.history.state, nextEntry), "", nextPath);
+      currentEntryRef.current = nextEntry;
+    }
     setPage(nextPage);
-  };
+  }, [page]);
+
+  const navigate = useCallback((nextPage: AppPage) => {
+    if (nextPage === page) return;
+    requestNavigation({ id: `app-${nextPage}`, targetLabel: nextPage, execute: () => commitNavigation(nextPage) });
+  }, [commitNavigation, page, requestNavigation]);
 
   const handleScreenIntent = (screen: ScreenModuleId) => {
     void preloadScreenModule(screen).catch(() => {
@@ -109,4 +175,8 @@ export default function App() {
       </Suspense>
     </PageLoadErrorBoundary>
   );
+}
+
+export default function App() {
+  return <DirtyNavigationProvider><AppRouter /></DirtyNavigationProvider>;
 }

@@ -156,7 +156,7 @@ export function CompactSalesOrderPage({ mode, onNavigate }: Props) {
   const addItemButtonRef = useRef<HTMLButtonElement>(null);
   const validationRefs = useRef(new Map<string, HTMLElement>());
   const { confirm } = useConfirm();
-  const { isDirty, markDirty, clearDirty } = useDirtyState();
+  const { isDirty, markDirty, clearDirty } = useDirtyState({ label: mode === "mobile" ? "모바일 수주 등록" : "PDA 수주 등록", saving: operation === "saving" || operation === "deleting" });
 
   const abortActiveQuery = () => {
     latestQuerySequenceRef.current += 1;
@@ -636,13 +636,7 @@ export function CompactSalesOrderPage({ mode, onNavigate }: Props) {
     }
   };
 
-  const navigate = async (page: SalesPage) => {
-    if (!(await confirmDiscard())) return;
-    abortActiveQuery();
-    setOperation("idle");
-    clearDirty();
-    onNavigate(page);
-  };
+  const navigate = (page: SalesPage) => onNavigate(page);
 
   const returnToList = async () => {
     if (!(await confirmDiscard())) return;

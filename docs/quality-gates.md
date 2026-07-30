@@ -19,3 +19,9 @@ The runner does not increase timeout or retry values, does not run SQL Server, a
 The SQL verification is delegated to the installed worker; the preflight does not duplicate its TCP/TLS probe, marker checks, runner/API smoke, or SQL integration tests. A process lock in the ignored `.local-runtime/rc2-preflight` directory prevents overlapping preflight runs. Use `-AllowDirty` only while validating uncommitted development work.
 
 The command stops on the first failing step, prints duration and exit status for every completed step, and ends with exactly `RC2 PREFLIGHT: PASS` or `RC2 PREFLIGHT: FAIL`.
+
+## RC2 full regression
+
+`pnpm run qa:rc2:full` is the release-delivery evidence command. It requires a clean tree, records an individual log and a JSON summary under the ignored `.local-runtime/rc2-full-regression/` directory, and stops at the first failure. It covers PowerShell parsing and safe validation modes, package metadata, static SQL safety checks, TypeScript, production build and bundle budget, Node unit/QA suites, the non-SQL .NET test set, the configured Mock/InMemory PC/mobile/PDA Playwright groups, and one installed SQL worker request.
+
+The SQL worker remains the only step that touches the local SQL Server. It performs the encrypted TCP/TLS probe, marker checks, SQL runner/API smoke, integration tests, and post-test residue verification once. The full command requires its result to pass, verifies that 5173 and 5080 are free afterwards, and ends with exactly `RC2 FULL REGRESSION: PASS` or `RC2 FULL REGRESSION: FAIL`. It never installs, restarts, or removes the worker.

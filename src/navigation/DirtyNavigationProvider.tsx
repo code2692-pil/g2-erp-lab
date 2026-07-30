@@ -75,7 +75,7 @@ export function DirtyNavigationProvider({ children }: { children: ReactNode }) {
     <ConfirmDialog
       open={modal === "discard"}
       title="저장되지 않은 변경사항"
-      message="저장되지 않은 변경사항이 있습니다."
+      message="저장하지 않은 변경사항이 있습니다."
       description={discardDescription(snapshot)}
       confirmLabel="변경사항 버리기"
       cancelLabel="계속 편집"

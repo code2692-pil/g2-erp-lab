@@ -33,7 +33,7 @@
 - 길이: `id` 100자, `title` 200자, `category` 100자, 키워드 하나 100자, 그 외 배열 문장 하나 1,000자
 - 배열: 필드별 최대 30개
 
-[company-knowledge-sample.json](/C:/Users/82103/multi-agents-Projects/G2-ERP-Lab/docs/ai-solution-center/company-knowledge-sample.json)은 민감정보가 없는 PoC 예시입니다. 실제 회사 확정 규칙이 아닙니다.
+[company-knowledge-sample.json](company-knowledge-sample.json)은 민감정보가 없는 PoC 예시입니다. 실제 회사 확정 규칙이 아닙니다.
 
 ## 작성·검토 절차
 

@@ -16,12 +16,12 @@ interface PageToolbarProps {
 
 export function PageToolbar({ actions, processing = false }: PageToolbarProps) {
   return (
-    <div className="button-bar">
+    <div aria-busy={processing} className="button-bar" data-processing-state={processing ? "processing" : "idle"}>
       {actions.map((action) => (
         <button
           className={action.variant === "primary" ? "primary" : action.variant === "danger" ? "danger" : undefined}
           data-testid={action.dataTestId}
-          disabled={processing || action.disabled}
+          disabled={action.disabled}
           key={action.dataTestId}
           onClick={action.onClick}
           type="button"

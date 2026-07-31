@@ -1,0 +1,41 @@
+[
+  {
+    "id": "poc-material-lot-001",
+    "title": "PoC 예시: 자재 LOT 연결 관리",
+    "category": "자재",
+    "keywords": ["자재", "입고", "LOT", "공급업체"],
+    "symptoms": ["공급업체 LOT와 내부 LOT 기준이 서로 다릅니다."],
+    "recommendations": ["공급업체 LOT와 내부 관리 LOT의 연결 관계를 기록합니다."],
+    "alternatives": ["초기에는 공급업체 LOT를 그대로 사용하고 이후 내부 LOT 전환 기준을 검토합니다."],
+    "requiredInformation": ["공급업체 LOT 형식", "입고검사 시점", "분할·합병 처리 기준"],
+    "risks": ["LOT 연결 관계가 누락되면 이후 추적 범위가 제한될 수 있습니다."],
+    "applicableProcesses": ["입고", "자재", "검사"],
+    "confidenceWeight": 0.85
+  },
+  {
+    "id": "poc-critical-process-002",
+    "title": "PoC 예시: 중요 공정 처리 점검",
+    "category": "공정",
+    "keywords": ["중요 공정", "작업실적", "검사", "이상"],
+    "symptoms": ["중요 공정의 실적과 검사 결과를 한 번에 확인하기 어렵습니다."],
+    "recommendations": ["중요 공정의 작업실적과 검사 결과를 같은 추적 기준으로 연결합니다."],
+    "alternatives": ["반복 이슈가 있는 공정부터 시범 적용합니다."],
+    "requiredInformation": ["중요 공정 선정 기준", "검사 책임자", "이상 처리 흐름"],
+    "risks": ["모든 공정에 같은 입력을 요구하면 현장 부담이 커질 수 있습니다."],
+    "applicableProcesses": ["작업지시", "공정", "검사"],
+    "confidenceWeight": 0.78
+  },
+  {
+    "id": "poc-quality-corrective-003",
+    "title": "PoC 예시: 검사 부적합 시정조치 확인",
+    "category": "검사",
+    "keywords": ["검사", "부적합", "시정조치", "재검"],
+    "symptoms": ["부적합 이후 조치와 재검 결과가 흩어져 있습니다."],
+    "recommendations": ["부적합 등록부터 시정조치와 재검까지 상태 이력을 연결합니다."],
+    "alternatives": ["중대 부적합과 반복 불량부터 우선 관리합니다."],
+    "requiredInformation": ["부적합 분류", "조치 책임자", "재검 기준"],
+    "risks": ["재검 근거가 없으면 시정조치 효과를 확인하기 어렵습니다."],
+    "applicableProcesses": ["검사", "부적합", "시정조치"],
+    "confidenceWeight": 0.8
+  }
+]

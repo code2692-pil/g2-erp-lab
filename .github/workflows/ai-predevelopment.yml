@@ -1,0 +1,55 @@
+name: Guarded AI predevelopment
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidateId:
+        description: Candidate ID from the decision queue
+        required: true
+        type: string
+      risk:
+        description: Green or Yellow only; Red is blocked
+        required: true
+        default: Green
+        type: choice
+        options: [Green, Yellow, Red]
+      analysisOnly:
+        description: Keep analysis only (default safe mode)
+        required: true
+        default: true
+        type: boolean
+      enablePredevelopment:
+        description: Requires explicit human enablement; no commit, push, merge, or deployment is performed
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  guarded-analysis:
+    runs-on: ubuntu-latest
+    env:
+      AI_PREDEVELOPMENT_ENABLED: ${{ inputs.enablePredevelopment }}
+      CANDIDATE_RISK: ${{ inputs.risk }}
+      ANALYSIS_ONLY: ${{ inputs.analysisOnly }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Always produce an analysis report
+        run: node scripts/qa/verify-maintenance-boundaries.mjs --mode ANALYZE --category "$CANDIDATE_RISK"
+      - name: Guard PREDEVELOP eligibility
+        if: ${{ inputs.enablePredevelopment && !inputs.analysisOnly }}
+        continue-on-error: true
+        run: node scripts/qa/verify-maintenance-boundaries.mjs --mode PREDEVELOP --category "$CANDIDATE_RISK"
+      - name: Record safe non-execution
+        run: |
+          mkdir -p .artifacts/maintenance
+          printf '{"candidate":"review-only","codexExecution":"not-configured","commit":"not-created","push":"not-performed","merge":"not-performed","deployment":"not-performed"}\n' > .artifacts/maintenance/ai-predevelopment-result.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: guarded-ai-predevelopment-report
+          path: .artifacts/maintenance/

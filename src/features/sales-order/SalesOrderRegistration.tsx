@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Building2,
   ChevronRight,
@@ -10,17 +10,18 @@ import {
   Trash2
 } from "lucide-react";
 import { ErpDataGrid } from "../../components/common/ErpDataGrid";
-import type { ErpDataGridColumn, ErpDataGridCellValue } from "../../components/common/ErpDataGrid";
-import { ErpDialog } from "../../components/common/ErpDialog";
+import { DirtyIndicator } from "../../components/common/DirtyIndicator";
+import type { ErpDataGridColumn, ErpDataGridCellValue, ErpDataGridFocusRequest, ErpDataGridPasteRequest } from "../../components/common/ErpDataGrid";
+import { parseErpGridPasteDate, parseErpGridPasteNumber } from "../../components/common/erpGridPaste";
 import { ErpLookupDialog } from "../../components/common/ErpLookupDialog";
+import { ErpValidationSummary } from "../../components/common/ErpValidationSummary";
 import { PageToolbar } from "../../components/common/PageToolbar";
 import { SearchPanel } from "../../components/common/SearchPanel";
-import { toValidationCellErrors, type ValidationIssue } from "../../components/common/validation/validation";
+import { sortValidationIssues, toValidationCellErrors, type ValidationIssue } from "../../components/common/validation/validation";
 import { mockItems } from "../common-code/item/mockData";
 import type { Item } from "../common-code/item/types";
 import { mockPartners } from "../common-code/partner/mockData";
 import type { Partner } from "../common-code/partner/types";
-import { mockSalesOrderHeaders, mockSalesOrderLines } from "./mockData";
 import { MailOrderImportDialog } from "../mail-order/MailOrderImportDialog";
 import { mapParsedOrderToSalesOrder } from "../mail-order/mailMapping";
 import type { MailParseResult } from "../mail-order/types";
@@ -36,16 +37,25 @@ import { isApiMode } from "../../api/apiClient";
 import { getItems } from "../../api/itemApi";
 import { getPartners } from "../../api/partnerApi";
 import {
-  createSalesOrder,
-  deleteSalesOrder,
-  getSalesOrders,
-  updateSalesOrder
-} from "../../api/salesOrderApi";
+  deleteSalesOrderRecord,
+  loadSalesOrderRecords,
+  replaceMockSalesOrderRecords,
+  saveSalesOrderRecord
+} from "./salesOrderDataService";
+import {
+  createEmptySalesOrderHeader,
+  createEmptySalesOrderLine,
+  createSavedSalesOrderNo,
+  createTempSalesOrderNo,
+  getNextSavedSalesOrderIndex,
+  salesOrderToday
+} from "./salesOrderDraft";
 import { useCrudPage } from "../../hooks/useCrudPage";
 import { useConfirm } from "../../hooks/useConfirm";
 import { useDirtyState } from "../../hooks/useDirtyState";
 import { useNotification } from "../../hooks/useNotification";
 import { useMasterDetailSelection } from "../../hooks/useMasterDetailSelection";
+import type { ScreenModuleId } from "../../screenModules";
 
 type HeaderEditableField = Exclude<keyof SalesOrderHeader, "NO_SO">;
 type LineEditableField = Exclude<
@@ -55,6 +65,8 @@ type LineEditableField = Exclude<
 
 const statusOptions: SalesOrderStatus[] = ["신규", "진행", "확정", "마감"];
 const money = new Intl.NumberFormat("ko-KR");
+const salesHeaderValidationOrder = ["CD_FIRM", "DT_SO", "CD_PARTNER"];
+const salesLineValidationOrder = ["CD_ITEM", "QT_SO", "UM_SO", "DT_DLV"];
 
 const partnerLookupColumns: readonly ErpDataGridColumn<Partner>[] = [
   { field: "CD_FIRM", headerName: "회사코드", width: 90, align: "center" },
@@ -79,61 +91,6 @@ const partnerSearchFields: readonly (keyof Partner)[] = [
   "NO_COMPANY"
 ];
 const itemSearchFields: readonly (keyof Item)[] = ["CD_ITEM", "NM_ITEM", "STND_ITEM"];
-
-function today() {
-  const now = new Date();
-  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 10);
-}
-
-function createTempOrderNo(index: number) {
-  return `TEMP_SO_${String(index).padStart(3, "0")}`;
-}
-
-function createSavedOrderNo(yearMonth: string, index: number) {
-  return `SO${yearMonth}${String(index).padStart(4, "0")}`;
-}
-
-function getNextSavedOrderIndex(headers: SalesOrderHeader[], yearMonth: string) {
-  const numbers = headers
-    .map((header) => header.NO_SO.match(new RegExp(`^SO${yearMonth}(\\d{4})$`))?.[1])
-    .filter((value): value is string => Boolean(value))
-    .map(Number);
-
-  return numbers.length === 0 ? 1 : Math.max(...numbers) + 1;
-}
-
-function createEmptyHeader(noSo: string): SalesOrderHeader {
-  return {
-    CD_FIRM: "1000",
-    NO_SO: noSo,
-    DT_SO: today(),
-    CD_PARTNER: "",
-    NM_PARTNER: "",
-    CD_EMP: "",
-    ST_SO: "신규",
-    DC_RMK: ""
-  };
-}
-
-function createEmptyLine(header: SalesOrderHeader, noLine: number): SalesOrderLine {
-  return {
-    CD_FIRM: header.CD_FIRM,
-    NO_SO: header.NO_SO,
-    NO_LINE: noLine,
-    CD_ITEM: "",
-    NM_ITEM: "",
-    STND_ITEM: "",
-    UNIT_ITEM: "",
-    QT_SO: 0,
-    UM_SO: 0,
-    AM_SUPPLY: 0,
-    AM_VAT: 0,
-    AM_TOTAL: 0,
-    DT_DLV: today(),
-    DC_RMK: ""
-  };
-}
 
 function statusClass(status: SalesOrderStatus) {
   const classMap: Record<SalesOrderStatus, string> = {
@@ -176,11 +133,17 @@ function isLineEditableField(field: keyof SalesOrderLine): field is LineEditable
 }
 
 interface SalesOrderRegistrationProps {
-  onNavigate?: (page: "sales" | "purchase" | "work" | "development") => void;
+  onNavigate?: (page: "sales" | "mobileSales" | "pdaSales" | "purchase" | "work" | "development" | "ai") => void;
+  onScreenIntent?: (screen: ScreenModuleId) => void;
   showDevelopmentDataManager?: boolean;
 }
 
-export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager = false }: SalesOrderRegistrationProps) {
+export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelopmentDataManager = false }: SalesOrderRegistrationProps) {
+  const screenIntentProps = (screen: ScreenModuleId) => ({
+    onMouseEnter: () => onScreenIntent?.(screen),
+    onFocus: () => onScreenIntent?.(screen),
+    onPointerDown: () => onScreenIntent?.(screen)
+  });
   const [headers, setHeaders] = useState<SalesOrderHeader[]>([]);
   const [lines, setLines] = useState<SalesOrderLine[]>([]);
   const {
@@ -192,6 +155,7 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
   const {
     isLoading,
     isSaving,
+    operation,
     message,
     setMessage,
     setFeatureMessage,
@@ -201,10 +165,14 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
     executeDelete
   } = useCrudPage();
   const [checkedLineKeys, setCheckedLineKeys] = useState<string[]>([]);
+  const [lineFocusRequest, setLineFocusRequest] = useState<ErpDataGridFocusRequest | null>(null);
+  const [headerFocusRequest, setHeaderFocusRequest] = useState<ErpDataGridFocusRequest | null>(null);
+  const lineFocusRequestId = useRef(0);
   const [tempSeq, setTempSeq] = useState(1);
   const [partnerLookupOpen, setPartnerLookupOpen] = useState(false);
   const [itemLookupOpen, setItemLookupOpen] = useState(false);
-  const [validationDialogOpen, setValidationDialogOpen] = useState(false);
+  const itemLookupLineKeyRef = useRef<string | null>(null);
+  const [validationAttempted, setValidationAttempted] = useState(false);
   const [mailImportOpen, setMailImportOpen] = useState(false);
   const [appliedMailIds, setAppliedMailIds] = useState<string[]>([]);
   const [selectedPartnerRowKey, setSelectedPartnerRowKey] = useState<string | null>(null);
@@ -218,7 +186,7 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
     nmPartner: ""
   });
   const { confirm } = useConfirm();
-  const { isDirty, markDirty, clearDirty } = useDirtyState();
+  const { isDirty, markDirty, clearDirty } = useDirtyState({ label: "수주 등록", saving: isSaving });
   const { notify } = useNotification();
 
   const confirmDiscardChanges = () =>
@@ -234,10 +202,14 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
       : Promise.resolve(true);
 
   const selectedHeader = headers.find((header) => header.NO_SO === selectedNoSo);
-  const validationIssues = useMemo(() => validateSalesOrders(headers, lines), [headers, lines]);
+  const validationIssues = useMemo(
+    () => sortValidationIssues(validateSalesOrders(headers, lines), { headerFields: salesHeaderValidationOrder, detailFields: salesLineValidationOrder }),
+    [headers, lines]
+  );
+  const displayedValidationIssues = validationAttempted ? validationIssues : [];
   const validationCellErrors = useMemo(
-    () => toValidationCellErrors(validationIssues),
-    [validationIssues]
+    () => toValidationCellErrors(displayedValidationIssues),
+    [displayedValidationIssues]
   );
   const selectedLineData = lines.find(
     (line) => line.NO_SO === selectedNoSo && line.NO_LINE === selectedLine
@@ -272,7 +244,7 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
         setPartners(nextPartners);
         setItems(nextItems);
       })
-      .catch(() => setMessage("API Lookup 데이터를 불러오지 못했습니다."));
+      .catch(() => setMessage("도움창 데이터를 불러오지 못했습니다."));
   }, []);
 
   useLayoutEffect(() => {
@@ -296,21 +268,17 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
 
   const focusValidationIssue = (issue: ValidationIssue) => {
     if (!issue.rowKey || !issue.field) return;
-    const gridTestId = issue.scope === "header" ? "sales-order-header-grid" : "sales-order-line-grid";
-    const editorTestId = `${gridTestId}-cell-${issue.rowKey}-${issue.field}`;
-    const containerTestId = `${gridTestId}-cell-container-${issue.rowKey}-${issue.field}`;
-
-    window.requestAnimationFrame(() => {
-      const target = document.querySelector<HTMLElement>(
-        `[data-testid="${editorTestId}"], [data-testid="${containerTestId}"]`
-      );
-      target?.focus();
-    });
+    const request = { rowKey: issue.rowKey, field: issue.field, requestId: ++lineFocusRequestId.current };
+    if (issue.scope === "header") setHeaderFocusRequest(request);
+    else if (issue.scope === "line") setLineFocusRequest(request);
   };
 
   const selectHeader = async (header: SalesOrderHeader) => {
     if (header.NO_SO !== selectedNoSo && !(await confirmDiscardChanges())) return;
-    if (header.NO_SO !== selectedNoSo) clearDirty();
+    if (header.NO_SO !== selectedNoSo) {
+      clearDirty();
+      setValidationAttempted(false);
+    }
     selectMaster(header.NO_SO);
     setCheckedLineKeys([]);
   };
@@ -348,20 +316,64 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
     );
   };
 
-  const loadSalesOrderData = async () => {
-    if (isApiMode()) {
-      const orders = await getSalesOrders();
-      return {
-        headers: orders.map((order) => order.Header),
-        lines: orders.flatMap((order) => order.Lines),
-        source: "api" as const
-      };
+  const handleLinePaste = (request: ErpDataGridPasteRequest<SalesOrderLine>) => {
+    if (!selectedHeader) return { error: "수주정보를 먼저 선택하세요." };
+    const fields = request.columns.map((column) => column.field);
+    if (fields.some((field) => !isLineEditableField(field))) return { error: "수정할 수 없는 열이 포함되어 있습니다." };
+
+    const draftLines = selectedLines.map((line) => ({ ...line }));
+    let nextLineNo = draftLines.length === 0 ? 1 : Math.max(...draftLines.map((line) => line.NO_LINE)) + 1;
+    while (draftLines.length < request.startRowIndex + request.matrix.length) {
+      draftLines.push(createEmptySalesOrderLine(selectedHeader, nextLineNo));
+      nextLineNo += 1;
     }
 
+    try {
+      request.matrix.forEach((values, rowOffset) => {
+        let nextLine = { ...draftLines[request.startRowIndex + rowOffset] };
+        let selectedItem: Item | undefined;
+        values.forEach((value, columnOffset) => {
+          const column = request.columns[columnOffset];
+          const field = fields[columnOffset] as LineEditableField;
+          if (field === "CD_ITEM") {
+            selectedItem = mockItems.find((item) => item.CD_FIRM === nextLine.CD_FIRM && item.CD_ITEM === value.trim() && item.YN_USE === "Y");
+            if (!selectedItem) throw new Error(`${rowOffset + 1}행 품목코드에 존재하지 않는 코드가 있습니다.`);
+            nextLine.CD_ITEM = selectedItem.CD_ITEM;
+            return;
+          }
+          const nextValue = column.dataType === "number"
+            ? parseErpGridPasteNumber(value)
+            : column.dataType === "date"
+              ? parseErpGridPasteDate(value)
+              : value;
+          nextLine = { ...nextLine, [field]: nextValue };
+        });
+        if (selectedItem) {
+          nextLine = { ...nextLine, CD_ITEM: selectedItem.CD_ITEM, NM_ITEM: selectedItem.NM_ITEM, STND_ITEM: selectedItem.STND_ITEM, UNIT_ITEM: selectedItem.UNIT_ITEM };
+        }
+        draftLines[request.startRowIndex + rowOffset] = {
+          ...nextLine,
+          ...calculateSalesOrderLineAmounts(nextLine.QT_SO, nextLine.UM_SO)
+        };
+      });
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : "입력값을 확인하세요." };
+    }
+
+    setLines((current) => [
+      ...current.filter((line) => line.CD_FIRM !== selectedHeader.CD_FIRM || line.NO_SO !== selectedHeader.NO_SO),
+      ...draftLines
+    ]);
+    markDirty();
+    return undefined;
+  };
+
+  const loadSalesOrderData = async (signal?: AbortSignal) => {
+    const orders = await loadSalesOrderRecords(signal);
     return {
-      headers: mockSalesOrderHeaders.map((header) => ({ ...header })),
-      lines: mockSalesOrderLines.map((line) => ({ ...line })),
-      source: "mock" as const
+      headers: orders.map((order) => order.Header),
+      lines: orders.flatMap((order) => order.Lines),
+      source: isApiMode() ? "api" as const : "mock" as const
     };
   };
 
@@ -385,6 +397,7 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
         setLines(nextLines);
         selectMaster(matchedHeaders[0]?.NO_SO ?? "");
         setCheckedLineKeys([]);
+        setValidationAttempted(false);
         clearDirty();
         notify(matchedHeaders.length > 0 ? "success" : "info", matchedHeaders.length > 0 ? "조회되었습니다." : "조회된 데이터가 없습니다.");
       },
@@ -410,18 +423,31 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
       return;
     }
 
+    itemLookupLineKeyRef.current = createSalesOrderLineKey(
+      selectedLineData.CD_FIRM,
+      selectedLineData.NO_SO,
+      selectedLineData.NO_LINE
+    );
+    setItemLookupOpen(true);
+  };
+
+  const handleLookupCellDoubleClick = (line: SalesOrderLine) => {
+    if (itemLookupOpen || isLoading || isSaving) return;
+    itemLookupLineKeyRef.current = createSalesOrderLineKey(line.CD_FIRM, line.NO_SO, line.NO_LINE);
+    selectDetail(line.NO_LINE);
     setItemLookupOpen(true);
   };
 
   const handleSelectItem = (item: Item) => {
-    if (!selectedNoSo || selectedLine === null) {
+    const targetKey = itemLookupLineKeyRef.current;
+    if (!targetKey) {
       setMessage("품목을 적용할 수주상세 행을 찾을 수 없습니다");
       return;
     }
 
     setLines((current) =>
       current.map((line) =>
-        line.NO_SO === selectedNoSo && line.NO_LINE === selectedLine
+        createSalesOrderLineKey(line.CD_FIRM, line.NO_SO, line.NO_LINE) === targetKey
           ? {
               ...line,
               CD_ITEM: item.CD_ITEM,
@@ -435,12 +461,14 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
     markDirty();
     notify("success", "품목 선택이 반영되었습니다.");
     setMessage(`${item.NM_ITEM} 품목이 ${selectedLine}번 행에 반영되었습니다`);
+    itemLookupLineKeyRef.current = null;
+    setItemLookupOpen(false);
   };
 
   const handleNew = async () => {
     if (!(await confirmDiscardChanges())) return;
-    const tempNo = createTempOrderNo(tempSeq);
-    const nextHeader = createEmptyHeader(tempNo);
+    const tempNo = createTempSalesOrderNo(tempSeq);
+    const nextHeader = createEmptySalesOrderHeader(tempNo);
     setFeatureMessage("");
     await executeCreate({
       execute: () => {
@@ -448,7 +476,8 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
         selectMaster(tempNo);
         setCheckedLineKeys([]);
         setTempSeq((seq) => seq + 1);
-        markDirty();
+        setValidationAttempted(false);
+        clearDirty();
         return nextHeader;
       },
       onSuccess: () => notify("success", "신규 수주가 추가되었습니다."),
@@ -463,7 +492,7 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
       return { success: false, message: "동일 MAIL_ID가 이미 반영되었습니다. 중복 반영할 수 없습니다." };
     }
 
-    const temporaryOrderNo = createTempOrderNo(tempSeq);
+    const temporaryOrderNo = createTempSalesOrderNo(tempSeq);
     const mappedOrder = mapParsedOrderToSalesOrder(result, temporaryOrderNo);
     if (!mappedOrder) return { success: false, message: "파싱 결과가 완전하지 않아 수주등록에 반영할 수 없습니다." };
 
@@ -500,11 +529,15 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
     const currentLines = lines.filter((line) => line.NO_SO === selectedHeader.NO_SO);
     const nextNoLine =
       currentLines.length === 0 ? 1 : Math.max(...currentLines.map((line) => line.NO_LINE)) + 1;
-    const nextLine = createEmptyLine(selectedHeader, nextNoLine);
+    const nextLine = createEmptySalesOrderLine(selectedHeader, nextNoLine);
     setLines((current) => [...current, nextLine]);
     selectDetail(nextNoLine);
     setCheckedLineKeys([]);
     markDirty();
+    setLineFocusRequest({
+      rowKey: createSalesOrderLineKey(nextLine.CD_FIRM, nextLine.NO_SO, nextLine.NO_LINE),
+      requestId: ++lineFocusRequestId.current
+    });
     setMessage("수주상세 행이 추가되었습니다");
   };
 
@@ -565,9 +598,9 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
   const saveSalesOrder = async () => {
     const issues = validateSalesOrders(headers, lines);
     if (issues.length > 0) {
-      setValidationDialogOpen(true);
+      setValidationAttempted(true);
       setMessage(`저장 전 검증 오류 ${issues.length}건을 확인하세요.`);
-      focusValidationIssue(issues[0]);
+      focusValidationIssue(sortValidationIssues(issues, { headerFields: salesHeaderValidationOrder, detailFields: salesLineValidationOrder })[0]);
       return;
     }
 
@@ -578,9 +611,9 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
       }
 
       const isNewOrder = selectedHeader.NO_SO.startsWith("TEMP_SO_");
-      const yearMonth = today().slice(0, 7).replace("-", "");
+      const yearMonth = salesOrderToday().slice(0, 7).replace("-", "");
       const savedOrderNo = isNewOrder
-        ? createSavedOrderNo(yearMonth, getNextSavedOrderIndex(headers, yearMonth))
+        ? createSavedSalesOrderNo(yearMonth, getNextSavedSalesOrderIndex(headers, yearMonth))
         : selectedHeader.NO_SO;
       const headerToSave = {
         ...selectedHeader,
@@ -593,9 +626,10 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
       }));
 
       try {
-        const saved = isNewOrder
-          ? await createSalesOrder({ Header: headerToSave, Lines: linesToSave })
-          : await updateSalesOrder(headerToSave.CD_FIRM, savedOrderNo, { Header: headerToSave, Lines: linesToSave });
+        const saved = await saveSalesOrderRecord(
+          { Header: headerToSave, Lines: linesToSave },
+          isNewOrder ? null : selectedHeader.NO_SO
+        );
         setHeaders((current) => [saved.Header, ...current.filter((header) => header.NO_SO !== selectedHeader.NO_SO)]);
         setLines((current) => [...current.filter((line) => line.NO_SO !== selectedHeader.NO_SO), ...saved.Lines]);
         selectMaster(saved.Header.NO_SO);
@@ -607,14 +641,14 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
       return;
     }
 
-    const yearMonth = today().slice(0, 7).replace("-", "");
-    let nextIndex = getNextSavedOrderIndex(headers, yearMonth);
+    const yearMonth = salesOrderToday().slice(0, 7).replace("-", "");
+    let nextIndex = getNextSavedSalesOrderIndex(headers, yearMonth);
     const noMap = new Map<string, string>();
 
     const savedHeaders = headers.map((header) => {
       if (!header.NO_SO.startsWith("TEMP_SO_")) return header;
 
-      const nextNoSo = createSavedOrderNo(yearMonth, nextIndex);
+      const nextNoSo = createSavedSalesOrderNo(yearMonth, nextIndex);
       nextIndex += 1;
       noMap.set(header.NO_SO, nextNoSo);
 
@@ -639,6 +673,7 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
 
     setHeaders(savedHeaders);
     setLines(savedLines);
+    replaceMockSalesOrderRecords(savedHeaders, savedLines);
     selectMaster(noMap.get(selectedNoSo) ?? selectedNoSo);
     setCheckedLineKeys([]);
     setMessage("저장되었습니다.");
@@ -653,10 +688,9 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
     }
     const currentIssues = validateSalesOrders(headers, lines);
     if (currentIssues.length > 0) {
-      setValidationDialogOpen(true);
+      setValidationAttempted(true);
       setMessage(`저장할 수 없습니다. 입력값 ${currentIssues.length}건을 확인하세요.`);
-      focusValidationIssue(currentIssues[0]);
-      notify("warning", `저장할 수 없습니다. 입력값 ${currentIssues.length}건을 확인하세요.`);
+      focusValidationIssue(sortValidationIssues(currentIssues, { headerFields: salesHeaderValidationOrder, detailFields: salesLineValidationOrder })[0]);
       return;
     }
     if (!(await confirm({ title: "저장 확인", message: "저장하시겠습니까?", confirmLabel: "저장" }))) return;
@@ -665,15 +699,15 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
       validate: () => {
         const issues = validateSalesOrders(headers, lines);
         if (issues.length > 0) {
-          setValidationDialogOpen(true);
+          setValidationAttempted(true);
           setMessage(`저장 전 검증 오류 ${issues.length}건을 확인하세요.`);
-          focusValidationIssue(issues[0]);
+          focusValidationIssue(sortValidationIssues(issues, { headerFields: salesHeaderValidationOrder, detailFields: salesLineValidationOrder })[0]);
           return false;
         }
         return true;
       },
       execute: saveSalesOrder,
-      onSuccess: () => { clearDirty(); notify("success", "저장되었습니다."); },
+      onSuccess: () => { setValidationAttempted(false); clearDirty(); notify("success", "저장되었습니다."); },
       successMessage: "저장되었습니다.",
       errorMessage: "저장 중 오류가 발생했습니다. 입력값을 확인하고 다시 시도하세요."
     });
@@ -686,14 +720,12 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
       return;
     }
 
-    if (isApiMode()) {
-      const orderToDelete = headers.find((header) => header.NO_SO === selectedNoSo);
-      if (!orderToDelete) return;
-      try {
-        await deleteSalesOrder(orderToDelete.CD_FIRM, orderToDelete.NO_SO);
-      } catch {
-        throw new Error("API 삭제에 실패했습니다.");
-      }
+    const orderToDelete = headers.find((header) => header.NO_SO === selectedNoSo);
+    if (!orderToDelete) return;
+    try {
+      await deleteSalesOrderRecord(orderToDelete.CD_FIRM, orderToDelete.NO_SO);
+    } catch {
+      throw new Error("수주 삭제에 실패했습니다.");
     }
 
     setHeaders((current) => current.filter((header) => header.NO_SO !== selectedNoSo));
@@ -714,29 +746,17 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
     setFeatureMessage("");
     await executeDelete({
       execute: deleteSalesOrderAction,
-      onSuccess: () => { clearDirty(); notify("success", "삭제되었습니다."); },
+      onSuccess: () => { setValidationAttempted(false); clearDirty(); notify("success", "삭제되었습니다."); },
       successMessage: "삭제되었습니다.",
       errorMessage: "삭제 중 오류가 발생했습니다. 다시 시도하세요."
     });
   };
 
-  const handleNavigateToPurchase = async () => {
-    if (!(await confirmDiscardChanges())) return;
-    clearDirty();
-    onNavigate?.("purchase");
-  };
-
-  const handleNavigateToWorkOrder = async () => {
-    if (!(await confirmDiscardChanges())) return;
-    clearDirty();
-    onNavigate?.("work");
-  };
-
-  const handleNavigateToDevelopmentData = async () => {
-    if (!(await confirmDiscardChanges())) return;
-    clearDirty();
-    onNavigate?.("development");
-  };
+  const handleNavigateToPurchase = () => onNavigate?.("purchase");
+  const handleNavigateToWorkOrder = () => onNavigate?.("work");
+  const handleNavigateToDevelopmentData = () => onNavigate?.("development");
+  const handleNavigateToAiSolutionCenter = () => onNavigate?.("ai");
+  const handleNavigateToCompactSales = (page: "mobileSales" | "pdaSales") => onNavigate?.(page);
 
   const headerGridColumns: readonly ErpDataGridColumn<SalesOrderHeader>[] = [
     { field: "CD_FIRM", headerName: "회사코드", width: 90, dataType: "code", editable: true, required: true },
@@ -780,7 +800,8 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
       width: 116,
       dataType: "code",
       editable: true,
-      required: true
+      required: true,
+      lookup: { instruction: "더블클릭하여 품목을 선택합니다." }
     },
     { field: "NM_ITEM", headerName: "품목명", width: 170, editable: true },
     { field: "STND_ITEM", headerName: "규격", width: 140, editable: true },
@@ -855,7 +876,7 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
             <strong>SMART ERP</strong>
           </div>
           <nav>
-            <button className="menu-item" data-testid="nav-purchase-order" onClick={handleNavigateToPurchase} type="button">
+            <button {...screenIntentProps("purchase")} className="menu-item" data-testid="nav-purchase-order" onClick={handleNavigateToPurchase} type="button">
               구매관리 / 발주등록
             </button>
             <div className="menu-title">영업관리</div>
@@ -864,41 +885,50 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
               <span>수주관리</span>
             </div>
             <button className="menu-item active">수주등록</button>
+            <button {...screenIntentProps("mobileSales")} className="menu-item" data-testid="nav-mobile-sales-order" onClick={() => void handleNavigateToCompactSales("mobileSales")} type="button">
+              모바일 수주등록
+            </button>
+            <button {...screenIntentProps("pdaSales")} className="menu-item" data-testid="nav-pda-sales-order" onClick={() => void handleNavigateToCompactSales("pdaSales")} type="button">
+              PDA 수주등록
+            </button>
             <div className="menu-title">생산관리</div>
             <div className="menu-group">
               <ChevronRight size={14} />
               <span>작업지시관리</span>
             </div>
-            <button className="menu-item" data-testid="nav-work-order" onClick={handleNavigateToWorkOrder} type="button">
+            <button {...screenIntentProps("work")} className="menu-item" data-testid="nav-work-order" onClick={handleNavigateToWorkOrder} type="button">
               작업지시등록
             </button>
-            {showDevelopmentDataManager && <><div className="menu-title">개발 도구</div><button className="menu-item" data-testid="nav-development-data" onClick={handleNavigateToDevelopmentData} type="button">테스트 데이터 관리</button></>}
+            <div className="menu-title">AI 솔루션</div>
+            <button {...screenIntentProps("ai")} className="menu-item" data-testid="nav-ai-solution-center" onClick={handleNavigateToAiSolutionCenter} type="button">AI 솔루션 센터</button>
+            {showDevelopmentDataManager && <><div className="menu-title">개발 도구</div><button {...screenIntentProps("development")} className="menu-item" data-testid="nav-development-data" onClick={handleNavigateToDevelopmentData} type="button">테스트 데이터 관리</button></>}
           </nav>
         </aside>
 
-        <main aria-busy={isLoading || isSaving} className="workbench">
+        <main aria-busy={isLoading || isSaving} className="workbench" data-processing-state={operation}>
           <header className="page-header">
             <div>
               <h1 data-testid="page-title">수주등록</h1>
               <p>수주 정보를 조회하고 등록합니다.</p>
+              <DirtyIndicator dataTestId="sales-order-dirty-indicator" dirty={isDirty} />
             </div>
             <PageToolbar
               processing={isLoading || isSaving}
               actions={[
-                { dataTestId: "btn-search", label: isLoading ? "조회 중..." : "조회", icon: <Search size={15} />, onClick: () => void handleSearch() },
-                { dataTestId: "btn-new", label: "신규", icon: <Plus size={15} />, onClick: () => void handleNew() },
-                { dataTestId: "btn-add-line", label: "행추가", icon: <Rows3 size={15} />, onClick: handleAddLine },
-                { dataTestId: "btn-delete-line", label: "행삭제", icon: <Trash2 size={15} />, onClick: () => void handleDeleteLine() },
-                { dataTestId: "btn-save", label: isSaving ? "저장 중..." : "저장", icon: <Save size={15} />, onClick: () => void handleSave(), variant: "primary" },
-                { dataTestId: "btn-delete-order", label: isSaving ? "삭제 중..." : "삭제", icon: <Trash2 size={15} />, onClick: () => void handleDeleteOrder(), variant: "danger" },
-                { dataTestId: "btn-mail-import", label: "메일 수주 불러오기", icon: <MailPlus size={15} />, onClick: () => setMailImportOpen(true) }
+                { dataTestId: "btn-search", label: isLoading ? "조회 중..." : "조회", icon: <Search size={15} />, onClick: () => void handleSearch(), disabled: isSaving },
+                { dataTestId: "btn-new", label: "신규", icon: <Plus size={15} />, onClick: () => void handleNew(), disabled: isLoading || isSaving },
+                { dataTestId: "btn-add-line", label: "행추가", icon: <Rows3 size={15} />, onClick: handleAddLine, disabled: isLoading || isSaving },
+                { dataTestId: "btn-delete-line", label: "행삭제", icon: <Trash2 size={15} />, onClick: () => void handleDeleteLine(), disabled: isLoading || isSaving },
+                { dataTestId: "btn-save", label: operation === "saving" ? "저장 중..." : "저장", icon: <Save size={15} />, onClick: () => void handleSave(), disabled: isLoading || isSaving, variant: "primary" },
+                { dataTestId: "btn-delete-order", label: operation === "deleting" ? "삭제 중..." : "삭제", icon: <Trash2 size={15} />, onClick: () => void handleDeleteOrder(), disabled: isLoading || isSaving, variant: "danger" },
+                { dataTestId: "btn-mail-import", label: "메일 수주 불러오기", icon: <MailPlus size={15} />, onClick: () => setMailImportOpen(true), disabled: isLoading || isSaving }
               ]}
             />
           </header>
 
           <SearchPanel
             message={message}
-            statusAddon={validationIssues.length > 0 ? <span data-testid="validation-error-count">오류 {validationIssues.length}건</span> : undefined}
+            statusAddon={displayedValidationIssues.length > 0 ? <span data-testid="validation-error-count">오류 {displayedValidationIssues.length}건</span> : undefined}
           >
             <label>
               회사코드
@@ -966,6 +996,12 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
             </div>
           </SearchPanel>
 
+          <ErpValidationSummary
+            dataTestId="sales-order-validation-summary"
+            issues={displayedValidationIssues}
+            onFocusFirst={() => focusValidationIssue(displayedValidationIssues[0])}
+          />
+
           <section className="grid-section top-grid">
             <div className="section-title">
               <h2>수주정보</h2>
@@ -976,6 +1012,7 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
               className="sales-order-header-grid"
               columns={headerGridColumns}
               dataTestId="sales-order-header-grid"
+              focusRequest={headerFocusRequest}
               emptyMessage="조회 조건에 맞는 수주정보가 없습니다."
               onCellValueChange={(row, field, value) => {
                 if (isHeaderEditableField(field)) updateHeader(row.NO_SO, field, String(value ?? ""));
@@ -997,18 +1034,6 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
           <section className="grid-section bottom-grid">
             <div className="section-title">
               <h2>수주상세</h2>
-              <div className="section-title-actions">
-                <button
-                  className="section-lookup-button"
-                  data-testid="btn-item-lookup"
-                  disabled={isLoading || isSaving}
-                  onClick={handleOpenItemLookup}
-                  type="button"
-                >
-                  <Search size={14} />
-                  품목 도움
-                </button>
-              </div>
             </div>
             <ErpDataGrid<SalesOrderLine>
               ariaLabel="수주상세"
@@ -1017,10 +1042,16 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
               className="sales-order-line-grid"
               columns={lineGridColumns}
               dataTestId="sales-order-line-grid"
+              focusRequest={lineFocusRequest}
+              keyboardNavigation
               emptyMessage="수주정보 행을 선택하면 상세 목록이 표시됩니다."
+              lookupDisabled={isLoading || isSaving || itemLookupOpen}
+              onPaste={handleLinePaste}
+              onPasteError={(pasteMessage) => notify("error", pasteMessage)}
               onCellValueChange={(row, field, value) => {
                 if (isLineEditableField(field)) updateLine(row.NO_SO, row.NO_LINE, field, value);
               }}
+              onLookupCellDoubleClick={(line) => handleLookupCellDoubleClick(line)}
               onCheckedRowKeysChange={setCheckedLineKeys}
               onRowClick={(line) => selectDetail(line.NO_LINE)}
               rowKey={(line) => createSalesOrderLineKey(line.CD_FIRM, line.NO_SO, line.NO_LINE)}
@@ -1082,7 +1113,7 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
         dataTestId="item-lookup"
         emptyMessage="조회된 품목이 없습니다."
         height={520}
-        onClose={() => setItemLookupOpen(false)}
+        onClose={() => { itemLookupLineKeyRef.current = null; setItemLookupOpen(false); }}
         onSelect={handleSelectItem}
         open={itemLookupOpen}
         rowKey={getItemRowKey}
@@ -1096,38 +1127,6 @@ export function SalesOrderRegistration({ onNavigate, showDevelopmentDataManager 
         title="품목 도움창"
         width={820}
       />
-
-      <ErpDialog
-        dataTestId="dialog-validation-summary"
-        footer={
-          <div className="erp-confirm-dialog__actions">
-            <button
-              className="erp-confirm-dialog__button"
-              data-testid="dialog-validation-close"
-              onClick={() => setValidationDialogOpen(false)}
-              type="button"
-            >
-              확인
-            </button>
-          </div>
-        }
-        height={420}
-        onClose={() => setValidationDialogOpen(false)}
-        open={validationDialogOpen}
-        title="저장 전 입력값 검증"
-        width={560}
-      >
-        <div className="validation-summary">
-          <p data-testid="validation-summary-count">검증 오류 {validationIssues.length}건으로 저장이 중단되었습니다.</p>
-          <ul data-testid="validation-summary-list">
-            {validationIssues.map((issue, index) => (
-              <li key={`${issue.scope}-${issue.rowKey ?? "screen"}-${issue.field ?? "message"}-${index}`}>
-                {issue.message}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </ErpDialog>
 
     </>
   );

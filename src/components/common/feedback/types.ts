@@ -7,6 +7,7 @@ export interface ConfirmationOptions {
   confirmLabel?: string;
   cancelLabel?: string;
   danger?: boolean;
+  showCancel?: boolean;
 }
 
 export interface Notification {

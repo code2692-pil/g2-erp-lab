@@ -132,5 +132,6 @@ export const developmentDataApi = {
 };
 
 export function canShowDevelopmentDataManagerClient() {
-  return import.meta.env.DEV && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+  return (import.meta.env.DEV || import.meta.env.VITE_E2E_TEST_MODE === "true")
+    && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
 }

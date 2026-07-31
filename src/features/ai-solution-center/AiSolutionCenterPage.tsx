@@ -1,0 +1,478 @@
+import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { Building2, ChevronRight, ClipboardCopy, Download, FileText, RotateCcw } from "lucide-react";
+import { useConfirm } from "../../hooks/useConfirm";
+import { useDirtyState } from "../../hooks/useDirtyState";
+import type { ScreenModuleId } from "../../screenModules";
+import { CompanyKnowledgeSettings } from "./CompanyKnowledgeSettings";
+import { FileAnalysisCards, FileProcessingResult, SensitiveDataNotice } from "./FileAnalysisCards";
+import { ReviewPackageImportPanel } from "./ReviewPackageImportPanel";
+import { ReviewRecordPanel } from "./ReviewRecordPanel";
+import { ScenarioLibrary } from "./ScenarioLibrary";
+import { analyzeFile, maximumAttachmentCount, maximumTotalAttachmentBytes } from "./file-analysis/fileAnalysisPipeline";
+import { mergeSensitiveFindings, redactSensitiveData } from "./file-analysis/sensitiveDataRedactor";
+import type { FileAnalysisAttachment, FileProcessingSummary } from "./file-analysis/fileAnalysisTypes";
+import { reviewPackageFilename, toReviewPackage } from "./reviewPackage";
+import { buildSolutionResult } from "./solutionEngine";
+import { solutionKnowledge } from "./solutionKnowledge";
+import { buildSolutionOptionComparison, defaultSolutionPriorities, solutionPriorityLabels, solutionPriorityPresets } from "./solutionOptions";
+import type { SolutionScenario } from "./solutionScenarios";
+import { activeRevision, analysisRevision, appendSolutionRevision, buildConsultantHandoverMarkdown, buildExportFilename, buildSolutionMarkdown, canRefineSession, clarificationAnswersFor, consultantHandoverDetails, createSolutionSession, maximumAnalysisRevision, unresolvedItems, updateSolutionOptionComparison } from "./solutionSession";
+import { businessDomains, solutionPriorityKeys, type BusinessDomain, type CompanyKnowledgeArticle, type ReviewRecord, type SolutionPriorities, type SolutionRequest, type SolutionSession, type SolutionSource } from "./solutionTypes";
+
+type NavigationPage = "sales" | "purchase" | "work" | "development" | "ai";
+type ActiveTab = "consultant" | "customer";
+interface AiSolutionCenterPageProps {
+  onNavigate: (page: NavigationPage) => void;
+  onScreenIntent?: (screen: ScreenModuleId) => void;
+}
+
+interface ResultPanelProps {
+  session: SolutionSession;
+  answerMap: Readonly<Record<string, string>>;
+  answerError: string;
+  refining: boolean;
+  exportStatus: string;
+  handoverStatus: string;
+  comparisonStatus: string;
+  comparing: boolean;
+  review?: ReviewRecord;
+  onAnswerChange: (questionId: string, answer: string) => void;
+  onRefine: () => void;
+  onCopy: () => void;
+  onDownload: () => void;
+  onHandoverCopy: () => void;
+  onRecompare: () => void;
+  onReviewRecord: (record: ReviewRecord) => void;
+  onReviewPackageDownload: (record: ReviewRecord) => void;
+}
+
+function List({ items, dataTestId }: { items: readonly string[]; dataTestId?: string }) {
+  return <ul data-testid={dataTestId}>{items.map((item) => <li key={item}>{item}</li>)}</ul>;
+}
+
+function PriorityCard({ priorities, onChange, onPreset }: { priorities: SolutionPriorities; onChange: (key: keyof SolutionPriorities, value: number) => void; onPreset: (priorities: SolutionPriorities) => void }) {
+  return <section className="ai-solution-center__priority-card" data-testid="priority-card" aria-labelledby="priority-card-heading">
+    <div><h2 id="priority-card-heading">솔루션 선택 우선순위</h2><p>중요하게 생각하는 기준에 따라 추천 대안의 순서와 적용 방향이 달라집니다. 1은 중요도가 낮고 5는 매우 중요합니다.</p></div>
+    <div className="ai-solution-center__priority-presets" aria-label="우선순위 미리 설정">{solutionPriorityPresets.map((preset) => <button key={preset.id} type="button" data-testid={`priority-preset-${preset.id}`} onClick={() => onPreset({ ...preset.priorities })}>{preset.label}</button>)}</div>
+    <div className="ai-solution-center__priority-fields">{solutionPriorityKeys.map((key) => <label key={key} htmlFor={`priority-${key}`}><span>{solutionPriorityLabels[key]} <strong data-testid={`priority-value-${key}`}>{priorities[key]} / 5</strong></span><input id={`priority-${key}`} data-testid={`priority-${key}`} type="range" min="1" max="5" step="1" value={priorities[key]} aria-valuetext={`${solutionPriorityLabels[key]} ${priorities[key]} / 5`} onChange={(event) => onChange(key, Number(event.target.value))} /></label>)}</div>
+  </section>;
+}
+
+function ResultPanel({ session, answerMap, answerError, refining, exportStatus, handoverStatus, comparisonStatus, comparing, review, onAnswerChange, onRefine, onCopy, onDownload, onHandoverCopy, onRecompare, onReviewRecord, onReviewPackageDownload }: ResultPanelProps) {
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const revision = activeRevision(session);
+  const result = session.activeResult;
+  const unresolved = unresolvedItems(result, answerMap);
+  const canRefine = canRefineSession(session);
+  const handover = consultantHandoverDetails(session, unresolved, review);
+  const comparison = session.optionComparison;
+  const recommendedOption = comparison?.options[0];
+
+  useEffect(() => { headingRef.current?.focus(); }, [revision?.revision]);
+
+  return <section className="ai-solution-center__result" data-testid="ai-result" aria-live="polite">
+    <div className="ai-solution-center__result-heading-row">
+      <div>
+        <h2 ref={headingRef} tabIndex={-1} data-testid="ai-result-heading">{revision?.revision ?? 1}차 분석 결과</h2>
+        <p className="ai-solution-center__revision-status" data-testid="analysis-revision-status">현재 분석 차수: {revision?.revision ?? 1} / {maximumAnalysisRevision}</p>
+      </div>
+      <div className="ai-solution-center__export-actions">
+        <button data-testid="result-copy" type="button" onClick={onCopy}><ClipboardCopy size={15} />결과 복사</button>
+        <button data-testid="result-download" type="button" onClick={onDownload}><Download size={15} />Markdown 다운로드</button>
+      </div>
+    </div>
+    {exportStatus && <p className="ai-solution-center__file-status" data-testid="result-export-status" role="status" aria-live="polite">{exportStatus}</p>}
+    <p className="ai-solution-center__guide-notice">{result.guideNotice}</p>
+    {revision && revision.revision > 1 && <section className="ai-solution-center__revision-summary" data-testid="revision-summary"><h3>{revision.revision}차 분석에 추가로 반영한 정보</h3><List items={revision.clarificationAnswers.map((answer) => `${answer.question}: ${answer.answer}`)} /><p>신뢰도: {revision.previousConfidence} → {revision.currentConfidence}</p></section>}
+    <dl className="ai-solution-center__result-summary">
+      <div><dt>입력 요약</dt><dd>{result.inputSummary}</dd></div>
+      <div><dt>추정 업무영역</dt><dd data-testid="ai-result-domain">{result.inferredDomain}</dd></div>
+      <div><dt>주요 문제</dt><dd>{result.mainProblem}</dd></div>
+      <div><dt>신뢰도</dt><dd data-testid="ai-result-confidence">{result.confidence}</dd></div>
+    </dl>
+    <FileProcessingResult files={session.originalRequest.fileProcessingSummaries ?? []} selectedScenarioTitle={session.originalRequest.selectedScenarioTitle} />
+    <section className="ai-solution-center__recommendation-baseline"><h3 data-testid="ai-result-recommendation">{recommendedOption?.title ?? result.recommendation.title}</h3><p>{recommendedOption?.summary ?? result.recommendation.rationale}</p><List items={recommendedOption?.prerequisites ?? result.recommendation.actions} /></section>
+    {comparison && recommendedOption && <section className="ai-solution-center__option-comparison" data-testid="option-comparison" aria-busy={comparing}>
+      <div className="ai-solution-center__option-comparison-heading"><div><h3>솔루션 대안 비교</h3><p>현재 입력과 선택한 우선순위를 기준으로 한 추천 1순위입니다. 실제 적용은 컨설턴트·개발 담당자와 회사 업무 규칙·기술 조건을 확인해 결정해야 합니다.</p></div><button type="button" data-testid="recompare-options" disabled={comparing} onClick={onRecompare}>{comparing ? "다시 비교 중..." : "현재 우선순위로 다시 비교"}</button></div>
+      {comparisonStatus && <p className="ai-solution-center__file-status" data-testid="comparison-status" role="status" aria-live="polite">{comparisonStatus}</p>}
+      <p className="ai-solution-center__guide-notice" data-testid="comparison-score-notice">{comparison.scoreNotice}</p>
+      <p className="ai-solution-center__option-reason" data-testid="comparison-reason">{comparison.recommendationReason}</p>
+      <div className="ai-solution-center__option-grid">{comparison.options.map((option) => <article key={option.id} className="ai-solution-center__option-card" data-testid={`option-${option.id}`}><div className="ai-solution-center__option-card-heading"><p>{option.rank}순위 · 비교 점수 {option.weightedScore}</p>{option.recommended && <strong data-testid={`option-recommended-${option.id}`}>추천 1순위</strong>}</div><h4>{option.title}</h4><p>{option.summary}</p><dl><div><dt>강점</dt><dd>{option.strengths.join(" / ")}</dd></div><div><dt>유의점</dt><dd>{option.weaknesses.join(" / ")}</dd></div><div><dt>적합한 상황</dt><dd>{option.suitableWhen.join(" / ")}</dd></div><div><dt>부적합한 상황</dt><dd>{option.unsuitableWhen.join(" / ")}</dd></div><div><dt>적용 전제</dt><dd>{option.prerequisites.join(" / ")}</dd></div><div><dt>위험·주의사항</dt><dd>{option.risks.join(" / ")}</dd></div></dl><ul className="ai-solution-center__dimension-scores">{solutionPriorityKeys.map((key) => <li key={key}>{solutionPriorityLabels[key]}: {option.dimensionScores[key]} / 5</li>)}</ul></article>)}</div>
+      <section className="ai-solution-center__option-roadmap" data-testid="option-roadmap"><h3>적용 로드맵 · {recommendedOption.title}</h3>{recommendedOption.roadmap.map((phase) => <article key={phase.title}><h4>{phase.title}</h4><List items={phase.steps} /></article>)}</section>
+      <section className="ai-solution-center__reconsideration" data-testid="option-reconsideration"><h3>적용 중 재검토가 필요한 조건</h3><p>아래 항목은 자동 실패 판정이나 확정 업무 규칙이 아니라, 담당자의 재검토를 돕는 체크 항목입니다.</p><List items={recommendedOption.reconsiderationConditions.slice(0, 5)} /></section>
+    </section>}
+    <section><h3>분석에서 참고한 적용 방법</h3><List dataTestId="ai-result-phased-plan" items={result.phasedPlan} /></section>
+    <section className="ai-solution-center__input-evidence" data-testid="input-evidence"><h3>분석에 사용한 입력 근거</h3><ul>{result.inputEvidence.map((evidence) => <li key={evidence.id} data-testid={`input-evidence-${evidence.id}`}><strong>{evidence.sourceLabel}</strong><span>{evidence.fileName ? `파일: ${evidence.fileName}` : "입력 구역"}</span><p>발췌: {evidence.excerpt}</p><p>관련 키워드: {evidence.relatedKeywords.length > 0 ? evidence.relatedKeywords.join(", ") : "업무영역 기준"}</p><p>추천 반영: {evidence.usedInRecommendation ? "사용됨" : "참고"}</p></li>)}</ul></section>
+    <section className="ai-solution-center__evidence" data-testid="ai-result-evidence"><h3>참고한 지식 근거</h3><ul>{result.evidence.map((evidence) => <li key={evidence.id} data-testid={`ai-evidence-${evidence.id}`}><strong>{evidence.title}</strong><span>{evidence.category} · {evidence.sourceType === "COMPANY" ? "회사 지식" : "일반 지식"}</span><p>일치 주요 키워드: {evidence.matchedKeywords.length > 0 ? evidence.matchedKeywords.join(", ") : "업무영역 기준"}</p><p>{evidence.reason} (신뢰 가중치 {evidence.confidenceWeight.toFixed(2)})</p></li>)}</ul>{result.companyKnowledgeUsed && <p className="ai-solution-center__company-reference" data-testid="company-knowledge-reference">회사 지식도 실제 업무 적용 전 해당 컨설턴트와 개발자의 검토가 필요합니다.</p>}</section>
+    <section className="ai-solution-center__unresolved" data-testid="unresolved-items"><h3>아직 확인이 필요한 사항</h3>{unresolved.length > 0 ? <List items={unresolved} /> : <p>현재 입력 범위에서 주요 확인사항은 충분히 답변되었습니다. 실제 적용 전 최종 검토는 필요합니다.</p>}</section>
+    <section className="ai-solution-center__external-review"><h3>외부·사내 검토 항목</h3><p data-testid="ai-result-external-review">회사 업무 및 보안 검토 필요</p></section>
+    <section data-testid="ai-result-questions"><h3>컨설턴트·개발 담당자 확인 질문</h3>{result.clarifyingQuestions.length > 0 ? <div className="ai-solution-center__question-columns"><div><h4>컨설턴트 확인</h4><List items={result.consultantQuestions} /></div><div><h4>개발 담당자 확인</h4><List items={result.developmentQuestions} /></div></div> : <p>입력 정보가 비교적 구체적입니다. 적용 전에도 회사의 기준과 보안 조건을 확인해 주세요.</p>}</section>
+    <section className="ai-solution-center__handover" data-testid="consultant-handover"><div className="ai-solution-center__handover-heading"><div><h3>컨설턴트 인계 요약</h3><p>현재 입력과 추천 결과를 검토용 Markdown으로 정리한 PoC 요약입니다.</p></div><button data-testid="handover-copy" type="button" onClick={onHandoverCopy}><ClipboardCopy size={15} />컨설턴트 인계 요약 복사</button></div>{handoverStatus && <p className="ai-solution-center__file-status" data-testid="handover-copy-status" role="status" aria-live="polite">{handoverStatus}</p>}<dl>{handover.map((item) => <div key={item.label}><dt>{item.label}</dt><dd>{item.value}</dd></div>)}</dl></section>
+    <ReviewRecordPanel session={session} unresolved={unresolved} review={review} onRecord={onReviewRecord} onDownload={onReviewPackageDownload} />
+    {result.clarifyingQuestions.length > 0 && canRefine && <section className="ai-solution-center__followup" data-testid="followup-panel" aria-busy={refining}><h3>추가 정보로 추천 보완</h3><p>아래 질문에 답변하면 현재 입력과 함께 다시 분석하여 추천 내용을 보완합니다.</p>{result.clarifyingQuestions.map((question, index) => <label key={question.id} className="ai-solution-center__followup-question"><span><strong>질문 {index + 1}. {question.question}</strong><em>{question.required ? "필수" : "선택"} · {question.audience} · {question.purpose}</em></span><textarea data-testid={`followup-answer-${question.id}`} value={answerMap[question.id] ?? ""} aria-invalid={Boolean(answerError)} onChange={(event) => onAnswerChange(question.id, event.target.value)} maxLength={1000} rows={3} /></label>)}{answerError && <p className="ai-solution-center__error" data-testid="followup-error" role="alert" aria-live="assertive">{answerError}</p>}<button className="ai-solution-center__primary-button" data-testid="followup-refine" type="button" disabled={refining} onClick={onRefine}>{refining ? "보완 분석 중..." : "답변 반영 후 추천 보완"}</button></section>}
+    {analysisRevision(session) >= maximumAnalysisRevision && <p className="ai-solution-center__limit-notice" data-testid="analysis-limit-notice">현재 PoC에서는 최대 3차 분석까지만 지원합니다. 추가 검토는 해당 컨설턴트에게 전달해 주세요.</p>}
+  </section>;
+}
+
+export function AiSolutionCenterPage({ onNavigate, onScreenIntent }: AiSolutionCenterPageProps) {
+  const screenIntentProps = (screen: ScreenModuleId) => ({
+    onMouseEnter: () => onScreenIntent?.(screen),
+    onFocus: () => onScreenIntent?.(screen),
+    onPointerDown: () => onScreenIntent?.(screen)
+  });
+  const { confirm } = useConfirm();
+  const [activeTab, setActiveTab] = useState<ActiveTab>("consultant");
+  const [attachments, setAttachments] = useState<FileAnalysisAttachment[]>([]);
+  const [fileProcessing, setFileProcessing] = useState(false);
+  const [fileError, setFileError] = useState("");
+  const [domain, setDomain] = useState<BusinessDomain>("");
+  const [situation, setSituation] = useState("");
+  const [consultantError, setConsultantError] = useState("");
+  const [consultantProcessing, setConsultantProcessing] = useState(false);
+  const [consultantSession, setConsultantSession] = useState<SolutionSession>();
+  const [consultantReview, setConsultantReview] = useState<ReviewRecord>();
+  const [consultantAnswers, setConsultantAnswers] = useState<Record<string, string>>({});
+  const [consultantFollowupError, setConsultantFollowupError] = useState("");
+  const [consultantRefining, setConsultantRefining] = useState(false);
+  const [companyKnowledge, setCompanyKnowledge] = useState<readonly CompanyKnowledgeArticle[]>([]);
+  const [inquiry, setInquiry] = useState("");
+  const [currentManagement, setCurrentManagement] = useState("");
+  const [desiredStandard, setDesiredStandard] = useState("");
+  const [fieldConstraints, setFieldConstraints] = useState("");
+  const [involvedDepartments, setInvolvedDepartments] = useState("");
+  const [selectedScenarioId, setSelectedScenarioId] = useState("");
+  const [selectedScenarioTitle, setSelectedScenarioTitle] = useState("");
+  const [customerError, setCustomerError] = useState("");
+  const [customerProcessing, setCustomerProcessing] = useState(false);
+  const [customerSession, setCustomerSession] = useState<SolutionSession>();
+  const [customerReview, setCustomerReview] = useState<ReviewRecord>();
+  const [customerAnswers, setCustomerAnswers] = useState<Record<string, string>>({});
+  const [customerFollowupError, setCustomerFollowupError] = useState("");
+  const [customerRefining, setCustomerRefining] = useState(false);
+  const [exportStatus, setExportStatus] = useState("");
+  const [handoverStatus, setHandoverStatus] = useState("");
+  const [priorities, setPriorities] = useState<SolutionPriorities>({ ...defaultSolutionPriorities });
+  const [comparisonStatus, setComparisonStatus] = useState("");
+  const [comparing, setComparing] = useState(false);
+  const comparisonLock = useRef(false);
+  const { markDirty, clearDirty } = useDirtyState({
+    label: "AI 솔루션 센터",
+    saving: fileProcessing || consultantProcessing || consultantRefining || customerProcessing || customerRefining || comparing
+  });
+
+  const includedAttachments = useMemo(() => attachments.filter((attachment) => attachment.includeInAnalysis), [attachments]);
+  const canAnalyzeFiles = includedAttachments.some((attachment) => Boolean(attachment.redactedText.trim() || attachment.note.trim() || attachment.summary.trim())) || situation.trim().length > 0;
+
+  const combinedAttachmentFindings = useMemo(() => mergeSensitiveFindings(
+    ...attachments.map((attachment) => mergeSensitiveFindings(attachment.sensitiveFindings, redactSensitiveData(attachment.note).findings)),
+    redactSensitiveData(situation).findings
+  ), [attachments, situation]);
+
+  const combinedCustomerFindings = useMemo(() => mergeSensitiveFindings(
+    redactSensitiveData(inquiry).findings,
+    redactSensitiveData(currentManagement).findings,
+    redactSensitiveData(desiredStandard).findings,
+    redactSensitiveData(fieldConstraints).findings,
+    redactSensitiveData(involvedDepartments).findings
+  ), [inquiry, currentManagement, desiredStandard, fieldConstraints, involvedDepartments]);
+
+  const handleFiles = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    if (files.length === 0) return;
+    if (attachments.length + files.length > maximumAttachmentCount) {
+      setFileError(`첨부 파일은 최대 ${maximumAttachmentCount}개까지 선택할 수 있습니다.`);
+      return;
+    }
+    const totalBytes = attachments.reduce((sum, attachment) => sum + attachment.fileSize, 0) + files.reduce((sum, file) => sum + file.size, 0);
+    if (totalBytes > maximumTotalAttachmentBytes) {
+      setFileError("첨부 파일 전체 크기는 최대 100MB까지 허용됩니다.");
+      return;
+    }
+    setFileProcessing(true);
+    setFileError("");
+    try {
+      const prepared = await Promise.all(files.map(async (file, index): Promise<FileAnalysisAttachment> => {
+        const fileId = `file-${attachments.length + index + 1}-${file.size}-${file.lastModified}`;
+        const result = await analyzeFile({ file, fileId, userNote: "", includeInAnalysis: true });
+        return { ...result, note: "", baseProcessingStatus: result.processingStatus, inclusionTouched: false };
+      }));
+      setAttachments((current) => [...current, ...prepared]);
+      markDirty();
+    } catch {
+      setFileError("선택한 파일을 로컬에서 처리하지 못했습니다. 파일은 외부로 전송되지 않았습니다.");
+    } finally {
+      setFileProcessing(false);
+    }
+  };
+
+  const updateAttachmentNote = (fileId: string, note: string) => {
+    markDirty();
+    setAttachments((current) => current.map((attachment) => {
+      if (attachment.fileId !== fileId) return attachment;
+      const shouldAutoInclude = attachment.requiresUserDescription && !attachment.inclusionTouched;
+      const includeInAnalysis = shouldAutoInclude ? note.trim().length > 0 : attachment.includeInAnalysis;
+      const processingStatus = includeInAnalysis
+        ? attachment.warnings.length > 0 ? "READY_WITH_WARNING" : "READY"
+        : attachment.requiresUserDescription && !attachment.inclusionTouched ? "REQUIRES_DESCRIPTION" : "EXCLUDED";
+      return { ...attachment, note, includeInAnalysis, processingStatus };
+    }));
+  };
+
+  const updateAttachmentInclusion = (fileId: string, includeInAnalysis: boolean) => {
+    markDirty();
+    setAttachments((current) => current.map((attachment) => attachment.fileId === fileId ? {
+      ...attachment,
+      includeInAnalysis,
+      inclusionTouched: true,
+      processingStatus: includeInAnalysis ? attachment.warnings.length > 0 ? "READY_WITH_WARNING" : "READY" : "EXCLUDED"
+    } : attachment));
+  };
+
+  const fileProcessingSummaries = (): readonly FileProcessingSummary[] => attachments.map((attachment, index) => {
+    const findings = mergeSensitiveFindings(attachment.sensitiveFindings, redactSensitiveData(attachment.note).findings);
+    return {
+      fileId: `file-${index + 1}`,
+      displayName: `첨부 ${index + 1} (${attachment.category})`,
+      category: attachment.category,
+      supportLevel: attachment.supportLevel,
+      processingStatus: attachment.processingStatus,
+      includeInAnalysis: attachment.includeInAnalysis,
+      summary: attachment.summary,
+      structureSummary: attachment.structureSummary,
+      warnings: [...attachment.warnings],
+      sensitiveCategories: findings.map((finding) => finding.category),
+      sensitiveFindingCount: findings.reduce((sum, finding) => sum + finding.count, 0),
+      redactionApplied: findings.length > 0,
+      userDescriptionUsed: attachment.note.trim().length > 0,
+      requiresUserDescription: attachment.requiresUserDescription
+    };
+  });
+
+  const consultantRequest = (): SolutionRequest => {
+    const safeSituation = redactSensitiveData(situation).redactedText;
+    const summaries = fileProcessingSummaries();
+    const fileInputs = attachments.flatMap((attachment, index) => {
+      if (!attachment.includeInAnalysis) return [];
+      const findings = mergeSensitiveFindings(attachment.sensitiveFindings, redactSensitiveData(attachment.note).findings);
+      return [{
+        id: `file-${index + 1}`,
+        fileName: attachment.fileName,
+        safeDisplayName: `첨부 ${index + 1} (${attachment.category})`,
+        extractedText: attachment.redactedText || `${attachment.summary}\n${attachment.structureSummary}`,
+        note: redactSensitiveData(attachment.note).redactedText,
+        attachmentOrder: index,
+        analyzerType: attachment.category,
+        supportLevel: attachment.supportLevel,
+        processingStatus: attachment.processingStatus,
+        structureSummary: attachment.structureSummary,
+        sensitiveCategories: findings.map((finding) => finding.category),
+        redacted: findings.length > 0,
+        includeInAnalysis: true,
+        userDescriptionUsed: attachment.note.trim().length > 0
+      }];
+    });
+    return { source: "consultant-file", domain, situation: safeSituation, fileInputs, fileProcessingSummaries: summaries };
+  };
+
+  const analyzeConsultant = () => {
+    if (consultantProcessing) return;
+    if (!canAnalyzeFiles) { setConsultantError("분석할 수 있는 텍스트 내용이나 상황 설명을 입력해 주세요."); return; }
+    setConsultantProcessing(true); setConsultantError(""); setExportStatus(""); setHandoverStatus("");
+    try {
+      const request = consultantRequest();
+      const result = buildSolutionResult(request, companyKnowledge);
+      setConsultantSession(createSolutionSession("consultant-file", request, result, companyKnowledge, undefined, buildSolutionOptionComparison(request, result, priorities)));
+      setConsultantReview(undefined);
+      setConsultantAnswers({}); setConsultantFollowupError("");
+      markDirty();
+    } catch { setConsultantError("기본 검토 가이드를 만들지 못했습니다. 입력을 확인한 뒤 다시 시도해 주세요."); } finally { setConsultantProcessing(false); }
+  };
+
+  const applyScenario = async (scenario: SolutionScenario) => {
+    const hasCustomerInput = [inquiry, currentManagement, desiredStandard, fieldConstraints, involvedDepartments].some((value) => value.trim().length > 0);
+    if (hasCustomerInput && !(await confirm({
+      title: "업무 예시 적용",
+      message: "현재 입력을 예시 내용으로 바꾸시겠습니까?",
+      description: "현재 분석 결과는 유지되며, 예시를 적용해도 자동 분석하지 않습니다.",
+      confirmLabel: "적용",
+      cancelLabel: "취소"
+    }))) return;
+    setActiveTab("customer");
+    setInquiry(scenario.problem);
+    setCurrentManagement(scenario.currentMethod);
+    setDesiredStandard(scenario.desiredStandard);
+    setFieldConstraints(scenario.constraints);
+    setInvolvedDepartments(scenario.involvedDepartments);
+    setPriorities({ ...scenario.priorityPreset });
+    setSelectedScenarioId(scenario.id);
+    setSelectedScenarioTitle(scenario.title);
+    setCustomerError("");
+    setComparisonStatus("");
+    markDirty();
+  };
+
+  const fillExample = () => {
+    setInquiry("자재를 추적성 단위로 관리하고 싶지만 생산부터 모든 공정에서 추적값을 입력하기 어렵습니다. 추적성을 확보하면서 현장 입력 부담을 줄일 수 있는 방법을 검토하고 싶습니다.");
+    setCurrentManagement("입고 이후 일부 공정에서만 수기로 LOT 정보를 확인하고 있습니다.");
+    setDesiredStandard("문제 발생 시 자재·작업·검사 이력을 확인할 수 있기를 희망합니다.");
+    setFieldConstraints("모든 공정에서 별도 입력을 강제하기는 어렵고 현장 입력 시간을 줄여야 합니다.");
+    setInvolvedDepartments("");
+    setSelectedScenarioId("");
+    setSelectedScenarioTitle("");
+    setCustomerError("");
+    markDirty();
+  };
+
+  const guideCustomer = () => {
+    if (customerProcessing) return;
+    if (inquiry.trim().length < 20) { setCustomerError("현재 상황, 원하는 기준, 현장 제약을 조금 더 설명해 주세요."); return; }
+    setCustomerProcessing(true); setCustomerError(""); setExportStatus(""); setHandoverStatus("");
+    try {
+      const request: SolutionRequest = {
+        source: "customer-qa",
+        domain: "",
+        situation: redactSensitiveData(inquiry).redactedText,
+        currentManagement: redactSensitiveData(currentManagement).redactedText,
+        desiredStandard: redactSensitiveData(desiredStandard).redactedText,
+        fieldConstraints: redactSensitiveData(fieldConstraints).redactedText,
+        involvedDepartments: redactSensitiveData(involvedDepartments).redactedText,
+        selectedScenarioId,
+        selectedScenarioTitle
+      };
+      const result = buildSolutionResult(request, companyKnowledge);
+      setCustomerSession(createSolutionSession("customer-qa", request, result, companyKnowledge, undefined, buildSolutionOptionComparison(request, result, priorities)));
+      setCustomerReview(undefined);
+      setCustomerAnswers({}); setCustomerFollowupError("");
+      markDirty();
+    } catch { setCustomerError("기본 검토 가이드를 만들지 못했습니다. 입력을 확인한 뒤 다시 시도해 주세요."); } finally { setCustomerProcessing(false); }
+  };
+
+  const validateAnswers = (session: SolutionSession, answerMap: Readonly<Record<string, string>>) => {
+    const answers = clarificationAnswersFor(session.activeResult, answerMap);
+    if (answers.length === 0) return { error: "추가 질문 중 하나 이상에 답변해 주세요." } as const;
+    if (answers.some((answer) => answer.answer.length > 1000)) return { error: "질문별 답변은 최대 1,000자까지 입력할 수 있습니다." } as const;
+    if (answers.reduce((length, answer) => length + answer.answer.length, 0) > 3000) return { error: "추가 답변 전체는 최대 3,000자까지 입력할 수 있습니다." } as const;
+    return { answers } as const;
+  };
+
+  const refine = (mode: SolutionSource) => {
+    const session = mode === "consultant-file" ? consultantSession : customerSession;
+    const answerMap = mode === "consultant-file" ? consultantAnswers : customerAnswers;
+    const setError = mode === "consultant-file" ? setConsultantFollowupError : setCustomerFollowupError;
+    const setRefining = mode === "consultant-file" ? setConsultantRefining : setCustomerRefining;
+    const setSession = mode === "consultant-file" ? setConsultantSession : setCustomerSession;
+    const refining = mode === "consultant-file" ? consultantRefining : customerRefining;
+    if (!session || refining || !canRefineSession(session)) return;
+    const validation = validateAnswers(session, answerMap);
+    if ("error" in validation) { setError(validation.error ?? "추가 답변을 확인해 주세요."); return; }
+    setRefining(true); setError(""); setExportStatus(""); setHandoverStatus("");
+    try {
+      const safeAnswers = validation.answers.map((answer) => ({ ...answer, answer: redactSensitiveData(answer.answer).redactedText }));
+      const request: SolutionRequest = { ...session.originalRequest, clarificationAnswers: safeAnswers };
+      const result = buildSolutionResult(request, session.companyKnowledgeSnapshot);
+      setSession(appendSolutionRevision(session, result, safeAnswers, undefined, buildSolutionOptionComparison(request, result, priorities)));
+      markDirty();
+    } catch { setError("추천 보완 중 오류가 발생했습니다. 기존 결과와 입력은 유지하고 다시 시도할 수 있습니다."); } finally { setRefining(false); }
+  };
+
+  const resetAnalysisSession = () => {
+    setAttachments([]); setDomain(""); setSituation(""); setInquiry(""); setCurrentManagement(""); setDesiredStandard(""); setFieldConstraints(""); setInvolvedDepartments(""); setSelectedScenarioId(""); setSelectedScenarioTitle(""); setFileError("");
+    setConsultantError(""); setCustomerError(""); setConsultantFollowupError(""); setCustomerFollowupError("");
+    setConsultantSession(undefined); setCustomerSession(undefined); setConsultantReview(undefined); setCustomerReview(undefined); setConsultantAnswers({}); setCustomerAnswers({}); setExportStatus(""); setHandoverStatus(""); setActiveTab("consultant");
+    setPriorities({ ...defaultSolutionPriorities }); setComparisonStatus("");
+    clearDirty();
+  };
+
+  const recompare = (mode: SolutionSource) => {
+    const session = mode === "consultant-file" ? consultantSession : customerSession;
+    const setSession = mode === "consultant-file" ? setConsultantSession : setCustomerSession;
+    if (!session || comparisonLock.current) return;
+    comparisonLock.current = true;
+    setComparing(true); setComparisonStatus(""); setExportStatus(""); setHandoverStatus("");
+    try {
+      const request: SolutionRequest = { ...session.originalRequest, clarificationAnswers: activeRevision(session)?.clarificationAnswers ?? [] };
+      const comparison = buildSolutionOptionComparison(request, session.activeResult, priorities);
+      setSession(updateSolutionOptionComparison(session, comparison));
+      setComparisonStatus("비교 기준이 변경되었습니다.");
+      markDirty();
+    } finally {
+      comparisonLock.current = false;
+      setComparing(false);
+    }
+  };
+
+  const copyResultMarkdown = async (session: SolutionSession, answerMap: Readonly<Record<string, string>>, review?: ReviewRecord) => {
+    try { await navigator.clipboard.writeText(buildSolutionMarkdown(session, unresolvedItems(session.activeResult, answerMap), review)); setExportStatus("결과를 클립보드에 복사했습니다."); }
+    catch { setExportStatus("클립보드 복사에 실패했습니다. Markdown 다운로드를 사용해 주세요."); }
+  };
+  const copyHandoverMarkdown = async (session: SolutionSession, answerMap: Readonly<Record<string, string>>, review?: ReviewRecord) => {
+    try { await navigator.clipboard.writeText(buildConsultantHandoverMarkdown(session, unresolvedItems(session.activeResult, answerMap), review)); setHandoverStatus("컨설턴트 인계 요약을 복사했습니다."); }
+    catch { setHandoverStatus("인계 요약 복사에 실패했습니다. 전체 Markdown 다운로드를 사용해 주세요."); }
+  };
+  const downloadMarkdown = (session: SolutionSession, answerMap: Readonly<Record<string, string>>, review?: ReviewRecord) => {
+    const objectUrl = URL.createObjectURL(new Blob([buildSolutionMarkdown(session, unresolvedItems(session.activeResult, answerMap), review)], { type: "text/markdown;charset=utf-8" }));
+    const link = document.createElement("a"); link.href = objectUrl; link.download = buildExportFilename(session); link.click(); URL.revokeObjectURL(objectUrl); setExportStatus("Markdown 파일 다운로드를 시작했습니다.");
+  };
+  const downloadReviewPackage = (review: ReviewRecord) => {
+    const objectUrl = URL.createObjectURL(new Blob([JSON.stringify(toReviewPackage(review), null, 2)], { type: "application/json;charset=utf-8" }));
+    const link = document.createElement("a"); link.href = objectUrl; link.download = reviewPackageFilename(review); link.click(); URL.revokeObjectURL(objectUrl); setExportStatus("검토 패키지 JSON 다운로드를 시작했습니다.");
+  };
+
+  const consultantBusy = fileProcessing || consultantProcessing || consultantRefining;
+  const customerBusy = customerProcessing || customerRefining;
+  const renderResult = (session: SolutionSession, answerMap: Record<string, string>, answerError: string, refining: boolean, mode: SolutionSource) => { const review = mode === "consultant-file" ? consultantReview : customerReview; const setReview = mode === "consultant-file" ? setConsultantReview : setCustomerReview; return <ResultPanel session={session} answerMap={answerMap} answerError={answerError} refining={refining} exportStatus={exportStatus} handoverStatus={handoverStatus} comparisonStatus={comparisonStatus} comparing={comparing} review={review} onAnswerChange={(id, answer) => { if (mode === "consultant-file") { setConsultantAnswers((current) => ({ ...current, [id]: answer })); setConsultantFollowupError(""); } else { setCustomerAnswers((current) => ({ ...current, [id]: answer })); setCustomerFollowupError(""); } markDirty(); }} onRefine={() => refine(mode)} onCopy={() => void copyResultMarkdown(session, answerMap, review)} onDownload={() => downloadMarkdown(session, answerMap, review)} onHandoverCopy={() => void copyHandoverMarkdown(session, answerMap, review)} onRecompare={() => recompare(mode)} onReviewRecord={(record) => { setReview(record); markDirty(); }} onReviewPackageDownload={downloadReviewPackage} />; };
+
+  return <div className="erp-shell">
+    <aside className="side-nav"><div className="brand"><Building2 size={20} /><strong>SMART ERP</strong></div><nav><div className="menu-title">영업관리</div><button className="menu-item" data-testid="nav-sales-order" onClick={() => onNavigate("sales")} type="button">수주등록</button><div className="menu-title">구매관리</div><div className="menu-group"><ChevronRight size={14} /><span>발주관리</span></div><button {...screenIntentProps("purchase")} className="menu-item" data-testid="nav-purchase-order" onClick={() => onNavigate("purchase")} type="button">발주등록</button><div className="menu-title">생산관리</div><div className="menu-group"><ChevronRight size={14} /><span>작업지시관리</span></div><button {...screenIntentProps("work")} className="menu-item" data-testid="nav-work-order" onClick={() => onNavigate("work")} type="button">작업지시등록</button><div className="menu-title">AI 도구</div><button className="menu-item active" data-testid="nav-ai-solution-center" type="button">AI 솔루션 센터</button></nav></aside>
+    <main className="ai-solution-center" aria-busy={consultantBusy || customerBusy}>
+      <header className="page-header"><div><h1 data-testid="ai-solution-center-title">AI 솔루션 센터</h1><p>ERP·MES 업무 상황을 정리하고 검토 가능한 기본 가이드와 추가 확인사항을 제공합니다.</p></div><button className="ai-solution-center__reset-button" data-testid="analysis-session-reset" type="button" onClick={resetAnalysisSession}><RotateCcw size={15} />분석 세션 초기화</button></header>
+      <aside className="ai-solution-center__top-note" aria-label="PoC 안내">현재 버전은 로컬 지식 템플릿 기반 PoC입니다.<br />실제 회사 지식과 보안 확인 후 AI를 연결하면 확장할 수 있습니다.</aside>
+      <CompanyKnowledgeSettings companyKnowledge={companyKnowledge} generalKnowledgeCount={solutionKnowledge.length} onApply={(knowledge) => { setCompanyKnowledge(knowledge); markDirty(); }} onReset={() => { setCompanyKnowledge([]); markDirty(); }} />
+      <PriorityCard priorities={priorities} onChange={(key, value) => { setPriorities((current) => ({ ...current, [key]: value })); setComparisonStatus(""); markDirty(); }} onPreset={(preset) => { setPriorities(preset); setComparisonStatus(""); markDirty(); }} />
+      <ScenarioLibrary onApply={(scenario) => void applyScenario(scenario)} />
+      <ReviewPackageImportPanel />
+      <div className="ai-solution-center__tabs" role="tablist" aria-label="AI 솔루션 방식"><button type="button" role="tab" id="consultant-tab" aria-controls="consultant-panel" aria-selected={activeTab === "consultant"} className={activeTab === "consultant" ? "is-active" : ""} onClick={() => setActiveTab("consultant")}>컨설턴트 파일 분석</button><button type="button" role="tab" id="customer-tab" aria-controls="customer-panel" aria-selected={activeTab === "customer"} className={activeTab === "customer" ? "is-active" : ""} onClick={() => setActiveTab("customer")}>고객 업무 Q&amp;A</button></div>
+      {activeTab === "consultant" ? <section id="consultant-panel" role="tabpanel" aria-labelledby="consultant-tab" className="ai-solution-center__panel">
+        <div className="ai-solution-center__form-card">
+          <h2>컨설턴트 파일 분석</h2>
+          <label className="ai-solution-center__file-label" htmlFor="ai-file-input"><FileText size={16} />파일 선택 또는 추가<input id="ai-file-input" data-testid="ai-file-input" type="file" multiple onChange={(event) => void handleFiles(event)} /></label>
+          <p className="ai-solution-center__muted">선택한 파일은 서버로 업로드하지 않으며 브라우저 메모리에서만 처리합니다. 파일 첨부와 파일 내용 자동 분석의 지원 범위는 유형별로 다릅니다.</p>
+          <FileAnalysisCards
+            attachments={attachments}
+            error={fileError}
+            processing={fileProcessing}
+            onNoteChange={updateAttachmentNote}
+            onIncludeChange={updateAttachmentInclusion}
+            onRemove={(fileId) => { setAttachments((current) => current.filter((item) => item.fileId !== fileId)); markDirty(); }}
+          />
+          <SensitiveDataNotice findings={combinedAttachmentFindings} dataTestId="consultant-sensitive-summary" />
+          <div className="ai-solution-center__fields">
+            <label>업무영역<select data-testid="ai-domain-select" value={domain} onChange={(event) => { setDomain(event.target.value as BusinessDomain); markDirty(); }}><option value="">자동 추정</option>{businessDomains.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+            <label>공통 상황 설명<textarea data-testid="ai-situation-input" value={situation} aria-invalid={Boolean(consultantError) && !canAnalyzeFiles} onChange={(event) => { setSituation(event.target.value); setConsultantError(""); markDirty(); }} placeholder="업무 상황, 현재 문제, 확인하고 싶은 기준을 적어 주세요." rows={6} /></label>
+          </div>
+          {consultantError && <p className="ai-solution-center__error" role="alert">{consultantError}</p>}
+          <button className="ai-solution-center__primary-button" data-testid="ai-consultant-analyze" type="button" disabled={consultantBusy} onClick={analyzeConsultant}>{consultantProcessing ? "분석 중..." : "기본 가이드 분석"}</button>
+        </div>
+        {consultantSession && renderResult(consultantSession, consultantAnswers, consultantFollowupError, consultantRefining, "consultant-file")}
+      </section> : <section id="customer-panel" role="tabpanel" aria-labelledby="customer-tab" className="ai-solution-center__panel">
+        <div className="ai-solution-center__form-card">
+          <h2>고객 업무 Q&amp;A</h2>
+          {selectedScenarioTitle && <p className="ai-solution-center__scenario-selected" data-testid="selected-scenario">적용한 업무 예시: <strong>{selectedScenarioTitle}</strong> · 내용을 검토한 뒤 직접 가이드를 요청해 주세요.</p>}
+          <div className="ai-solution-center__fields">
+            <label>문의 또는 문제<textarea data-testid="ai-customer-inquiry" value={inquiry} aria-invalid={Boolean(customerError)} onChange={(event) => { setInquiry(event.target.value); setCustomerError(""); markDirty(); }} rows={4} /></label>
+            <label>현재 관리 방식<textarea data-testid="ai-customer-current-management" value={currentManagement} onChange={(event) => { setCurrentManagement(event.target.value); markDirty(); }} rows={3} /></label>
+            <label>희망하는 기준<textarea data-testid="ai-customer-desired-standard" value={desiredStandard} onChange={(event) => { setDesiredStandard(event.target.value); markDirty(); }} rows={3} /></label>
+            <label>현장 제약<textarea data-testid="ai-customer-field-constraints" value={fieldConstraints} onChange={(event) => { setFieldConstraints(event.target.value); markDirty(); }} rows={3} /></label>
+            <label>관련 부서<textarea data-testid="ai-customer-departments" value={involvedDepartments} onChange={(event) => { setInvolvedDepartments(event.target.value); markDirty(); }} rows={2} /></label>
+          </div>
+          <SensitiveDataNotice findings={combinedCustomerFindings} dataTestId="customer-sensitive-summary" />
+          {customerError && <p className="ai-solution-center__error" role="alert">{customerError}</p>}
+          <div className="ai-solution-center__actions"><button type="button" onClick={fillExample}>예시 질문 넣기</button><button className="ai-solution-center__primary-button" data-testid="ai-customer-guide" type="button" disabled={customerBusy} onClick={guideCustomer}>{customerProcessing ? "가이드 작성 중..." : "기본 가이드 받기"}</button></div>
+        </div>
+        {customerSession && renderResult(customerSession, customerAnswers, customerFollowupError, customerRefining, "customer-qa")}
+      </section>}
+      <section className="ai-solution-center__security" aria-label="보안 안내"><h2>보안 및 사용 안내</h2><ul><li>선택한 파일은 서버로 업로드하지 않으며 브라우저 메모리에서만 처리합니다.</li><li>구조화 파일은 로컬 규칙으로 요약하며 원문 전체를 결과·Markdown·검토 패키지에 포함하지 않습니다.</li><li>이미지·음성·영상은 메타정보만 확인하며 OCR·STT·장면 분석을 수행하지 않습니다.</li><li>민감정보 탐지는 기초 패턴 기반이므로 오탐·미탐이 가능하며 실제 공유 전 담당자 검토가 필요합니다.</li><li>실제 도입 전에는 회사 보안·권한·감사 정책과 담당자 확인이 필요합니다.</li></ul></section>
+    </main>
+  </div>;
+}

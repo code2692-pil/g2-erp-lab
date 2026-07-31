@@ -1,0 +1,33 @@
+name: Nightly quality
+
+on:
+  schedule:
+    - cron: "20 15 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  nightly-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      # Node 22.13 bundles an older Corepack key set that cannot verify pnpm 11.7.
+      - run: npm install --global corepack@0.31.0
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: node scripts/qa/run-quality-gates.mjs nightly
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nightly-quality-report
+          path: .artifacts/maintenance/

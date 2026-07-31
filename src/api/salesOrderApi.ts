@@ -11,8 +11,8 @@ export interface UpsertSalesOrderRequest {
   Lines: SalesOrderLine[];
 }
 
-export function getSalesOrders() {
-  return apiClient<SalesOrderDto[]>("/api/sales-orders");
+export function getSalesOrders(signal?: AbortSignal) {
+  return apiClient<SalesOrderDto[]>("/api/sales-orders", { signal });
 }
 
 export function getSalesOrder(companyCode: string, salesOrderNo: string) {

@@ -7,7 +7,7 @@ import type { ConfirmationOptions } from "../components/common/feedback/types";
 export function useConfirm() {
   const activeConfirmation = useRef<Promise<boolean> | null>(null);
   const confirm = useCallback((options: ConfirmationOptions) => {
-    if (activeConfirmation.current) return activeConfirmation.current;
+    if (activeConfirmation.current) return Promise.resolve(false);
 
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const host = document.createElement("div");

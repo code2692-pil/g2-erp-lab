@@ -1,4 +1,6 @@
-import { expect, test } from "@playwright/test";
+import { createWorkerWarmupTest, expect } from "./worker-frontend-warmup.fixture";
+
+const test = createWorkerWarmupTest("work-order");
 
 test("API UI: work order menu, search, and validation", async ({ page }) => {
   await page.goto("/");
@@ -9,7 +11,6 @@ test("API UI: work order menu, search, and validation", async ({ page }) => {
   await expect(page.getByTestId("work-order-header-grid-row-1000::WO2026070001")).toBeVisible();
   await page.getByTestId("wo-btn-new").click();
   await page.getByTestId("wo-btn-save").click();
-  await expect(page.getByTestId("work-order-dialog-validation-summary")).toBeVisible();
+  await expect(page.getByTestId("work-order-validation-summary")).toBeVisible();
   await expect(page.getByTestId("confirm-dialog")).toHaveCount(0);
-  await page.getByTestId("work-order-dialog-validation-close").click();
 });

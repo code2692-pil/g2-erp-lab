@@ -32,7 +32,23 @@
 
 이 명령은 worker 설치·재시작, SQL Server 설정 변경, 인증서 변경, 자동 데이터 정리, push, PR, merge, rebase, 배포를 수행하지 않는다.
 
-## 2026-07-31 실행 결과
+## 최신 실행 결과 — 2026-07-31
+
+- 기준: `feat/rc2-unsaved-navigation-guard-v1` / `19dff36c80490b98cddf7c4b44dd1f63c3d70e68`
+- 실행: 2026-07-31 09:04:54–09:21:44 KST, 1,010.3초
+- 최종: `RC2 FULL REGRESSION: PASS` (exit 0), 23개 단계 모두 PASS
+- production direct-route fallback: production에서 `/development-data` 직접 진입은 메뉴·API를 열지 않고 URL·React 화면·history entry를 수주등록(`/`, `sales`)으로 `replaceState` 정규화한다. 작업지시 화면으로 fallback되지 않으며 Back으로 차단 경로에 재진입하지 않는다.
+- 정적·빌드: TypeScript, production build, bundle budget, PowerShell parser·validate, Grid 17건·AI 파일 인텔리전스 14건·bundle budget 8건·maintenance 17건 모두 PASS
+- .NET: solution build 경고 0·오류 0, 비SQL 테스트 49/49 PASS
+- Playwright: Mock core 50/50, InMemory core 18/18, Mock UX 71/71, production development-data 1/1, InMemory mobile/PDA 6/6 PASS
+- SQL request: `38165ebd-fd94-4484-8e1b-7aabada008e8`, `PASS` / exit 0
+  - `tcp:localhost,1433` encrypted TCP/TLS probe PASS
+  - development status, sales orders, purchase orders, work orders GET 모두 HTTP 200
+  - 발주·수주·작업지시 SQL 통합, 연결 정책, mobile/PDA SQL cross 모두 PASS
+  - 11개 marker scope는 실행 전후 모두 0건, runner 종료와 5173/5080 포트 해제를 확인
+- 최종 판정: **PUSH READY**. native `beforeunload`의 사용자 지정 문구 비보장은 브라우저 표준 제한이며 차단 요소가 아니다.
+
+## 이전 실행 결과
 
 - 기준: `test/rc2-full-regression-evidence-v1` / `838c930e1e4b5ea4e8668213fe15d85a324a6397`
 - 실행: 2026-07-31 05:24:36–05:42:06 KST, 1,049.9초

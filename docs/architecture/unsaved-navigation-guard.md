@@ -63,3 +63,11 @@ dirty 또는 saving source가 하나라도 있을 때만 `beforeunload` listener
 - 기존 수주·발주·작업지시·모바일/PDA dirty 회귀와 Grid 보기 설정의 비업무 dirty 회귀를 함께 유지한다.
 
 전체 RC2 검증은 `pnpm run qa:rc2:full`이 이 Playwright 목록과 로컬 SQL worker 검증을 한 번의 전달 증거로 실행한다.
+
+## 2026-07-31 최종 RC2 검증
+
+- 기준: `feat/rc2-unsaved-navigation-guard-v1` / `19dff36c80490b98cddf7c4b44dd1f63c3d70e68`
+- `pnpm run qa:rc2:full`은 2026-07-31 09:04:54–09:21:44 KST에 exit 0으로 완료했다.
+- Mock UX 71/71에는 전역 dirty navigation 6건이 포함되고, InMemory mobile/PDA 6/6에는 저장 중 이동 보호가 포함된다. Mock core 50/50, InMemory core 18/18, production direct-route 1/1도 함께 통과했다.
+- 앱 내 이동·Back/Forward는 URL과 `history.state.g2ErpAppNavigation`을 일치시켜 검증했다. production의 차단된 `/development-data` 직접 경로도 현재 history entry를 수주등록(`/`, `sales`)으로 교체하므로 차단 경로가 이력에 남지 않는다.
+- 브라우저 native `beforeunload`는 사용자 지정 문구와 실제 표시 여부를 보장하지 않는다. 이는 웹 표준 제한이며, 제품은 dirty/saving 상태에서 취소 가능한 표준 이벤트만 등록한다.

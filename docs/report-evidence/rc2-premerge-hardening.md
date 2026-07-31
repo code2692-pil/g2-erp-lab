@@ -14,7 +14,7 @@
 | SQL 연결 정책 | 암호화 연결만 허용 | `SqlServerConnectionFactoryTests` | 아니오 | 없음 | 아니오 |
 | RC2 preflight | 정적·빌드·unit·연결 정책 후 기존 worker 요청 | `pnpm run qa:rc2:preflight` | 마지막 단계만 worker | worker 미설치/실행 중이면 명확히 실패 | 예 |
 | Grid·입력 | 원자적 붙여넣기, editable/read-only 구분, 보기 설정 | Grid unit/E2E | 아니오 | 초고속 입력의 브라우저별 차이 | 아니오 |
-| 미저장 변경 | 앱 내 검색·신규·메뉴 이동 확인 | 등록 화면 E2E | 아니오 | browser Back/reload/close 보호는 별도 설계 필요 | Conditional |
+| 미저장 변경 | 전역 dirty registry, 메뉴·화면 이동 확인, Back/Forward 복원·재생, dirty/saving `beforeunload` 보호 | 단위·Mock·InMemory E2E | 아니오 | native `beforeunload` 문구는 브라우저가 제어 | 아니오 |
 | API 수명주기 | abort, 최신 응답 우선, mutation lock | mobile/PDA hardening E2E | InMemory 선택 | PC 화면의 지연 응답 회귀는 추가 관찰 대상 | 아니오 |
 | AI 파일 분석 | 브라우저 내 분석, redaction, review package 보호 | unit/E2E | 아니오 | 파일명 정책과 심층 중첩 파일은 후속 범위 | 아니오 |
 | 모바일/PDA | PC·모바일·PDA 공통 API 계약, 44px 조작영역 | Mock/InMemory/SQL E2E | SQL은 선택 | 동시 편집 충돌 정책은 별도 설계 필요 | Conditional |
@@ -44,6 +44,16 @@
 
 이 변경은 공통 CSS 한 파일에만 있으며, 업무 데이터·저장 동작·API 호출·화면 구조를 바꾸지 않는다. UI commit 하나를 `git revert`하면 전체를 되돌릴 수 있다.
 
+## 2026-07-31 RC2 전달 체크리스트
+
+- [x] `feat/rc2-unsaved-navigation-guard-v1` / `19dff36c80490b98cddf7c4b44dd1f63c3d70e68`에서 작업 트리 clean 및 5173/5080 비점유 확인
+- [x] production `/development-data` 직접 경로를 수주등록(`/`)으로 정규화하고 메뉴·API 미노출, history entry 교체, Back 비재진입을 E2E로 확인
+- [x] TypeScript, production build, bundle budget, .NET build(경고 0·오류 0), 비SQL .NET 49/49 통과
+- [x] Mock core 50/50, InMemory core 18/18, Mock UX 71/71, production direct-route 1/1, InMemory mobile/PDA 6/6 통과
+- [x] SQL worker request `38165ebd-fd94-4484-8e1b-7aabada008e8` PASS: encrypted TCP/TLS, API smoke, SQL 통합, mobile/PDA cross, marker 11개 scope 전후 0건
+- [x] runner 종료 및 5173/5080 해제 확인
+- [x] 최종 판정: **PUSH READY**
+
 ## RC2 preflight 체크리스트
 
 - [ ] 작업 트리 clean 확인(개발 중 검증만 `-AllowDirty` 허용)
@@ -58,6 +68,6 @@
 
 ## 잔여 위험과 별도 설계 항목
 
-- browser Back/Forward, reload, tab/window close의 미저장 입력 보호는 전역 dirty registry와 history 처리의 합의가 필요하다. 단순 `beforeunload`만으로는 browser history를 안전하게 해결할 수 없으므로 이번 범위에서는 구현하지 않는다.
+- 앱 내 Back/Forward와 화면 이동은 전역 dirty registry·history 재생으로 보호한다. 다만 브라우저 native `beforeunload`의 사용자 지정 문구와 실제 표시 여부는 브라우저 표준이 제어하며, 이를 제품 코드로 강제하지 않는다.
 - 모바일/PC 동시 수정 충돌 정책, 역할 기반 dashboard, 저장된 검색 조건, 실제 운영 DB 성능·권한·감사는 PoC 범위 밖이다.
 - SQL worker는 local development DB와 설치된 일반 사용자 worker에 한정된다. worker 결과가 실패하면 자동 재시도·자동 DELETE를 하지 않는다.

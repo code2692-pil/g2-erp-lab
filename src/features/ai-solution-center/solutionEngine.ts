@@ -69,7 +69,7 @@ function inputEvidenceFor(request: SolutionRequest, candidate: KnowledgeCandidat
       id,
       sourceType,
       sourceLabel,
-      fileName: file?.fileName,
+      fileName: file?.safeDisplayName,
       excerpt,
       relatedKeywords,
       usedInRecommendation: relatedKeywords.length > 0 || symptomMatchCount(candidate.symptoms, excerpt) > 0,

@@ -1,4 +1,4 @@
-import { Component, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Component, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { apiPurchaseOrderAdapter } from "./features/purchase-order/apiPurchaseOrderAdapter";
 import { mockPurchaseOrderAdapter } from "./features/purchase-order/mockPurchaseOrderAdapter";
 import { SalesOrderRegistration } from "./features/sales-order/SalesOrderRegistration";
@@ -81,6 +81,17 @@ function AppRouter() {
   const replayTargetRef = useRef<AppHistoryEntry<AppPage> | null>(null);
   const { requestNavigation } = useDirtyNavigation();
   const purchaseOrderAdapter = isApiMode() ? apiPurchaseOrderAdapter : mockPurchaseOrderAdapter;
+  const developmentDataRouteBlocked = page === "development" && !canShowDevelopmentDataManagerClient();
+  const activePage = developmentDataRouteBlocked ? "sales" : page;
+
+  useLayoutEffect(() => {
+    if (!developmentDataRouteBlocked) return;
+    const existing = readAppHistoryEntry<AppPage>(window.history.state);
+    const fallback = historyEntry("sales", existing?.index ?? currentEntryRef.current?.index ?? 0);
+    window.history.replaceState(withAppHistoryEntry(window.history.state, fallback), "", pathForPage("sales"));
+    currentEntryRef.current = fallback;
+    setPage("sales");
+  }, [developmentDataRouteBlocked]);
 
   useEffect(() => {
     let cancelled = false;
@@ -156,20 +167,20 @@ function AppRouter() {
     });
   };
 
-  if (page === "sales") return <SalesOrderRegistration onNavigate={navigate} onScreenIntent={handleScreenIntent} showDevelopmentDataManager={showDevelopmentDataManager} />;
+  if (activePage === "sales") return <SalesOrderRegistration onNavigate={navigate} onScreenIntent={handleScreenIntent} showDevelopmentDataManager={showDevelopmentDataManager} />;
 
   return (
     <PageLoadErrorBoundary>
       <Suspense fallback={<PageLoadingFallback />}>
-        {page === "development" && showDevelopmentDataManager
+        {activePage === "development" && showDevelopmentDataManager
           ? <DevelopmentDataManager onNavigate={navigate} />
-          : page === "ai"
+          : activePage === "ai"
             ? <AiSolutionCenterPage onNavigate={navigate} onScreenIntent={handleScreenIntent} />
-            : page === "mobileSales"
+            : activePage === "mobileSales"
               ? <CompactSalesOrderPage mode="mobile" onNavigate={navigate} />
-              : page === "pdaSales"
+              : activePage === "pdaSales"
                 ? <CompactSalesOrderPage mode="pda" onNavigate={navigate} />
-                : page === "purchase"
+                : activePage === "purchase"
                   ? <PurchaseOrderRegistration adapter={purchaseOrderAdapter} onNavigate={navigate} onScreenIntent={handleScreenIntent} showDevelopmentDataManager={showDevelopmentDataManager} />
                   : <WorkOrderRegistration onNavigate={navigate} onScreenIntent={handleScreenIntent} showDevelopmentDataManager={showDevelopmentDataManager} />}
       </Suspense>

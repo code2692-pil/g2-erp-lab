@@ -20,6 +20,8 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
+      # Node 22.13 bundles an older Corepack key set that cannot verify pnpm 11.7.
+      - run: npm install --global corepack@0.31.0
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
       - run: node scripts/qa/run-quality-gates.mjs nightly

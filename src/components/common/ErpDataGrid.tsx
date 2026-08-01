@@ -732,6 +732,9 @@ export function ErpDataGrid<T extends object>({
                             : undefined
                         }
                         key={String(column.field)}
+                        onClick={(event) => {
+                          if (canOpenLookup) event.stopPropagation();
+                        }}
                         onDoubleClick={(event) => {
                           if (!canOpenLookup) return;
                           event.stopPropagation();

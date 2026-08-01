@@ -106,6 +106,32 @@ test("B: 거래처 Lookup 선택값을 조회조건에 반영한다", async ({ p
   await expect(page.getByTestId("filter-partner-name")).not.toHaveValue("");
 });
 
+test("B-1: 수주 거래처코드와 거래처명 Grid 더블클릭은 같은 Lookup으로 현재 행을 갱신한다", async ({ page }) => {
+  await openSalesOrder(page);
+  await searchSalesOrders(page);
+  const rowKey = "1000::SO2026070001";
+  const otherRowKey = "1000::SO2026070002";
+  const otherPartnerCode = page.getByTestId(`sales-order-header-grid-cell-${otherRowKey}-CD_PARTNER`);
+  const otherPartnerName = page.getByTestId(`sales-order-header-grid-cell-${otherRowKey}-NM_PARTNER`);
+  const originalOtherPartnerCode = await otherPartnerCode.inputValue();
+  const originalOtherPartnerName = await otherPartnerName.inputValue();
+
+  await page.getByTestId(`sales-order-header-grid-cell-container-${rowKey}-CD_PARTNER`).dblclick();
+  await expect(page.getByRole("dialog", { name: "거래처 도움창" })).toBeVisible();
+  await page.getByTestId("partner-lookup-grid-row-1000::P-10044").click();
+  await page.getByTestId("partner-lookup-confirm").click();
+  await expect(page.getByTestId(`sales-order-header-grid-cell-${rowKey}-CD_PARTNER`)).toHaveValue("P-10044");
+  await expect(page.getByTestId(`sales-order-header-grid-cell-${rowKey}-NM_PARTNER`)).toHaveValue("한빛산업");
+  await expect(otherPartnerCode).toHaveValue(originalOtherPartnerCode);
+  await expect(otherPartnerName).toHaveValue(originalOtherPartnerName);
+
+  await page.getByTestId(`sales-order-header-grid-cell-container-${rowKey}-NM_PARTNER`).dblclick();
+  await expect(page.getByRole("dialog", { name: "거래처 도움창" })).toBeVisible();
+  await page.getByTestId("partner-lookup-cancel").click();
+  await expect(page.getByTestId(`sales-order-header-grid-cell-${rowKey}-CD_PARTNER`)).toHaveValue("P-10044");
+  await expect(page.getByTestId(`sales-order-header-grid-cell-${rowKey}-NM_PARTNER`)).toHaveValue("한빛산업");
+});
+
 test("C: 품목 Lookup은 선택한 수주상세 행만 갱신한다", async ({ page }) => {
   await openSalesOrder(page);
   await searchSalesOrders(page);

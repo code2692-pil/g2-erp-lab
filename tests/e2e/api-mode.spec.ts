@@ -18,6 +18,60 @@ function deferred() {
   return { promise, resolve };
 }
 
+test("늦게 완료된 발주 상세 조회가 Lookup 선택값을 덮어쓰지 않는다", async ({ page, request }, testInfo) => {
+  test.slow();
+  const number = `E2E-PO-RACE-${testInfo.workerIndex}-${Date.now()}`;
+  const otherNumber = `${number}-OTHER`;
+  const document = purchaseRequest(number);
+  const otherDocument = purchaseRequest(otherNumber);
+  const detailUrl = `${apiBaseUrl}/api/purchase-orders/1000/${number}`;
+  const delayedResponse = deferred();
+  let detailRequestSeen = false;
+  const pageErrors: Error[] = [];
+
+  await request.post(`${apiBaseUrl}/api/purchase-orders`, { data: document });
+  await request.post(`${apiBaseUrl}/api/purchase-orders`, { data: otherDocument });
+  page.on("pageerror", (error) => pageErrors.push(error));
+  await page.route(detailUrl, async (route) => {
+    detailRequestSeen = true;
+    await delayedResponse.promise;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(document) });
+  });
+
+  try {
+    await page.goto("/");
+    await page.getByTestId("nav-purchase-order").click();
+    await page.getByTestId("po-btn-search").click();
+    const rowKey = `1000::${number}`;
+    const otherRowKey = `1000::${otherNumber}`;
+    const otherPartnerCode = page.getByTestId(`purchase-header-grid-cell-${otherRowKey}-CD_PARTNER`);
+    const otherPartnerName = page.getByTestId(`purchase-header-grid-cell-${otherRowKey}-NM_PARTNER`);
+    const originalOtherPartnerCode = await otherPartnerCode.inputValue();
+    const originalOtherPartnerName = await otherPartnerName.inputValue();
+
+    await page.getByTestId(`purchase-header-grid-cell-container-${rowKey}-NO_PO`).click();
+    await expect.poll(() => detailRequestSeen).toBe(true);
+    await page.getByTestId(`purchase-header-grid-cell-container-${rowKey}-CD_PARTNER`).dblclick();
+    await expect(page.getByRole("dialog", { name: "거래처 도움창" })).toBeVisible();
+    await page.getByTestId("po-partner-lookup-grid-row-1000::P-10044").click();
+    await page.getByTestId("po-partner-lookup-confirm").click();
+    await expect(page.getByTestId(`purchase-header-grid-cell-${rowKey}-CD_PARTNER`)).toHaveValue("P-10044");
+    await expect(page.getByTestId(`purchase-header-grid-cell-${rowKey}-NM_PARTNER`)).not.toHaveValue("");
+    await expect(otherPartnerCode).toHaveValue(originalOtherPartnerCode);
+    await expect(otherPartnerName).toHaveValue(originalOtherPartnerName);
+
+    delayedResponse.resolve();
+    await expect(page.getByTestId(`purchase-header-grid-cell-${rowKey}-CD_PARTNER`)).toHaveValue("P-10044");
+    await expect(page.getByTestId(`purchase-header-grid-cell-${rowKey}-NM_PARTNER`)).not.toHaveValue("");
+    expect(pageErrors).toEqual([]);
+  } finally {
+    delayedResponse.resolve();
+    await page.unroute(detailUrl);
+    await request.delete(`${apiBaseUrl}/api/purchase-orders/1000/${number}`);
+    await request.delete(`${apiBaseUrl}/api/purchase-orders/1000/${otherNumber}`);
+  }
+});
+
 test("API mode: sales order CRUD, lookup, validation, and server amounts", async ({ page, request }, testInfo) => {
   test.slow();
   const number = `E2E-SO-${testInfo.workerIndex}-${Date.now()}`;

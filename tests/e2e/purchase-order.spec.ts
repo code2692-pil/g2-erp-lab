@@ -88,7 +88,10 @@ test("B: 신규 발주 Validation, Lookup, 금액 계산과 저장", async ({ pa
     (buttons) => buttons.map((button) => button.getAttribute("data-testid")).filter(Boolean)
   )).toEqual(["confirm-dialog-confirm", "confirm-dialog-cancel"]);
   await page.getByTestId("confirm-dialog-confirm").click();
+  await expect(page.getByTestId("confirm-dialog")).toContainText("저장되었습니다.");
+  await page.getByTestId("confirm-dialog-confirm").click();
   await expect(page.getByTestId("status-message")).toHaveText("저장되었습니다.");
+  await expect(page.locator(".erp-snackbar--success")).toHaveCount(0);
 });
 
 test("B-1: 발주 거래처와 거래처명 Grid 더블클릭은 거래처 Lookup을 연다", async ({ page }) => {

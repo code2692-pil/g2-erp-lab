@@ -248,6 +248,13 @@ test("G: 기존 주요 버튼과 Lookup, Grid 행추가/삭제 동작을 유지�
   await expect(page.getByTestId("sales-order-header-grid-row-1000::TEMP_SO_001")).toHaveCount(1);
   await page.getByTestId("btn-delete-order").click();
   await page.getByTestId("confirm-dialog-confirm").click();
+  await expect(page.getByTestId("confirm-dialog")).toContainText("삭제되었습니다.");
+  await expect(page.getByTestId("sales-order-header-grid-row-1000::TEMP_SO_001")).toHaveCount(1);
+  await page.getByTestId("confirm-dialog-confirm").evaluate((button) => {
+    button.click();
+    button.click();
+  });
+  await expect(page.getByTestId("confirm-dialog")).toHaveCount(0);
   await expect(page.getByTestId("sales-order-header-grid-footer-total")).toHaveText(/2/);
 });
 
@@ -334,7 +341,7 @@ test("Validation E: 오류 값을 수정하면 오류 표시가 즉시 해제된
   await expect(page.getByTestId("sales-order-validation-summary-count")).toHaveText("입력 오류 1건");
 });
 
-test("Validation F: 정상 입력값이면 mock 저장 성공 메시지를 표시하고 화면을 저장한다", async ({ page }) => {
+test("Validation F: 정상 입력값이면 저장 완료 대화상자 확인 후 화면을 저장한다", async ({ page }) => {
   await openSalesOrder(page);
   await searchSalesOrders(page);
 
@@ -343,11 +350,13 @@ test("Validation F: 정상 입력값이면 mock 저장 성공 메시지를 표�
   await expect(page.getByTestId("confirm-dialog")).toContainText("저장하시겠습니까?");
   await page.getByTestId("confirm-dialog-confirm").click();
 
+  await expect(page.getByTestId("confirm-dialog")).toContainText("저장되었습니다.");
+  await page.getByTestId("confirm-dialog-confirm").press("Enter");
   await expect(page.getByTestId("sales-order-validation-summary")).toHaveCount(0);
   await expect(page.getByTestId("status-message")).toHaveText("저장되었습니다.");
 });
 
-test("UX A: 저장 확인을 취소하면 저장하지 않고, 확인하면 알림을 표시한다", async ({ page }) => {
+test("UX A: 저장 확인 취소와 완료 대화상자의 후속 처리 및 접근성을 보장한다", async ({ page }) => {
   await openSalesOrder(page);
   await searchSalesOrders(page);
   await lineCell(page, firstLineKey, "QT_SO").fill("3");
@@ -362,7 +371,25 @@ test("UX A: 저장 확인을 취소하면 저장하지 않고, 확인하면 알�
 
   await page.getByTestId("btn-save").click();
   await page.getByTestId("confirm-dialog-confirm").click();
-  await expect(page.getByRole("status")).toContainText("저장되었습니다.");
+  const resultDialog = page.getByRole("dialog", { name: "저장 완료" });
+  const resultConfirm = resultDialog.getByTestId("confirm-dialog-confirm");
+  await expect(resultDialog).toContainText("저장되었습니다.");
+  await expect(page.getByTestId("sales-order-dirty-indicator")).toBeVisible();
+  await expect(resultDialog.getByTestId("confirm-dialog-cancel")).toHaveCount(0);
+  await expect(resultDialog.getByRole("button", { name: "저장 완료 닫기" })).toHaveCount(0);
+  await expect(resultConfirm).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(resultConfirm).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(resultConfirm).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(resultDialog).toBeVisible();
+  await page.locator(".erp-dialog-backdrop").click({ position: { x: 2, y: 2 } });
+  await expect(resultDialog).toBeVisible();
+  await resultConfirm.press("Space");
+  await expect(resultDialog).toHaveCount(0);
+  await expect(page.getByTestId("sales-order-dirty-indicator")).toHaveCount(0);
+  await expect(page.locator(".erp-snackbar--success")).toHaveCount(0);
 });
 
 test("UX B: 변경 중 Header 이동은 계속 편집 또는 폐기를 선택할 수 있다", async ({ page }) => {
@@ -370,13 +397,13 @@ test("UX B: 변경 중 Header 이동은 계속 편집 또는 폐기를 선택할
   await searchSalesOrders(page);
   await lineCell(page, firstLineKey, "QT_SO").fill("3");
 
-  await headerRow(page, "1000::SO2026070002").click();
+  await page.getByTestId("sales-order-header-grid-cell-container-1000::SO2026070002-DT_SO").click();
   await expect(page.getByTestId("confirm-dialog")).toContainText("저장하지 않은 변경사항이 있습니다.");
   await page.getByTestId("confirm-dialog-cancel").click();
   await expect(page.getByTestId("confirm-dialog")).toHaveCount(0);
   await expect(lineRow(page, firstLineKey)).toBeVisible();
 
-  await headerRow(page, "1000::SO2026070002").click();
+  await page.getByTestId("sales-order-header-grid-cell-container-1000::SO2026070002-DT_SO").click();
   await page.getByTestId("confirm-dialog-confirm").click();
   await expect(lineRow(page, "1000::SO2026070002::1")).toBeVisible();
 });

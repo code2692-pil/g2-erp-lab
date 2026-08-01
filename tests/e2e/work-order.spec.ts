@@ -170,8 +170,10 @@ test("C: 신규 작업지시와 품목·라인·공정·설비 Lookup을 저장�
     (buttons) => buttons.map((button) => button.getAttribute("data-testid")).filter(Boolean)
   )).toEqual(["confirm-dialog-confirm", "confirm-dialog-cancel"]);
   await page.getByTestId("confirm-dialog-confirm").click();
-  await expect(page.getByRole("status")).toContainText("저장되었습니다.");
-  await expect(page.getByTestId("work-order-header-grid-row-1000::WO2026070007")).toBeVisible();
+  await expect(page.getByTestId("confirm-dialog")).toContainText("저장되었습니다.");
+  await page.getByTestId("confirm-dialog-confirm").click();
+  await expect(page.locator(".erp-snackbar--success")).toHaveCount(0);
+  await expect(page.getByTestId("work-order-header-grid-selected-document")).toHaveText(/선택 문서 WO\d{10}/);
 });
 
 test("D: 저장 전 Validation은 ConfirmDialog 없이 요약과 오류 셀을 표시한다", async ({ page }) => {
@@ -253,8 +255,11 @@ test("G: Header 삭제와 저장 처리 중 버튼 비활성화를 확인한다"
   await expect(headerRow(page)).toBeVisible();
   await page.getByTestId("wo-btn-delete").click();
   await page.getByTestId("confirm-dialog-confirm").click();
+  await expect(page.getByTestId("confirm-dialog")).toContainText("삭제되었습니다.");
+  await expect(headerRow(page)).toHaveCount(1);
+  await page.getByTestId("confirm-dialog-confirm").click();
   await expect(headerRow(page)).toHaveCount(0);
-  await expect(page.getByRole("status")).toContainText("삭제되었습니다.");
+  await expect(page.locator(".erp-snackbar--success")).toHaveCount(0);
 
   await page.reload();
   await page.getByTestId("nav-work-order").click();
@@ -266,7 +271,9 @@ test("G: Header 삭제와 저장 처리 중 버튼 비활성화를 확인한다"
   await expect.poll(() => getMockResponseStartedAt(page)).toBeDefined();
   await expect(page.getByTestId("wo-btn-save")).toBeDisabled();
   await releaseMockResponse(page);
-  await expect(page.getByRole("status")).toContainText("저장되었습니다.");
+  await expect(page.getByTestId("confirm-dialog")).toContainText("저장되었습니다.");
+  await page.getByTestId("confirm-dialog-confirm").click();
+  await expect(page.locator(".erp-snackbar--success")).toHaveCount(0);
   await expect(page.getByTestId("wo-btn-save")).toBeEnabled();
 });
 

@@ -163,10 +163,14 @@ test("Gate 12-9 compact save: mobile 400 and PDA 500 preserve dirty input and re
     await page.goto(target.path);
     await fillValidOrder(page, target.prefix);
     await confirmSave(page, target.prefix);
+    await expect(page.getByRole("dialog", { name: "저장 실패" })).toBeVisible();
     await expect(page.getByTestId(`${target.prefix}-dirty-indicator`)).toBeVisible();
     await expect(page.getByTestId(`${target.prefix}-line-quantity-1`)).toHaveValue("2");
+    await page.getByTestId("confirm-dialog-confirm").click();
     failSave = false;
     await confirmSave(page, target.prefix);
+    await expect(page.getByRole("dialog", { name: "저장 완료" })).toBeVisible();
+    await page.getByTestId("confirm-dialog-confirm").click();
     await expect(page.getByTestId(`${target.prefix}-dirty-indicator`)).toHaveCount(0);
     await expect(page.getByTestId(`${target.prefix}-order-no`)).toHaveValue(/^SO\d{10}$/);
     await page.unroute("**/api/sales-orders**");
@@ -203,6 +207,8 @@ test("Gate 12-9 compact mutation: save and delete first action wins and delete f
   await page.getByTestId("confirm-dialog-confirm").click();
   await expect(page.getByTestId("mobile-sales-save")).toBeDisabled();
   expect(saveRequests).toBe(1);
+  await expect(page.getByRole("dialog", { name: "저장 완료" })).toBeVisible();
+  await page.getByTestId("confirm-dialog-confirm").click();
   await expect(page.getByTestId("mobile-sales-order-no")).toHaveValue(/^SO\d{10}$/);
 
   await page.getByTestId("mobile-sales-back-list").click();
@@ -215,8 +221,10 @@ test("Gate 12-9 compact mutation: save and delete first action wins and delete f
   );
   await page.getByTestId("confirm-dialog-confirm").click();
   expect((await failedDelete).status()).toBe(500);
+  await expect(page.getByRole("dialog", { name: "삭제 실패" })).toBeVisible();
   await expect(page.getByTestId("mobile-sales-order-no")).toHaveValue(existing.Header.NO_SO);
   expect(deleteRequests).toBe(1);
+  await page.getByTestId("confirm-dialog-confirm").click();
   failDelete = false;
   await page.getByTestId("mobile-sales-delete-order").click();
   const completedDelete = page.waitForResponse((response) =>
@@ -224,6 +232,9 @@ test("Gate 12-9 compact mutation: save and delete first action wins and delete f
   );
   await page.getByTestId("confirm-dialog-confirm").click();
   expect((await completedDelete).status()).toBe(204);
+  await expect(page.getByRole("dialog", { name: "삭제 완료" })).toBeVisible();
+  await expect(page.getByTestId("mobile-sales-order-no")).toHaveValue(existing.Header.NO_SO);
+  await page.getByTestId("confirm-dialog-confirm").click();
   await expect(page.getByTestId("mobile-sales-order-no")).toHaveCount(0);
   expect(deleteRequests).toBe(2);
 });

@@ -473,11 +473,7 @@ export function WorkOrderRegistration({ onNavigate, onScreenIntent, showDevelopm
         setValidationAttempted(false);
         clearDirty();
         const warnings = [...new Set(saved.Warnings)];
-        notify(
-          warnings.length > 0 ? "warning" : "success",
-          "저장되었습니다.",
-          warnings.length > 0 ? warnings.join(" ") : undefined
-        );
+        if (warnings.length > 0) notify("warning", warnings.join(" "));
       },
       successMessage: "저장되었습니다.",
       errorMessage: (caughtError) => caughtError instanceof Error ? caughtError.message : "저장 중 오류가 발생했습니다. 입력값을 확인하고 다시 시도하세요."
@@ -511,7 +507,6 @@ export function WorkOrderRegistration({ onNavigate, onScreenIntent, showDevelopm
         setServerWarnings([]);
         setValidationAttempted(false);
         clearDirty();
-        notify("success", "삭제되었습니다.");
       },
       successMessage: "삭제되었습니다.",
       errorMessage: "삭제 중 오류가 발생했습니다. 다시 시도하세요."

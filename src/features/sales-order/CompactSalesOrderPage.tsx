@@ -579,14 +579,17 @@ export function CompactSalesOrderPage({ mode, onNavigate }: Props) {
           record.Header.CD_FIRM === saved.Header.CD_FIRM &&
           record.Header.NO_SO === saved.Header.NO_SO
       ) ?? saved;
+      setMessage("저장되었습니다.");
+      await confirm({ title: "저장 완료", message: "저장되었습니다.", confirmLabel: "확인", showCancel: false });
       setHeader({ ...refreshed.Header });
       setLines(refreshed.Lines.map((line) => ({ ...line })));
       setOriginalOrderNo(refreshed.Header.NO_SO);
       setValidationAttempted(false);
       clearDirty();
-      setMessage("저장되었습니다.");
     } catch {
-      setMessage("저장 중 오류가 발생했습니다. 현재 입력을 유지했으니 다시 시도하세요.");
+      const errorMessage = "저장하지 못했습니다. 현재 입력을 유지했으니 다시 시도하세요.";
+      setMessage(errorMessage);
+      await confirm({ title: "저장 실패", message: errorMessage, confirmLabel: "확인", showCancel: false });
     } finally {
       setOperation("idle");
       operationLock.current = false;
@@ -622,14 +625,17 @@ export function CompactSalesOrderPage({ mode, onNavigate }: Props) {
     try {
       await deleteSalesOrderRecord(header.CD_FIRM, originalOrderNo);
       await refreshRecords();
+      setMessage("삭제되었습니다.");
+      await confirm({ title: "삭제 완료", message: "삭제되었습니다.", confirmLabel: "확인", showCancel: false });
       setHeader(null);
       setLines([]);
       setOriginalOrderNo(null);
       setValidationAttempted(false);
       clearDirty();
-      setMessage("삭제되었습니다.");
     } catch {
-      setMessage("삭제 중 오류가 발생했습니다. 현재 화면을 유지했으니 다시 시도하세요.");
+      const errorMessage = "삭제하지 못했습니다. 현재 화면을 유지했으니 다시 시도하세요.";
+      setMessage(errorMessage);
+      await confirm({ title: "삭제 실패", message: errorMessage, confirmLabel: "확인", showCancel: false });
     } finally {
       setOperation("idle");
       operationLock.current = false;

@@ -310,7 +310,6 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, onScreenIntent,
                 setCheckedLineKeys([]);
                 setValidationAttempted(false);
                 clearDirty();
-                notify("success", "저장되었습니다.");
             },
             successMessage: "저장되었습니다.",
             errorMessage: "저장 중 오류가 발생했습니다. 입력값을 확인하고 다시 시도하세요."
@@ -322,7 +321,7 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, onScreenIntent,
         notify("info", "선택된 항목이 없습니다.");
         return;
     } if (!(await confirm({ title: "발주 삭제", message: `발주번호 ${selectedNoPo}을 삭제하시겠습니까?`, confirmLabel: "삭제", danger: true })))
-        return; setFeatureMessage(""); await executeDelete({ execute: async () => { await adapter.delete(selectedHeader.CD_FIRM, selectedNoPo); persistedPurchaseOrderKeys.current.delete(createPurchaseOrderHeaderKey(selectedHeader.CD_FIRM, selectedNoPo)); setHeaders((current) => current.filter((header) => header.NO_PO !== selectedNoPo)); setLines((current) => current.filter((line) => line.NO_PO !== selectedNoPo)); selectMaster(""); setCheckedLineKeys([]); setValidationAttempted(false); clearDirty(); notify("success", "삭제되었습니다."); return true; }, successMessage: "삭제되었습니다.", errorMessage: "삭제 중 오류가 발생했습니다. 다시 시도하세요." }); };
+        return; const orderToDelete = selectedHeader; setFeatureMessage(""); await executeDelete({ execute: async () => { await adapter.delete(orderToDelete.CD_FIRM, orderToDelete.NO_PO); return orderToDelete; }, onSuccess: (deletedOrder) => { persistedPurchaseOrderKeys.current.delete(createPurchaseOrderHeaderKey(deletedOrder.CD_FIRM, deletedOrder.NO_PO)); setHeaders((current) => current.filter((header) => header.NO_PO !== deletedOrder.NO_PO)); setLines((current) => current.filter((line) => line.NO_PO !== deletedOrder.NO_PO)); selectMaster(""); setCheckedLineKeys([]); setValidationAttempted(false); clearDirty(); }, successMessage: "삭제되었습니다.", errorMessage: "삭제 중 오류가 발생했습니다. 다시 시도하세요." }); };
     const choosePartner = (partner: Partner) => { const targetOrderNo = partnerLookupOrderNoRef.current ?? selectedHeader?.NO_PO; if (!targetOrderNo) {
         notify("info", "선택된 항목이 없습니다.");
         return;

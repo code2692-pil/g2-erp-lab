@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useConfirm } from "./useConfirm";
 
 export type CrudOperation = "idle" | "querying" | "saving" | "deleting";
 
@@ -33,6 +34,7 @@ function isAbortError(error: unknown) {
  * cannot be cancelled.
  */
 export function useCrudPage() {
+  const { confirm } = useConfirm();
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [operation, setOperation] = useState<CrudOperation>("idle");
@@ -75,7 +77,8 @@ export function useCrudPage() {
     async <TResult>(
       options: CrudActionOptions<TResult>,
       nextOperation: Extract<CrudOperation, "saving" | "deleting">,
-      fallbackSuccessMessage: string
+      fallbackSuccessMessage: string,
+      showResultDialog = true
     ): Promise<TResult | undefined> => {
       if (mutationInFlightRef.current || queryInFlightRef.current) return undefined;
 
@@ -90,14 +93,33 @@ export function useCrudPage() {
         if (options.validate && !(await options.validate())) return undefined;
         const result = await options.execute();
         if (mountedRef.current) {
-          options.onSuccess?.(result);
-          setSuccessMessage(resolveMessage(options.successMessage, result, fallbackSuccessMessage));
+          const successMessage = resolveMessage(options.successMessage, result, fallbackSuccessMessage);
+          setSuccessMessage(successMessage);
+          let acknowledged = true;
+          if (showResultDialog) {
+            acknowledged = await confirm({
+              title: nextOperation === "deleting" ? "삭제 완료" : "저장 완료",
+              message: successMessage,
+              confirmLabel: "확인",
+              showCancel: false
+            });
+          }
+          if (acknowledged && mountedRef.current) options.onSuccess?.(result);
         }
         return result;
       } catch (caughtError) {
         if (mountedRef.current && !isAbortError(caughtError)) {
-          setError(resolveMessage(options.errorMessage, caughtError, toErrorMessage(caughtError)));
+          const errorMessage = resolveMessage(options.errorMessage, caughtError, toErrorMessage(caughtError));
+          setError(errorMessage);
           options.onError?.(caughtError);
+          if (showResultDialog) {
+            await confirm({
+              title: nextOperation === "deleting" ? "삭제 실패" : "저장 실패",
+              message: errorMessage,
+              confirmLabel: "확인",
+              showCancel: false
+            });
+          }
         }
         return undefined;
       } finally {
@@ -108,7 +130,7 @@ export function useCrudPage() {
         });
       }
     },
-    [clearMessage, updateIfMounted]
+    [clearMessage, confirm, updateIfMounted]
   );
 
   const executeSearch = useCallback(
@@ -154,7 +176,7 @@ export function useCrudPage() {
   );
 
   const executeCreate = useCallback(
-    <TResult>(options: CrudActionOptions<TResult>) => runMutation(options, "saving", "신규 행이 추가되었습니다."),
+    <TResult>(options: CrudActionOptions<TResult>) => runMutation(options, "saving", "신규 행이 추가되었습니다.", false),
     [runMutation]
   );
   const executeSave = useCallback(

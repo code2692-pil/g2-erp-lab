@@ -169,7 +169,9 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
   const [headerFocusRequest, setHeaderFocusRequest] = useState<ErpDataGridFocusRequest | null>(null);
   const lineFocusRequestId = useRef(0);
   const [tempSeq, setTempSeq] = useState(1);
+  const savedSelectionKeyRef = useRef<string | null>(null);
   const [partnerLookupOpen, setPartnerLookupOpen] = useState(false);
+  const partnerLookupHeaderKeyRef = useRef<string | null>(null);
   const [itemLookupOpen, setItemLookupOpen] = useState(false);
   const itemLookupLineKeyRef = useRef<string | null>(null);
   const [validationAttempted, setValidationAttempted] = useState(false);
@@ -185,6 +187,14 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
     cdPartner: "",
     nmPartner: ""
   });
+  const filterCriteriaSignature = [
+    filters.cdFirm,
+    filters.dateFrom,
+    filters.dateTo,
+    filters.cdPartner,
+    filters.nmPartner
+  ].join("\u0000");
+  const previousFilterCriteriaSignatureRef = useRef(filterCriteriaSignature);
   const { confirm } = useConfirm();
   const { isDirty, markDirty, clearDirty } = useDirtyState({ label: "수주 등록", saving: isSaving });
   const { notify } = useNotification();
@@ -248,14 +258,19 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
   }, []);
 
   useLayoutEffect(() => {
-    if (visibleHeaders.some((header) => header.NO_SO === selectedNoSo)) return;
+    const filterCriteriaChanged = previousFilterCriteriaSignatureRef.current !== filterCriteriaSignature;
+    previousFilterCriteriaSignatureRef.current = filterCriteriaSignature;
+    const preserveSavedSelection = savedSelectionKeyRef.current === selectedNoSo && !filterCriteriaChanged;
+    const selectedHeaderVisible = visibleHeaders.some((header) => header.NO_SO === selectedNoSo);
+    if (selectedHeaderVisible || preserveSavedSelection) return;
 
     const nextSelectedNoSo = visibleHeaders[0]?.NO_SO ?? "";
     if (nextSelectedNoSo === selectedNoSo) return;
 
+    savedSelectionKeyRef.current = null;
     selectMaster(nextSelectedNoSo);
     setCheckedLineKeys([]);
-  }, [selectMaster, selectedNoSo, visibleHeaders]);
+  }, [filterCriteriaSignature, selectMaster, selectedNoSo, visibleHeaders]);
 
   const selectedLines = lines
     .filter((line) => line.NO_SO === selectedNoSo)
@@ -407,6 +422,20 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
   };
 
   const handleSelectPartner = (partner: Partner) => {
+    const targetHeaderKey = partnerLookupHeaderKeyRef.current;
+    if (targetHeaderKey) {
+      setHeaders((current) => current.map((header) =>
+        createSalesOrderHeaderKey(header.CD_FIRM, header.NO_SO) === targetHeaderKey
+          ? { ...header, CD_PARTNER: partner.CD_PARTNER, NM_PARTNER: partner.NM_PARTNER }
+          : header
+      ));
+      const targetHeader = headers.find((header) => createSalesOrderHeaderKey(header.CD_FIRM, header.NO_SO) === targetHeaderKey);
+      if (targetHeader) selectMaster(targetHeader.NO_SO);
+      partnerLookupHeaderKeyRef.current = null;
+      setPartnerLookupOpen(false);
+      markDirty();
+      return;
+    }
     setSelectedPartnerRowKey(getPartnerRowKey(partner));
     setFilters((current) => ({
       ...current,
@@ -595,7 +624,7 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
     setMessage(`${deleteTargetLines.length}건의 수주상세 행이 삭제되었습니다`);
   };
 
-  const saveSalesOrder = async () => {
+  const saveSalesOrder = async (targetSalesOrderNo: string) => {
     const issues = validateSalesOrders(headers, lines);
     if (issues.length > 0) {
       setValidationAttempted(true);
@@ -605,21 +634,23 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
     }
 
     if (isApiMode()) {
-      if (!selectedHeader) {
+      const targetHeader = headers.find((header) => header.NO_SO === targetSalesOrderNo);
+      if (!targetHeader) {
         setMessage("저장할 수주 정보를 선택하세요.");
         return;
       }
 
-      const isNewOrder = selectedHeader.NO_SO.startsWith("TEMP_SO_");
+      const targetLines = lines.filter((line) => line.NO_SO === targetSalesOrderNo);
+      const isNewOrder = targetHeader.NO_SO.startsWith("TEMP_SO_");
       const yearMonth = salesOrderToday().slice(0, 7).replace("-", "");
       const savedOrderNo = isNewOrder
         ? createSavedSalesOrderNo(yearMonth, getNextSavedSalesOrderIndex(headers, yearMonth))
-        : selectedHeader.NO_SO;
+        : targetHeader.NO_SO;
       const headerToSave = {
-        ...selectedHeader,
+        ...targetHeader,
         NO_SO: savedOrderNo
       };
-      const linesToSave = selectedLines.map((line) => ({
+      const linesToSave = targetLines.map((line) => ({
         ...line,
         CD_FIRM: headerToSave.CD_FIRM,
         NO_SO: savedOrderNo
@@ -628,10 +659,11 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
       try {
         const saved = await saveSalesOrderRecord(
           { Header: headerToSave, Lines: linesToSave },
-          isNewOrder ? null : selectedHeader.NO_SO
+          isNewOrder ? null : targetHeader.NO_SO
         );
-        setHeaders((current) => [saved.Header, ...current.filter((header) => header.NO_SO !== selectedHeader.NO_SO)]);
-        setLines((current) => [...current.filter((line) => line.NO_SO !== selectedHeader.NO_SO), ...saved.Lines]);
+        setHeaders((current) => [saved.Header, ...current.filter((header) => header.NO_SO !== targetHeader.NO_SO)]);
+        setLines((current) => [...current.filter((line) => line.NO_SO !== targetHeader.NO_SO), ...saved.Lines]);
+        savedSelectionKeyRef.current = saved.Header.NO_SO;
         selectMaster(saved.Header.NO_SO);
         setCheckedLineKeys([]);
         setMessage("API 서버에 저장되었습니다.");
@@ -674,7 +706,9 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
     setHeaders(savedHeaders);
     setLines(savedLines);
     replaceMockSalesOrderRecords(savedHeaders, savedLines);
-    selectMaster(noMap.get(selectedNoSo) ?? selectedNoSo);
+    const savedSelectionNoSo = noMap.get(targetSalesOrderNo) ?? targetSalesOrderNo;
+    savedSelectionKeyRef.current = savedSelectionNoSo;
+    selectMaster(savedSelectionNoSo);
     setCheckedLineKeys([]);
     setMessage("저장되었습니다.");
   };
@@ -686,6 +720,7 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
       notify("info", "선택된 항목이 없습니다.");
       return;
     }
+    const targetSalesOrderNo = selectedHeader.NO_SO;
     const currentIssues = validateSalesOrders(headers, lines);
     if (currentIssues.length > 0) {
       setValidationAttempted(true);
@@ -706,8 +741,8 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
         }
         return true;
       },
-      execute: saveSalesOrder,
-      onSuccess: () => { setValidationAttempted(false); clearDirty(); notify("success", "저장되었습니다."); },
+      execute: () => saveSalesOrder(targetSalesOrderNo),
+      onSuccess: () => { setValidationAttempted(false); clearDirty(); },
       successMessage: "저장되었습니다.",
       errorMessage: "저장 중 오류가 발생했습니다. 입력값을 확인하고 다시 시도하세요."
     });
@@ -728,11 +763,7 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
       throw new Error("수주 삭제에 실패했습니다.");
     }
 
-    setHeaders((current) => current.filter((header) => header.NO_SO !== selectedNoSo));
-    setLines((current) => current.filter((line) => line.NO_SO !== selectedNoSo));
-    selectMaster("");
-    setCheckedLineKeys([]);
-    setMessage("삭제되었습니다.");
+    return orderToDelete;
   };
 
   const handleDeleteOrder = async () => {
@@ -746,7 +777,15 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
     setFeatureMessage("");
     await executeDelete({
       execute: deleteSalesOrderAction,
-      onSuccess: () => { setValidationAttempted(false); clearDirty(); notify("success", "삭제되었습니다."); },
+      onSuccess: (deletedOrder) => {
+        if (!deletedOrder) return;
+        setHeaders((current) => current.filter((header) => header.NO_SO !== deletedOrder.NO_SO));
+        setLines((current) => current.filter((line) => line.NO_SO !== deletedOrder.NO_SO));
+        selectMaster("");
+        setCheckedLineKeys([]);
+        setValidationAttempted(false);
+        clearDirty();
+      },
       successMessage: "삭제되었습니다.",
       errorMessage: "삭제 중 오류가 발생했습니다. 다시 시도하세요."
     });
@@ -762,8 +801,8 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
     { field: "CD_FIRM", headerName: "회사코드", width: 90, dataType: "code", editable: true, required: true },
     { field: "NO_SO", headerName: "수주번호", width: 142, dataType: "code", readOnly: true },
     { field: "DT_SO", headerName: "수주일자", width: 128, dataType: "date", align: "center", editable: true, required: true },
-    { field: "CD_PARTNER", headerName: "거래처코드", width: 120, dataType: "code", editable: true, required: true },
-    { field: "NM_PARTNER", headerName: "거래처명", width: 150, editable: true },
+    { field: "CD_PARTNER", headerName: "거래처코드", width: 120, dataType: "code", editable: true, required: true, lookup: { instruction: "더블클릭하여 거래처를 선택합니다." } },
+    { field: "NM_PARTNER", headerName: "거래처명", width: 150, editable: true, lookup: { instruction: "더블클릭하여 거래처를 선택합니다." } },
     { field: "CD_EMP", headerName: "담당자코드", width: 110, dataType: "code", editable: true },
     {
       field: "ST_SO",
@@ -986,7 +1025,7 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
                   aria-label="거래처 도움창 열기"
                   className="lookup-open-button"
                   data-testid="btn-partner-lookup"
-                  onClick={() => setPartnerLookupOpen(true)}
+                  onClick={() => { partnerLookupHeaderKeyRef.current = null; setPartnerLookupOpen(true); }}
                   title="거래처 도움창"
                   type="button"
                 >
@@ -1016,6 +1055,13 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
               emptyMessage="조회 조건에 맞는 수주정보가 없습니다."
               onCellValueChange={(row, field, value) => {
                 if (isHeaderEditableField(field)) updateHeader(row.NO_SO, field, String(value ?? ""));
+              }}
+              lookupDisabled={isLoading || isSaving || partnerLookupOpen || itemLookupOpen}
+              onLookupCellDoubleClick={(row, column) => {
+                if (column.field !== "CD_PARTNER" && column.field !== "NM_PARTNER") return;
+                partnerLookupHeaderKeyRef.current = createSalesOrderHeaderKey(row.CD_FIRM, row.NO_SO);
+                selectHeader(row);
+                setPartnerLookupOpen(true);
               }}
               onRowClick={selectHeader}
               rowKey={(header) => createSalesOrderHeaderKey(header.CD_FIRM, header.NO_SO)}
@@ -1090,7 +1136,7 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
         dataTestId="partner-lookup"
         emptyMessage="조회된 거래처가 없습니다."
         height={500}
-        onClose={() => setPartnerLookupOpen(false)}
+        onClose={() => { partnerLookupHeaderKeyRef.current = null; setPartnerLookupOpen(false); }}
         onSelect={handleSelectPartner}
         open={partnerLookupOpen}
         rowKey={getPartnerRowKey}

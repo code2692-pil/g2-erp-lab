@@ -1,3 +1,4 @@
+using G2Erp.Api.Domain;
 using G2Erp.Api.Domain.WorkOrders;
 
 namespace G2Erp.Api.Repositories;
@@ -5,6 +6,7 @@ namespace G2Erp.Api.Repositories;
 public sealed class InMemoryWorkOrderRepository : IWorkOrderRepository
 {
     private readonly object _gate = new();
+    private readonly Dictionary<string, int> _generatedSerials = [];
     private readonly List<WorkOrder> _workOrders =
     [
         Create("1000", "WO2026070001", "2026-07-01", "ITM-1001", "Controller A", "CTRL-A / 24V", "EA", 100, 0, "2026-07-03", "2026-07-04", "LINE-A", "Assembly Line A", "미확정", "N", 10, "PROC-010", "Material preparation", "EQ-A01", "Assembly station A1", 100, 0, "2026-07-03T08:00", "2026-07-03T10:00", "대기"),
@@ -46,6 +48,20 @@ public sealed class InMemoryWorkOrderRepository : IWorkOrderRepository
     {
         lock (_gate) _workOrders.Add(Clone(workOrder));
         return Task.CompletedTask;
+    }
+
+    public Task<WorkOrder> AddWithGeneratedNumberAsync(WorkOrder workOrder, string yearMonth, CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            var key = $"{workOrder.Header.CD_FIRM}:WMO:{yearMonth}";
+            var observed = DocumentNumberPolicy.FindMaximum("WMO", yearMonth, _workOrders.Where(x => x.Header.CD_FIRM == workOrder.Header.CD_FIRM).Select(x => x.Header.NO_WO));
+            var current = Math.Max(_generatedSerials.GetValueOrDefault(key), observed);
+            var saved = DocumentNumberPolicy.Assign(workOrder, DocumentNumberPolicy.Format("WMO", yearMonth, current + 1));
+            _workOrders.Add(Clone(saved));
+            _generatedSerials[key] = current + 1;
+            return Task.FromResult(Clone(saved));
+        }
     }
 
     public Task UpdateAsync(WorkOrder workOrder, CancellationToken cancellationToken)

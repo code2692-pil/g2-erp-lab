@@ -21,6 +21,19 @@ public sealed class SqlServerSalesOrderRepository(SqlServerConnectionFactory con
         return header is null ? null : (await WithLines(c,[header],ct)).Single();
     }
     public async Task AddAsync(SalesOrder order,CancellationToken ct) => await WriteAsync(order,false,ct);
+    public async Task<SalesOrder> AddWithGeneratedNumberAsync(SalesOrder order, string yearMonth, CancellationToken ct)
+    {
+        await using var c=connections.Create();await c.OpenAsync(ct);await using var tx=await c.BeginTransactionAsync(System.Data.IsolationLevel.Serializable,ct);
+        try
+        {
+            var serial=await DocumentNumberSqlAllocator.ReserveAsync(c,(SqlTransaction)tx,order.Header.CD_FIRM,"SOR",yearMonth,ct);
+            var saved=DocumentNumberPolicy.Assign(order,DocumentNumberPolicy.Format("SOR",yearMonth,serial));
+            await WriteWithinTransactionAsync(saved,false,c,(SqlTransaction)tx,ct);
+            await tx.CommitAsync(ct);
+            return saved;
+        }
+        catch { await tx.RollbackAsync(ct); throw; }
+    }
     public async Task UpdateAsync(SalesOrder order,CancellationToken ct) => await WriteAsync(order,true,ct);
     public async Task<bool> DeleteAsync(string firm,string no,CancellationToken ct)
     {
@@ -38,16 +51,20 @@ public sealed class SqlServerSalesOrderRepository(SqlServerConnectionFactory con
         await using var c=connections.Create();await c.OpenAsync(ct);await using var tx=await c.BeginTransactionAsync(ct);
         try
         {
-            var h=order.Header;
-            var headerSql=update
-              ? "UPDATE POC.SAL_SOH SET DT_SO=@date,CD_PARTNER=@partner,NM_PARTNER=@name,CD_EMP=@emp,ST_SO=@status,DC_RMK=@remark,MAIL_ID=@mail,CD_USER_AMD=@user,TM_AMD=SYSUTCDATETIME() WHERE CD_FIRM=@firm AND NO_SO=@no"
-              : "INSERT INTO POC.SAL_SOH(CD_FIRM,NO_SO,DT_SO,CD_PARTNER,NM_PARTNER,CD_EMP,ST_SO,DC_RMK,MAIL_ID,CD_USER_REG,TM_REG) VALUES(@firm,@no,@date,@partner,@name,@emp,@status,@remark,@mail,@user,SYSUTCDATETIME())";
-            await using(var cmd=new SqlCommand(headerSql,c,(SqlTransaction)tx)){AddHeader(cmd,h); await cmd.ExecuteNonQueryAsync(ct);}
-            if(update){await using var delete=new SqlCommand("DELETE FROM POC.SAL_SOL WHERE CD_FIRM=@firm AND NO_SO=@no",c,(SqlTransaction)tx);delete.Parameters.AddWithValue("@firm",h.CD_FIRM);delete.Parameters.AddWithValue("@no",h.NO_SO);await delete.ExecuteNonQueryAsync(ct);}
-            const string lineSql="INSERT INTO POC.SAL_SOL(CD_FIRM,NO_SO,NO_LINE,CD_ITEM,NM_ITEM,STND_ITEM,UNIT_ITEM,QT_SO,UM_SO,AM_SUPPLY,AM_VAT,AM_TOTAL,DT_DLV,DC_RMK,CD_USER_REG,TM_REG) VALUES(@firm,@no,@line,@item,@name,@standard,@unit,@qty,@price,@supply,@vat,@total,@delivery,@remark,@user,SYSUTCDATETIME())";
-            foreach(var line in order.Lines){await using var cmd=new SqlCommand(lineSql,c,(SqlTransaction)tx);AddLine(cmd,line);await cmd.ExecuteNonQueryAsync(ct);}
+            await WriteWithinTransactionAsync(order,update,c,(SqlTransaction)tx,ct);
             await tx.CommitAsync(ct);
         } catch { await tx.RollbackAsync(ct); throw; }
+    }
+    private static async Task WriteWithinTransactionAsync(SalesOrder order,bool update,SqlConnection c,SqlTransaction tx,CancellationToken ct)
+    {
+        var h=order.Header;
+        var headerSql=update
+          ? "UPDATE POC.SAL_SOH SET DT_SO=@date,CD_PARTNER=@partner,NM_PARTNER=@name,CD_EMP=@emp,ST_SO=@status,DC_RMK=@remark,MAIL_ID=@mail,CD_USER_AMD=@user,TM_AMD=SYSUTCDATETIME() WHERE CD_FIRM=@firm AND NO_SO=@no"
+          : "INSERT INTO POC.SAL_SOH(CD_FIRM,NO_SO,DT_SO,CD_PARTNER,NM_PARTNER,CD_EMP,ST_SO,DC_RMK,MAIL_ID,CD_USER_REG,TM_REG) VALUES(@firm,@no,@date,@partner,@name,@emp,@status,@remark,@mail,@user,SYSUTCDATETIME())";
+        await using(var cmd=new SqlCommand(headerSql,c,tx)){AddHeader(cmd,h); await cmd.ExecuteNonQueryAsync(ct);}
+        if(update){await using var delete=new SqlCommand("DELETE FROM POC.SAL_SOL WHERE CD_FIRM=@firm AND NO_SO=@no",c,tx);delete.Parameters.AddWithValue("@firm",h.CD_FIRM);delete.Parameters.AddWithValue("@no",h.NO_SO);await delete.ExecuteNonQueryAsync(ct);}
+        const string lineSql="INSERT INTO POC.SAL_SOL(CD_FIRM,NO_SO,NO_LINE,CD_ITEM,NM_ITEM,STND_ITEM,UNIT_ITEM,QT_SO,UM_SO,AM_SUPPLY,AM_VAT,AM_TOTAL,DT_DLV,DC_RMK,CD_USER_REG,TM_REG) VALUES(@firm,@no,@line,@item,@name,@standard,@unit,@qty,@price,@supply,@vat,@total,@delivery,@remark,@user,SYSUTCDATETIME())";
+        foreach(var line in order.Lines){await using var cmd=new SqlCommand(lineSql,c,tx);AddLine(cmd,line);await cmd.ExecuteNonQueryAsync(ct);}
     }
     private static async Task<IReadOnlyList<SalesOrder>> WithLines(SqlConnection c,IEnumerable<SalesOrderHeader> headers,CancellationToken ct)
     {

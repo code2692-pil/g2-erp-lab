@@ -45,11 +45,10 @@ import {
 import {
   createEmptySalesOrderHeader,
   createEmptySalesOrderLine,
-  createSavedSalesOrderNo,
   createTempSalesOrderNo,
-  getNextSavedSalesOrderIndex,
   salesOrderToday
 } from "./salesOrderDraft";
+import { allocateMockDocumentNumber } from "../../utils/documentNumber";
 import { useCrudPage } from "../../hooks/useCrudPage";
 import { useConfirm } from "../../hooks/useConfirm";
 import { useDirtyState } from "../../hooks/useDirtyState";
@@ -642,18 +641,14 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
 
       const targetLines = lines.filter((line) => line.NO_SO === targetSalesOrderNo);
       const isNewOrder = targetHeader.NO_SO.startsWith("TEMP_SO_");
-      const yearMonth = salesOrderToday().slice(0, 7).replace("-", "");
-      const savedOrderNo = isNewOrder
-        ? createSavedSalesOrderNo(yearMonth, getNextSavedSalesOrderIndex(headers, yearMonth))
-        : targetHeader.NO_SO;
       const headerToSave = {
         ...targetHeader,
-        NO_SO: savedOrderNo
+        NO_SO: targetHeader.NO_SO
       };
       const linesToSave = targetLines.map((line) => ({
         ...line,
         CD_FIRM: headerToSave.CD_FIRM,
-        NO_SO: savedOrderNo
+        NO_SO: headerToSave.NO_SO
       }));
 
       try {
@@ -673,15 +668,19 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
       return;
     }
 
-    const yearMonth = salesOrderToday().slice(0, 7).replace("-", "");
-    let nextIndex = getNextSavedSalesOrderIndex(headers, yearMonth);
     const noMap = new Map<string, string>();
+    const existingNumbers = headers.map((header) => header.NO_SO);
 
     const savedHeaders = headers.map((header) => {
       if (!header.NO_SO.startsWith("TEMP_SO_")) return header;
 
-      const nextNoSo = createSavedSalesOrderNo(yearMonth, nextIndex);
-      nextIndex += 1;
+      const nextNoSo = allocateMockDocumentNumber(
+        "SOR",
+        header.CD_FIRM,
+        header.DT_SO,
+        existingNumbers
+      );
+      existingNumbers.push(nextNoSo);
       noMap.set(header.NO_SO, nextNoSo);
 
       return {

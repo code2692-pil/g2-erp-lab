@@ -5,6 +5,7 @@ namespace G2Erp.Api.Repositories;
 public sealed class InMemorySalesOrderRepository : ISalesOrderRepository
 {
     private readonly object _gate = new();
+    private readonly Dictionary<string, int> _generatedSerials = [];
     private readonly List<SalesOrder> _orders =
     [
         Create("1000", "SO2026070001", "2026-07-01", "P-10021", "G2 Trading", "ITM-1001", "Controller A", "CTRL-A / 24V", "EA", 12, 280000, "2026-07-15"),
@@ -26,6 +27,20 @@ public sealed class InMemorySalesOrderRepository : ISalesOrderRepository
     {
         lock (_gate) _orders.Add(Clone(salesOrder));
         return Task.CompletedTask;
+    }
+
+    public Task<SalesOrder> AddWithGeneratedNumberAsync(SalesOrder salesOrder, string yearMonth, CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            var key = $"{salesOrder.Header.CD_FIRM}:SOR:{yearMonth}";
+            var observed = DocumentNumberPolicy.FindMaximum("SOR", yearMonth, _orders.Where(x => x.Header.CD_FIRM == salesOrder.Header.CD_FIRM).Select(x => x.Header.NO_SO));
+            var current = Math.Max(_generatedSerials.GetValueOrDefault(key), observed);
+            var saved = DocumentNumberPolicy.Assign(salesOrder, DocumentNumberPolicy.Format("SOR", yearMonth, current + 1));
+            _orders.Add(Clone(saved));
+            _generatedSerials[key] = current + 1;
+            return Task.FromResult(Clone(saved));
+        }
     }
 
     public Task UpdateAsync(SalesOrder salesOrder, CancellationToken cancellationToken)

@@ -1,3 +1,4 @@
+using G2Erp.Api.Domain;
 using G2Erp.Api.Domain.WorkOrders;
 using Microsoft.Data.SqlClient;
 
@@ -50,6 +51,25 @@ public sealed class SqlServerWorkOrderRepository(SqlServerConnectionFactory conn
     }
 
     public Task AddAsync(WorkOrder workOrder, CancellationToken cancellationToken) => InsertAsync(workOrder, cancellationToken);
+    public async Task<WorkOrder> AddWithGeneratedNumberAsync(WorkOrder workOrder, string yearMonth, CancellationToken cancellationToken)
+    {
+        await using var connection = connections.Create();
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+        try
+        {
+            var serial = await DocumentNumberSqlAllocator.ReserveAsync(connection, (SqlTransaction)transaction, workOrder.Header.CD_FIRM, "WMO", yearMonth, cancellationToken);
+            var saved = DocumentNumberPolicy.Assign(workOrder, DocumentNumberPolicy.Format("WMO", yearMonth, serial));
+            await InsertWithinTransactionAsync(saved, connection, (SqlTransaction)transaction, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return saved;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
     public Task UpdateAsync(WorkOrder workOrder, CancellationToken cancellationToken) => UpdateAsyncCore(workOrder, cancellationToken);
 
     public async Task<bool> DeleteAsync(string companyCode, string workOrderNo, CancellationToken cancellationToken)
@@ -80,13 +100,7 @@ public sealed class SqlServerWorkOrderRepository(SqlServerConnectionFactory conn
         var sqlTransaction = (SqlTransaction)transaction;
         try
         {
-            await using (var command = new SqlCommand("INSERT INTO POC.PRT_WO(CD_FIRM,NO_WO,DT_WO,CD_ITEM,NM_ITEM,STND_ITEM,UNIT_ITEM,QT_WO,QT_RESULT,DT_PLAN_START,DT_PLAN_END,CD_LINE,NM_LINE,ST_WO,YN_URGENT,DC_RMK,CD_USER_REG,TM_REG,CD_USER_AMD,TM_AMD) VALUES(@firm,@number,@date,@item,@itemName,@standard,@unit,@quantity,@result,@planStart,@planEnd,@line,@lineName,@status,@urgent,@remark,@user,SYSUTCDATETIME(),@user,SYSUTCDATETIME())", connection, sqlTransaction))
-            {
-                AddHeader(command, workOrder.Header, workOrder.Header.CD_USER_REG ?? "SYSTEM");
-                await command.ExecuteNonQueryAsync(cancellationToken);
-            }
-            foreach (var process in workOrder.Processes)
-                await InsertProcessAsync(connection, sqlTransaction, process, process.CD_USER_REG ?? workOrder.Header.CD_USER_REG ?? "SYSTEM", cancellationToken);
+            await InsertWithinTransactionAsync(workOrder, connection, sqlTransaction, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
         catch
@@ -94,6 +108,17 @@ public sealed class SqlServerWorkOrderRepository(SqlServerConnectionFactory conn
             await transaction.RollbackAsync(cancellationToken);
             throw;
         }
+    }
+
+    private static async Task InsertWithinTransactionAsync(WorkOrder workOrder, SqlConnection connection, SqlTransaction transaction, CancellationToken cancellationToken)
+    {
+        await using (var command = new SqlCommand("INSERT INTO POC.PRT_WO(CD_FIRM,NO_WO,DT_WO,CD_ITEM,NM_ITEM,STND_ITEM,UNIT_ITEM,QT_WO,QT_RESULT,DT_PLAN_START,DT_PLAN_END,CD_LINE,NM_LINE,ST_WO,YN_URGENT,DC_RMK,CD_USER_REG,TM_REG,CD_USER_AMD,TM_AMD) VALUES(@firm,@number,@date,@item,@itemName,@standard,@unit,@quantity,@result,@planStart,@planEnd,@line,@lineName,@status,@urgent,@remark,@user,SYSUTCDATETIME(),@user,SYSUTCDATETIME())", connection, transaction))
+        {
+            AddHeader(command, workOrder.Header, workOrder.Header.CD_USER_REG ?? "SYSTEM");
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        foreach (var process in workOrder.Processes)
+            await InsertProcessAsync(connection, transaction, process, process.CD_USER_REG ?? workOrder.Header.CD_USER_REG ?? "SYSTEM", cancellationToken);
     }
 
     private async Task UpdateAsyncCore(WorkOrder workOrder, CancellationToken cancellationToken)

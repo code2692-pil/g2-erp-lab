@@ -5,6 +5,7 @@ namespace G2Erp.Api.Repositories;
 public sealed class InMemoryPurchaseOrderRepository : IPurchaseOrderRepository
 {
     private readonly object _gate = new();
+    private readonly Dictionary<string, int> _generatedSerials = [];
     private readonly List<PurchaseOrder> _orders =
     [
         Create("1000", "PO2026070001", "2026-07-01", "P-10021", "G2 Trading", "ITM-1001", "Controller A", "CTRL-A / 24V", "EA", 10, 280000, "WH-100", "Central Warehouse"),
@@ -32,6 +33,19 @@ public sealed class InMemoryPurchaseOrderRepository : IPurchaseOrderRepository
     }
 
     public Task AddAsync(PurchaseOrder purchaseOrder, CancellationToken cancellationToken) { lock (_gate) _orders.Add(Clone(purchaseOrder)); return Task.CompletedTask; }
+    public Task<PurchaseOrder> AddWithGeneratedNumberAsync(PurchaseOrder purchaseOrder, string yearMonth, CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            var key = $"{purchaseOrder.Header.CD_FIRM}:POR:{yearMonth}";
+            var observed = DocumentNumberPolicy.FindMaximum("POR", yearMonth, _orders.Where(x => x.Header.CD_FIRM == purchaseOrder.Header.CD_FIRM).Select(x => x.Header.NO_PO));
+            var current = Math.Max(_generatedSerials.GetValueOrDefault(key), observed);
+            var saved = DocumentNumberPolicy.Assign(purchaseOrder, DocumentNumberPolicy.Format("POR", yearMonth, current + 1));
+            _orders.Add(Clone(saved));
+            _generatedSerials[key] = current + 1;
+            return Task.FromResult(Clone(saved));
+        }
+    }
     public Task UpdateAsync(PurchaseOrder purchaseOrder, CancellationToken cancellationToken) { lock (_gate) { var index = _orders.FindIndex(x => x.Header.CD_FIRM == purchaseOrder.Header.CD_FIRM && x.Header.NO_PO == purchaseOrder.Header.NO_PO); if (index >= 0) _orders[index] = Clone(purchaseOrder); } return Task.CompletedTask; }
     public Task<bool> DeleteAsync(string companyCode, string purchaseOrderNo, CancellationToken cancellationToken) { lock (_gate) return Task.FromResult(_orders.RemoveAll(x => x.Header.CD_FIRM == companyCode && x.Header.NO_PO == purchaseOrderNo) > 0); }
 

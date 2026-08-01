@@ -8,6 +8,7 @@ import {
 } from "../../api/salesOrderApi";
 import { mockSalesOrderHeaders, mockSalesOrderLines } from "./mockData";
 import type { SalesOrderHeader, SalesOrderLine } from "./types";
+import { allocateMockDocumentNumber } from "../../utils/documentNumber";
 
 let mockSalesOrderRecords: SalesOrderDto[] = mockSalesOrderHeaders.map((header) => ({
   Header: { ...header },
@@ -39,6 +40,16 @@ export async function saveSalesOrderRecord(
   }
 
   const saved = cloneRecord(record);
+  if (previousSalesOrderNo === null && saved.Header.NO_SO.startsWith("TEMP_SO_")) {
+    const savedNumber = allocateMockDocumentNumber(
+      "SOR",
+      saved.Header.CD_FIRM,
+      saved.Header.DT_SO,
+      mockSalesOrderRecords.map((current) => current.Header.NO_SO)
+    );
+    saved.Header.NO_SO = savedNumber;
+    saved.Lines = saved.Lines.map((line) => ({ ...line, NO_SO: savedNumber }));
+  }
   const targetNo = previousSalesOrderNo ?? saved.Header.NO_SO;
   mockSalesOrderRecords = [
     saved,

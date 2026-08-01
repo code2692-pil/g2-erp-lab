@@ -53,6 +53,7 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, onScreenIntent,
     const latestLines = useRef<PurchaseOrderLine[]>(lines);
     const detailRequestVersion = useRef(0);
     const persistedPurchaseOrderKeys = useRef(new Set<string>());
+    const savedSelectionKeyRef = useRef<string | null>(null);
     const lineLookupKeyRef = useRef<string | null>(null);
     const partnerLookupOrderNoRef = useRef<string | null>(null);
     const { selectedMasterKey: selectedNoPo, selectedDetailKey: selectedLineNo, selectMaster, selectDetail } = useMasterDetailSelection<string, number | null>("", null);
@@ -80,7 +81,7 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, onScreenIntent,
     const selectedLine = lines.find((line) => line.NO_PO === selectedNoPo && line.NO_LINE === selectedLineNo);
     const issues = useMemo(() => sortValidationIssues(validatePurchaseOrders(headers, lines), { headerFields: purchaseHeaderValidationOrder, detailFields: purchaseLineValidationOrder }), [headers, lines]);
     const displayedIssues = validationAttempted ? issues : [];
-    const visibleHeaders = useMemo(() => headers.filter((header) => header.NO_PO.startsWith("TEMP_PO_") || ((!filters.firm || header.CD_FIRM === filters.firm) && (!filters.no || header.NO_PO.includes(filters.no)) && (!filters.partner || header.CD_PARTNER.includes(filters.partner)) && (!filters.status || header.ST_PO === filters.status) && (!filters.from || header.DT_PO >= filters.from) && (!filters.to || header.DT_PO <= filters.to))), [filters, headers]);
+    const visibleHeaders = useMemo(() => headers.filter((header) => header.NO_PO === savedSelectionKeyRef.current || header.NO_PO.startsWith("TEMP_PO_") || ((!filters.firm || header.CD_FIRM === filters.firm) && (!filters.no || header.NO_PO.includes(filters.no)) && (!filters.partner || header.CD_PARTNER.includes(filters.partner)) && (!filters.status || header.ST_PO === filters.status) && (!filters.from || header.DT_PO >= filters.from) && (!filters.to || header.DT_PO <= filters.to))), [filters, headers]);
     const selectedLines = lines.filter((line) => line.NO_PO === selectedNoPo).sort((a, b) => a.NO_LINE - b.NO_LINE);
     const checkedLines = selectedLines.filter((line) => checkedLineKeys.includes(createPurchaseOrderLineKey(line.CD_FIRM, line.NO_PO, line.NO_LINE)));
     const deleteTargetLines = checkedLines.length > 0 ? checkedLines : selectedLine ? [selectedLine] : [];
@@ -89,6 +90,9 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, onScreenIntent,
         latestHeaders.current = headers;
         latestLines.current = lines;
     }, [headers, lines]);
+    useEffect(() => {
+        savedSelectionKeyRef.current = null;
+    }, [filters]);
     const focusValidationIssue = (issue: ValidationIssue | undefined) => {
         if (!issue || !issue.rowKey || !issue.field || (issue.scope !== "header" && issue.scope !== "line"))
             return;
@@ -197,6 +201,7 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, onScreenIntent,
                 status: filters.status
             }),
             onSuccess: (result) => {
+                savedSelectionKeyRef.current = null;
                 const matchedHeaders = result.headers.filter((header) =>
                     (!filters.firm || header.CD_FIRM === filters.firm) &&
                     (!filters.no || header.NO_PO.includes(filters.no)) &&
@@ -303,6 +308,7 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, onScreenIntent,
                     : adapter.create(document);
             },
             onSuccess: (document) => {
+                savedSelectionKeyRef.current = document.Header.NO_PO;
                 persistedPurchaseOrderKeys.current.add(createPurchaseOrderHeaderKey(document.Header.CD_FIRM, document.Header.NO_PO));
                 setHeaders((current) => current.map((header) => header.NO_PO === selectedNoPo ? document.Header : header));
                 setLines((current) => current.map((line) => line.NO_PO === selectedNoPo ? document.Lines.find((savedLine) => savedLine.NO_LINE === line.NO_LINE) ?? line : line));

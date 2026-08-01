@@ -162,7 +162,7 @@ test("API UI: sales order save, delete, dirty header navigation, and notificatio
 
 test("API UI: purchase order lookup, save/delete dialogs, dirty navigation, and pending state", async ({ page, request }, testInfo) => {
   test.slow();
-  const number = "TEMP_PO_001";
+  let number = "TEMP_PO_001";
   try {
     await page.goto("/");
     await page.getByTestId("nav-purchase-order").click();
@@ -196,6 +196,10 @@ test("API UI: purchase order lookup, save/delete dialogs, dirty navigation, and 
     await expect(page.getByRole("dialog", { name: "저장 완료" })).toBeVisible();
     await page.getByTestId("confirm-dialog-confirm").click();
     await expect(page.getByTestId("status-message")).toContainText("저장되었습니다.");
+
+    const selectedPurchaseOrder = page.getByTestId("purchase-header-grid-selected-document");
+    await expect(selectedPurchaseOrder).toHaveText(/POR\d{10}/);
+    number = (await selectedPurchaseOrder.textContent())?.match(/POR\d{10}/)?.[0] ?? number;
 
     const purchaseRemark = page.getByTestId(`purchase-header-grid-cell-1000::${number}-DC_RMK`);
     await purchaseRemark.fill("saved purchase order update");

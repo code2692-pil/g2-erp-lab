@@ -36,9 +36,7 @@ import {
 import {
   createEmptySalesOrderHeader,
   createEmptySalesOrderLine,
-  createSavedSalesOrderNo,
   createTempSalesOrderNo,
-  getNextSavedSalesOrderIndex,
   salesOrderToday
 } from "./salesOrderDraft";
 import type { SalesOrderHeader, SalesOrderLine, SalesOrderStatus } from "./types";
@@ -550,23 +548,15 @@ export function CompactSalesOrderPage({ mode, onNavigate }: Props) {
     setMessage("");
     try {
       const isNew = originalOrderNo === null || header.NO_SO.startsWith("TEMP_SO_");
-      const currentRecords = records.length > 0 ? records : await loadSalesOrderRecords();
-      const yearMonth = header.DT_SO.slice(0, 7).replace("-", "");
-      const savedOrderNo = isNew
-        ? createSavedSalesOrderNo(
-            yearMonth,
-            getNextSavedSalesOrderIndex(currentRecords.map((record) => record.Header), yearMonth)
-          )
-        : header.NO_SO;
       const headerToSave: SalesOrderHeader = {
         ...header,
-        NO_SO: savedOrderNo,
+        NO_SO: header.NO_SO,
         ST_SO: isNew && header.ST_SO === "신규" ? "진행" : header.ST_SO
       };
       const linesToSave = lines.map((line, index) => ({
         ...line,
         CD_FIRM: headerToSave.CD_FIRM,
-        NO_SO: savedOrderNo,
+        NO_SO: headerToSave.NO_SO,
         NO_LINE: index + 1
       }));
       const saved = await saveSalesOrderRecord(

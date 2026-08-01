@@ -127,6 +127,21 @@ function Invoke-SqlQuery {
     return @($output | ForEach-Object { "$_.ToString()" })
 }
 
+function Invoke-LocalSchemaScript {
+    param([string]$RelativePath)
+    $databaseRoot = [System.IO.Path]::GetFullPath((Join-Path $RepositoryRoot "database\local"))
+    $scriptPath = [System.IO.Path]::GetFullPath((Join-Path $RepositoryRoot $RelativePath))
+    if (-not $scriptPath.StartsWith($databaseRoot + [System.IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Schema script must remain under database/local: $RelativePath"
+    }
+    if (-not (Test-Path -LiteralPath $scriptPath)) { throw "Schema script is missing: $RelativePath" }
+
+    $output = & $script:SqlCmd.Source -S "tcp:localhost,1433" -d "G2ERP_DEV_LOCAL_TEST" -E -N -C -b -i $scriptPath 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "sqlcmd exited with code ${LASTEXITCODE}: $($output -join [Environment]::NewLine)"
+    }
+}
+
 function Get-MarkerResidue {
     $definitions = @(
         [pscustomobject]@{ table = "POC.SAL_SOL"; marker = "SO-R-% or SO-S-%"; where = "CD_FIRM = '1000' AND (NO_SO LIKE 'SO-R-%' OR NO_SO LIKE 'SO-S-%')" },
@@ -358,8 +373,16 @@ try {
         }
 
         if ($encryptedOk) {
-            $preResidueOk = Invoke-Step "3/6 Pre-test residue" { Assert-NoMarkerResidue "preTest" }
-            $canRunTests = $preResidueOk
+            $migrationOk = Invoke-Step "2/6 Local schema migration" {
+                Invoke-LocalSchemaScript "database/local/013_create_document_number_counters.sql"
+                $output = Invoke-SqlQuery "SET NOCOUNT ON; SELECT CONCAT('CounterTable=', CASE WHEN OBJECT_ID(N'POC.DOC_NO_COUNTER', N'U') IS NULL THEN 'Missing' ELSE 'Ready' END);"
+                if (($output -join "`n") -notmatch "CounterTable=Ready") { throw "Document-number counter table was not created." }
+                "013_create_document_number_counters.sql applied to G2ERP_DEV_LOCAL_TEST."
+            }
+            if ($migrationOk) {
+                $preResidueOk = Invoke-Step "3/6 Pre-test residue" { Assert-NoMarkerResidue "preTest" }
+                $canRunTests = $preResidueOk
+            }
         }
     }
 

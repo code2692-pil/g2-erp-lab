@@ -155,7 +155,12 @@ test("Gate 12-9 compact save: mobile 400 and PDA 500 preserve dirty input and re
       if (method === "GET") return fulfillJson(route, 200, saved ? [saved] : []);
       if (method === "POST") {
         if (failSave) return fulfillJson(route, target.failure, { error: "planned save failure" });
-        saved = route.request().postDataJSON() as ReturnType<typeof record>;
+        const request = route.request().postDataJSON() as ReturnType<typeof record>;
+        const generatedNumber = "SOR2026070001";
+        saved = {
+          Header: { ...request.Header, NO_SO: generatedNumber },
+          Lines: request.Lines.map((line) => ({ ...line, NO_SO: generatedNumber }))
+        };
         return fulfillJson(route, 201, saved);
       }
       return fulfillJson(route, 500, { error: "unexpected request" });
@@ -172,7 +177,7 @@ test("Gate 12-9 compact save: mobile 400 and PDA 500 preserve dirty input and re
     await expect(page.getByRole("dialog", { name: "저장 완료" })).toBeVisible();
     await page.getByTestId("confirm-dialog-confirm").click();
     await expect(page.getByTestId(`${target.prefix}-dirty-indicator`)).toHaveCount(0);
-    await expect(page.getByTestId(`${target.prefix}-order-no`)).toHaveValue(/^SO\d{10}$/);
+    await expect(page.getByTestId(`${target.prefix}-order-no`)).toHaveValue(/^SOR\d{10}$/);
     await page.unroute("**/api/sales-orders**");
   }
 });
@@ -188,7 +193,12 @@ test("Gate 12-9 compact mutation: save and delete first action wins and delete f
     if (method === "GET") return fulfillJson(route, 200, records);
     if (method === "POST") {
       saveRequests += 1;
-      const saved = route.request().postDataJSON() as ReturnType<typeof record>;
+      const request = route.request().postDataJSON() as ReturnType<typeof record>;
+      const generatedNumber = "SOR2026070001";
+      const saved = {
+        Header: { ...request.Header, NO_SO: generatedNumber },
+        Lines: request.Lines.map((line) => ({ ...line, NO_SO: generatedNumber }))
+      };
       records = [saved, ...records];
       return fulfillJson(route, 201, saved);
     }
@@ -209,7 +219,7 @@ test("Gate 12-9 compact mutation: save and delete first action wins and delete f
   expect(saveRequests).toBe(1);
   await expect(page.getByRole("dialog", { name: "저장 완료" })).toBeVisible();
   await page.getByTestId("confirm-dialog-confirm").click();
-  await expect(page.getByTestId("mobile-sales-order-no")).toHaveValue(/^SO\d{10}$/);
+  await expect(page.getByTestId("mobile-sales-order-no")).toHaveValue(/^SOR\d{10}$/);
 
   await page.getByTestId("mobile-sales-back-list").click();
   await page.getByTestId("mobile-sales-filter-order-no").fill(existing.Header.NO_SO);

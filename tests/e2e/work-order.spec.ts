@@ -173,7 +173,7 @@ test("C: 신규 작업지시와 품목·라인·공정·설비 Lookup을 저장�
   await expect(page.getByTestId("confirm-dialog")).toContainText("저장되었습니다.");
   await page.getByTestId("confirm-dialog-confirm").click();
   await expect(page.locator(".erp-snackbar--success")).toHaveCount(0);
-  await expect(page.getByTestId("work-order-header-grid-selected-document")).toHaveText(/선택 문서 WO\d{10}/);
+  await expect(page.getByTestId("work-order-header-grid-selected-document")).toHaveText(/선택 문서 WMO\d{10}/);
 });
 
 test("D: 저장 전 Validation은 ConfirmDialog 없이 요약과 오류 셀을 표시한다", async ({ page }) => {

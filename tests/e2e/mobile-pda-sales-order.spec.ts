@@ -71,7 +71,7 @@ test("Gate 12-8 mobile B: creates, saves, and requeries through partner and item
   await expect(page.getByTestId("mobile-sales-totals")).toContainText("3,300원");
 
   const savedOrderNo = await saveCompactOrder(page, "mobile-sales");
-  expect(savedOrderNo).toMatch(/^SO\d{10}$/);
+  expect(savedOrderNo).toMatch(/^SOR\d{10}$/);
   await page.getByTestId("mobile-sales-back-list").click();
   await page.getByTestId("mobile-sales-filter-order-no").fill(savedOrderNo);
   await page.getByTestId("mobile-sales-search").click();
@@ -197,7 +197,7 @@ test("Gate 12-8 shared data: PC save, mobile update, PDA update, and PC requery 
   expect(savedHeaderKeys).toHaveLength(1);
   const savedHeaderKey = savedHeaderKeys[0];
   const savedOrderNo = savedHeaderKey.split("::").at(-1);
-  expect(savedOrderNo).toMatch(/^SO\d{10}$/);
+  expect(savedOrderNo).toMatch(/^SOR\d{10}$/);
   expect(selectedDocumentAfterSave).toBe(`선택 문서 ${savedOrderNo}`);
   await page.getByTestId(`sales-order-header-grid-cell-container-${savedHeaderKey}-NO_SO`).click();
   const pcSavedLineQuantity = await page

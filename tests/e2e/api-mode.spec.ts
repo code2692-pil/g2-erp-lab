@@ -115,7 +115,7 @@ test("API mode: purchase order CRUD, lookup, validation, and server amounts", as
   expect((await request.get(`${apiBaseUrl}/api/purchase-orders/1000/${number}`)).status()).toBe(404);
 });
 
-test("API UI: sales order save, delete, dirty header navigation, and notifications", async ({ page, request }, testInfo) => {
+test("API UI: sales order save, dirty header navigation, and notifications", async ({ page, request }, testInfo) => {
   const first = `E2E-SO-UX-${testInfo.workerIndex}-${Date.now()}-A`;
   const second = `E2E-SO-UX-${testInfo.workerIndex}-${Date.now()}-B`;
   await request.post(`${apiBaseUrl}/api/sales-orders`, { data: salesRequest(first, 3, 101) });
@@ -144,19 +144,30 @@ test("API UI: sales order save, delete, dirty header navigation, and notificatio
     await page.getByTestId(`sales-order-header-grid-cell-container-1000::${second}-NO_SO`).click();
     await page.getByTestId("confirm-dialog-confirm").click();
 
-    await page.getByTestId(`sales-order-header-grid-cell-container-1000::${first}-NO_SO`).click();
-    await page.getByTestId("btn-delete-order").click();
-    await page.getByTestId("confirm-dialog-cancel").click();
-    await expect(page.getByTestId(`sales-order-header-grid-row-1000::${first}`)).toBeVisible();
-    await page.getByTestId("btn-delete-order").click();
-    await page.getByTestId("confirm-dialog-confirm").click();
-    await expect(page.getByRole("dialog", { name: "삭제 완료" })).toBeVisible();
-    await expect(page.getByTestId(`sales-order-header-grid-row-1000::${first}`)).toBeVisible();
-    await page.getByTestId("confirm-dialog-confirm").click();
-    await expect(page.getByTestId("status-message")).toContainText("삭제되었습니다.");
   } finally {
     await request.delete(`${apiBaseUrl}/api/sales-orders/1000/${first}`);
     await request.delete(`${apiBaseUrl}/api/sales-orders/1000/${second}`);
+  }
+});
+
+test("API UI: sales order delete confirmation and notification", async ({ page, request }, testInfo) => {
+  const number = `E2E-SO-DELETE-${testInfo.workerIndex}-${Date.now()}`;
+  await request.post(`${apiBaseUrl}/api/sales-orders`, { data: salesRequest(number, 3, 101) });
+  try {
+    await page.goto("/");
+    await page.getByTestId("btn-search").click();
+    await page.getByTestId(`sales-order-header-grid-cell-container-1000::${number}-NO_SO`).click();
+    await page.getByTestId("btn-delete-order").click();
+    await page.getByTestId("confirm-dialog-cancel").click();
+    await expect(page.getByTestId(`sales-order-header-grid-row-1000::${number}`)).toBeVisible();
+    await page.getByTestId("btn-delete-order").click();
+    await page.getByTestId("confirm-dialog-confirm").click();
+    await expect(page.getByRole("dialog", { name: "삭제 완료" })).toBeVisible();
+    await expect(page.getByTestId(`sales-order-header-grid-row-1000::${number}`)).toBeVisible();
+    await page.getByTestId("confirm-dialog-confirm").click();
+    await expect(page.getByTestId("status-message")).toContainText("삭제되었습니다.");
+  } finally {
+    await request.delete(`${apiBaseUrl}/api/sales-orders/1000/${number}`);
   }
 });
 

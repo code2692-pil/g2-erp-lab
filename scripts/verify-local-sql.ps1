@@ -136,7 +136,7 @@ function Invoke-LocalSchemaScript {
     }
     if (-not (Test-Path -LiteralPath $scriptPath)) { throw "Schema script is missing: $RelativePath" }
 
-    $output = & $script:SqlCmd.Source -S "tcp:localhost,1433" -d "G2ERP_DEV_LOCAL_TEST" -E -N -C -b -i $scriptPath 2>&1
+    $output = & $script:SqlCmd.Source -S "tcp:localhost,1433" -d "G2ERP_DEV_LOCAL_TEST" -E -N -C -b -f 65001 -i $scriptPath 2>&1
     if ($LASTEXITCODE -ne 0) {
         throw "sqlcmd exited with code ${LASTEXITCODE}: $($output -join [Environment]::NewLine)"
     }
@@ -375,9 +375,13 @@ try {
         if ($encryptedOk) {
             $migrationOk = Invoke-Step "2/6 Local schema migration" {
                 Invoke-LocalSchemaScript "database/local/013_create_document_number_counters.sql"
-                $output = Invoke-SqlQuery "SET NOCOUNT ON; SELECT CONCAT('CounterTable=', CASE WHEN OBJECT_ID(N'POC.DOC_NO_COUNTER', N'U') IS NULL THEN 'Missing' ELSE 'Ready' END);"
-                if (($output -join "`n") -notmatch "CounterTable=Ready") { throw "Document-number counter table was not created." }
-                "013_create_document_number_counters.sql applied to G2ERP_DEV_LOCAL_TEST."
+                Invoke-LocalSchemaScript "database/local/014_create_sales_conversion_schema.sql"
+                Invoke-LocalSchemaScript "database/local/015_seed_final_uat_conversion_masters.sql"
+                $output = Invoke-SqlQuery "SET NOCOUNT ON; SELECT CONCAT('LocalSchema=', CASE WHEN OBJECT_ID(N'POC.DOC_NO_COUNTER', N'U') IS NOT NULL AND OBJECT_ID(N'POC.PRT_WOBILL', N'U') IS NOT NULL AND OBJECT_ID(N'POC.DOC_CONVERSION_REQUEST', N'U') IS NOT NULL THEN 'Ready' ELSE 'Missing' END); SELECT CONCAT('ConversionMasters=', CASE WHEN EXISTS(SELECT 1 FROM POC.MA_PARTNER WHERE CD_FIRM='1000' AND CD_PARTNER='UAT-SUP-01' AND YN_USE='Y') AND EXISTS(SELECT 1 FROM POC.MA_WH WHERE CD_FIRM='1000' AND CD_WH='UAT-WH-01' AND YN_USE='Y') AND EXISTS(SELECT 1 FROM POC.MST_PRODUCTION_LINE WHERE CD_FIRM='1000' AND CD_LINE='LINE-A' AND YN_USE='Y') AND (SELECT COUNT_BIG(*) FROM POC.MST_PROCESS WHERE CD_FIRM='1000' AND CD_PROC IN ('PROC-010','PROC-020','PROC-030','PROC-040','PROC-050') AND YN_USE='Y')=5 AND EXISTS(SELECT 1 FROM POC.MST_BOM_H WHERE CD_FIRM='1000' AND CD_ITEM='ITM-1001' AND NO_VERSION='FINAL-UAT-1' AND YN_APPROVED='Y') AND EXISTS(SELECT 1 FROM POC.MST_ROUTING_H WHERE CD_FIRM='1000' AND CD_ITEM='ITM-1001' AND NO_VERSION='FINAL-UAT-1' AND YN_APPROVED='Y') THEN 'Ready' ELSE 'Missing' END);"
+                $migrationText = $output -join "`n"
+                if ($migrationText -notmatch "LocalSchema=Ready") { throw "Required local numbering and conversion schema was not created." }
+                if ($migrationText -notmatch "ConversionMasters=Ready") { throw "Required fictional conversion masters were not seeded." }
+                "013 through 015 local schema migrations and fictional conversion masters applied to G2ERP_DEV_LOCAL_TEST."
             }
             if ($migrationOk) {
                 $preResidueOk = Invoke-Step "3/6 Pre-test residue" { Assert-NoMarkerResidue "preTest" }
@@ -426,10 +430,16 @@ try {
 
         if ($runnerOk) {
             $writeTestsPassed = $true
-            foreach ($testClass in @("SqlServerPurchaseOrdersIntegrationTests", "SqlServerSalesOrdersIntegrationTests", "SqlServerWorkOrdersIntegrationTests")) {
+            foreach ($testClass in @("SqlServerPurchaseOrdersIntegrationTests", "SqlServerSalesOrdersIntegrationTests", "SqlServerWorkOrdersIntegrationTests", "SqlServerSalesConversionIntegrationTests")) {
                 $passed = Invoke-Step "5/6 SQL test: $testClass" {
-                    $output = & dotnet test "server/G2Erp.Api.Tests/G2Erp.Api.Tests.csproj" --no-restore --filter "FullyQualifiedName~$testClass" --logger "console;verbosity=minimal" 2>&1
-                    if ($LASTEXITCODE -ne 0) { throw "dotnet test exited with code ${LASTEXITCODE}: $($output -join [Environment]::NewLine)" }
+                    $previousErrorAction = $ErrorActionPreference
+                    $ErrorActionPreference = "Continue"
+                    try {
+                        $output = & dotnet test "server/G2Erp.Api.Tests/G2Erp.Api.Tests.csproj" --no-restore --filter "FullyQualifiedName~$testClass" --logger "console;verbosity=normal" 2>&1
+                        $testExitCode = $LASTEXITCODE
+                    }
+                    finally { $ErrorActionPreference = $previousErrorAction }
+                    if ($testExitCode -ne 0) { throw "dotnet test exited with code ${testExitCode}: $($output -join [Environment]::NewLine)" }
                     "$testClass passed."
                 }
                 if (-not $passed) {

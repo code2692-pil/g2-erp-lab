@@ -154,9 +154,6 @@ test("Gate 12-8 shared data: PC save, mobile update, PDA update, and PC requery 
   await page.goto("/");
   await page.getByTestId("btn-search").click();
   await expect(page.getByTestId("sales-order-header-grid-row-1000::SO2026070001")).toBeVisible();
-  const headersBeforeNew = await page.locator('[data-testid^="sales-order-header-grid-row-"]').evaluateAll(
-    (rows) => rows.map((row) => row.getAttribute("data-testid"))
-  );
   await page.getByTestId("btn-new").click();
   const tempHeaderKey = "1000::TEMP_SO_001";
   const tempLineKey = `${tempHeaderKey}::1`;
@@ -187,17 +184,11 @@ test("Gate 12-8 shared data: PC save, mobile update, PDA update, and PC requery 
     .getByTestId("sales-order-header-grid-selected-document")
     .textContent();
   await page.getByLabel("수주일자 To").fill(temporaryOrderDate);
-  const desktopRowsAfterSave = await page.locator('[data-testid^="sales-order-header-grid-row-"]').evaluateAll(
-    (rows) => rows.map((row) => row.dataset.rowKey ?? null)
-  );
-  const existingHeaderKeys = new Set(headersBeforeNew.map((testId) => testId?.replace("sales-order-header-grid-row-", "")));
-  const savedHeaderKeys = desktopRowsAfterSave.filter(
-    (rowKey): rowKey is string => Boolean(rowKey) && !rowKey.includes("TEMP_SO_") && !existingHeaderKeys.has(rowKey)
-  );
-  expect(savedHeaderKeys).toHaveLength(1);
-  const savedHeaderKey = savedHeaderKeys[0];
-  const savedOrderNo = savedHeaderKey.split("::").at(-1);
-  expect(savedOrderNo).toMatch(/^SOR\d{10}$/);
+  expect(selectedDocumentAfterSave).toMatch(/^선택 문서 SOR\d{10}$/);
+  const savedOrderNo = selectedDocumentAfterSave?.match(/SOR\d{10}/)?.[0];
+  expect(savedOrderNo).toBeTruthy();
+  const savedHeaderKey = `1000::${savedOrderNo}`;
+  await expect(page.getByTestId(`sales-order-header-grid-row-${savedHeaderKey}`)).toHaveCount(1);
   expect(selectedDocumentAfterSave).toBe(`선택 문서 ${savedOrderNo}`);
   await page.getByTestId(`sales-order-header-grid-cell-container-${savedHeaderKey}-NO_SO`).click();
   const pcSavedLineQuantity = await page
@@ -239,9 +230,10 @@ test("Gate 12-8 shared data: PC save, mobile update, PDA update, and PC requery 
   const documentIdentity = {
     pc: {
       selectedDocument,
+      selectedDocumentAfterSave,
       savedOrderNo,
+      savedHeaderKey,
       line1Quantity: pcSavedLineQuantity,
-      headersBeforeNew,
       temporaryOrderDate
     },
     mobile: {

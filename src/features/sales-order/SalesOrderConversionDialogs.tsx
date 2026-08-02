@@ -13,6 +13,7 @@ import type {
 } from "../../api/salesConversionApi";
 import { convertSalesToPurchase, convertSalesToWorkOrder, loadWorkOrderConversionPreview } from "./salesConversionDataService";
 import type { SalesOrderHeader, SalesOrderLine } from "./types";
+import { createClientId } from "../../utils/clientId";
 
 const partnerColumns: readonly ErpDataGridColumn<Partner>[] = [
   { field: "CD_PARTNER", headerName: "공급처코드", width: 140, dataType: "code" },
@@ -30,8 +31,7 @@ function today() {
 }
 
 function requestKey(prefix: string) {
-  const id = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  return `${prefix}-${id}`;
+  return createClientId(prefix);
 }
 
 interface CommonProps {
@@ -68,10 +68,10 @@ export function SalesToPurchaseDialog({ header, lines, partners, warehouses, onC
     if (!open) return;
     requestKeyRef.current = requestKey("sales-to-purchase");
     const usablePartners = partners.filter((row) => row.CD_FIRM === header?.CD_FIRM && row.CD_PARTNER !== header?.CD_PARTNER && row.YN_USE === "Y");
-    const preferredSupplier = usablePartners.find((row) => row.CD_PARTNER === "UAT-SUP-01");
+    const preferredSupplier = usablePartners.find((row) => row.CD_PARTNER === "SUP-001");
     const usableWarehouses = warehouses.filter((row) => row.CD_FIRM === header?.CD_FIRM && row.YN_USE === "Y");
     setSupplier(preferredSupplier);
-    setWarehouse(usableWarehouses.find((row) => row.CD_WH === "UAT-WH-01") ?? usableWarehouses[0]);
+    setWarehouse(usableWarehouses.find((row) => row.CD_WH === "WH-RM-01") ?? usableWarehouses[0]);
     setPurchaseDate(today());
     setCurrency("KRW");
     setQuantities(Object.fromEntries(lines.map((line) => [line.NO_LINE, line.QT_SO])));
@@ -133,7 +133,7 @@ export function SalesToPurchaseDialog({ header, lines, partners, warehouses, onC
       title={result ? "발주 전환 완료" : "수주상세 발주 전환"}
       width={920}
     >
-      {result ? <div className="sales-conversion-result" data-testid="sales-to-purchase-result"><strong>발주번호 {result.PurchaseOrderNo}</strong><p>원본 수주 {header?.NO_SO}와 내부 ID로 연결되었습니다.</p>{result.Lines.map((line) => <p key={line.SourceLineNo}>{line.SourceLineNo}번 행: {line.ConvertedQuantity} 전환, 잔량 {line.RemainingQuantity}</p>)}</div> : <div className="sales-conversion-form">
+      {result ? <div className="sales-conversion-result" data-testid="sales-to-purchase-result"><strong>발주번호 {result.PurchaseOrderNo}</strong><p>원본 수주 {header?.NO_SO}와 연결되었습니다.</p>{result.Lines.map((line) => <p key={line.SourceLineNo}>{line.SourceLineNo}번 행: {line.ConvertedQuantity} 전환, 잔량 {line.RemainingQuantity}</p>)}</div> : <div className="sales-conversion-form">
         <p>고객은 공급처로 자동 복사되지 않습니다. 공급처와 창고를 확인해 주세요.</p>
         <div className="sales-conversion-fields">
           <label>원본 수주<input readOnly value={header?.NO_SO ?? ""} /></label>
@@ -202,7 +202,7 @@ export function SalesToWorkOrderDialog({ header, line, onClose, onNavigate, open
     if (!preview) { setError("승인된 BOM과 공정경로를 먼저 확인하세요."); return; }
     if (quantity <= 0 || quantity > line.QT_SO) { setError(`전환수량은 0보다 크고 수주수량 ${line.QT_SO} 이하여야 합니다.`); return; }
     if (plannedStart > plannedEnd) { setError("계획 종료일은 계획 시작일보다 빠를 수 없습니다."); return; }
-    const accepted = await confirm({ title: "작업지시 전환", message: `${header.NO_SO}/${line.NO_LINE}행을 작업지시로 전환하시겠습니까?`, description: `수량 ${quantity}, 생산라인 ${productionLine}, BOM ${bomVersion}, 공정경로 ${routingVersion}`, confirmLabel: "전환" });
+    const accepted = await confirm({ title: "작업지시 전환", message: `${header.NO_SO}/${line.NO_LINE}행을 작업지시로 전환하시겠습니까?`, description: `수량 ${quantity}, 생산라인 ${productionLine}, 승인된 BOM·공정경로 적용`, confirmLabel: "전환" });
     if (!accepted) return;
     setProcessing(true);
     setError("");
@@ -228,7 +228,7 @@ export function SalesToWorkOrderDialog({ header, line, onClose, onNavigate, open
     title={result ? "작업지시 전환 완료" : "수주상세 작업지시 전환"}
     width={980}
   >
-    {result ? <div className="sales-conversion-result" data-testid="sales-to-work-order-result"><strong>작업지시번호 {result.WorkOrderNo}</strong><p>원본 수주 {header?.NO_SO}/{line?.NO_LINE}행과 내부 ID로 연결되었습니다.</p><p>공정 {result.Operations.length}개, 자재 소요 {result.Bills.length}개가 하나의 작업지시로 생성되었습니다.</p><p>전환수량 {result.Source.ConvertedQuantity}, 잔량 {result.Source.RemainingQuantity}</p></div> : <div className="sales-conversion-form">
+    {result ? <div className="sales-conversion-result" data-testid="sales-to-work-order-result"><strong>작업지시번호 {result.WorkOrderNo}</strong><p>원본 수주 {header?.NO_SO}/{line?.NO_LINE}행과 연결되었습니다.</p><p>공정 {result.Operations.length}개, 자재 소요 {result.Bills.length}개가 하나의 작업지시로 생성되었습니다.</p><p>전환수량 {result.Source.ConvertedQuantity}, 잔량 {result.Source.RemainingQuantity}</p></div> : <div className="sales-conversion-form">
       <div className="sales-conversion-fields">
         <label>원본 수주상세<input readOnly value={header && line ? `${header.NO_SO}/${line.NO_LINE} · ${line.CD_ITEM}` : ""} /></label>
         <label>전환수량<input data-testid="work-conversion-quantity" min="0" type="number" value={quantity} onChange={(event) => setQuantity(Number(event.target.value))} /></label>
@@ -236,8 +236,8 @@ export function SalesToWorkOrderDialog({ header, line, onClose, onNavigate, open
         <label>계획 시작일<input data-testid="work-conversion-start" type="date" value={plannedStart} onChange={(event) => setPlannedStart(event.target.value)} /></label>
         <label>계획 종료일<input data-testid="work-conversion-end" type="date" value={plannedEnd} onChange={(event) => setPlannedEnd(event.target.value)} /></label>
         <label>생산라인/작업장<select data-testid="work-conversion-line" value={productionLine} onChange={(event) => setProductionLine(event.target.value)}><option value="LINE-A">LINE-A 조립 작업장</option><option value="LINE-C">LINE-C 검사 작업장</option></select></label>
-        <label>BOM 버전<input data-testid="work-conversion-bom" value={bomVersion} onChange={(event) => setBomVersion(event.target.value)} /></label>
-        <label>공정경로 버전<input data-testid="work-conversion-routing" value={routingVersion} onChange={(event) => setRoutingVersion(event.target.value)} /></label>
+        <label>BOM 버전<input data-testid="work-conversion-bom" readOnly value="승인 버전" /></label>
+        <label>공정경로 버전<input data-testid="work-conversion-routing" readOnly value="승인 버전" /></label>
       </div>
       {preview && <div className="sales-conversion-preview" data-testid="work-conversion-preview"><section><h3>공정 미리보기 ({preview.Operations.length})</h3><ol>{preview.Operations.map((operation) => <li key={operation.Sequence}>{operation.Sequence} · {operation.ProcessName} · {operation.WorkCenterName} · {operation.BaseMinutes}분</li>)}</ol></section><section><h3>자재 소요 미리보기 ({preview.Bills.length})</h3><ul>{preview.Bills.map((bill) => <li key={bill.LineNo}>{bill.ComponentCode} {bill.ComponentName} · {bill.BaseQuantity * quantity} {bill.Unit}</li>)}</ul></section></div>}
       {error && <p className="sales-conversion-error" data-testid="sales-to-work-order-error" role="alert">{error}</p>}

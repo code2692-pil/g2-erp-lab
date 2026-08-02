@@ -12,6 +12,13 @@ import {
 const DemoRoleContext = createContext<DemoUser["Role"] | null>(null);
 export function useDemoRole() { return useContext(DemoRoleContext); }
 
+const roleLabels: Record<DemoUser["Role"], string> = {
+  Viewer: "조회 사용자",
+  Operator: "업무 사용자",
+  Manager: "관리자",
+  Admin: "시스템 관리자"
+};
+
 export function DemoEnvironmentGate({ children }: { children: ReactNode }) {
   const [users, setUsers] = useState<DemoUser[]>([]);
   const [selectedUserId, setSelectedUserId] = useState("demo-viewer");
@@ -39,7 +46,7 @@ export function DemoEnvironmentGate({ children }: { children: ReactNode }) {
           }
         }
       } catch (reason) {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : "시연 서버에 연결할 수 없습니다.");
+        if (!cancelled) setError(reason instanceof Error ? reason.message : "서비스에 연결할 수 없습니다.");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -76,7 +83,7 @@ export function DemoEnvironmentGate({ children }: { children: ReactNode }) {
         }
         button.disabled = true;
         button.dataset.demoViewerDisabled = "true";
-        button.title = "Demo Viewer는 조회만 할 수 있습니다.";
+        button.title = "조회 사용자는 조회 기능만 사용할 수 있습니다.";
       });
     };
     disableMutationControls();
@@ -104,18 +111,18 @@ export function DemoEnvironmentGate({ children }: { children: ReactNode }) {
       setContext(await demoApi.context());
     } catch (reason) {
       clearDemoSession();
-      setError(reason instanceof Error ? reason.message : "시연 사용자를 선택하지 못했습니다.");
+      setError(reason instanceof Error ? reason.message : "사용자를 선택하지 못했습니다.");
     } finally {
       setLoading(false);
     }
   };
 
   const resetDemo = async () => {
-    if (resetText !== "DEMO RESET") return;
-    setResetStatus("초기화 중입니다.");
+    if (resetText !== "초기 데이터 복원") return;
+    setResetStatus("데이터를 복원하는 중입니다.");
     try {
-      const result = await demoApi.reset();
-      setResetStatus(`안전한 시연 데이터로 초기화했습니다. 기준 버전: ${result.SeedVersion}`);
+      await demoApi.reset();
+      setResetStatus("업무 확인용 초기 데이터로 복원했습니다.");
       setResetText("");
     } catch (reason) {
       const message = reason instanceof ApiClientError && reason.traceId
@@ -129,16 +136,16 @@ export function DemoEnvironmentGate({ children }: { children: ReactNode }) {
     return (
       <main className="demo-session-gate" data-testid="demo-session-gate">
         <section aria-labelledby="demo-session-title">
-          <p className="demo-environment-label">개발·사내 시연 환경</p>
-          <h1 id="demo-session-title">시연 사용자 선택</h1>
-          <p>실제 운영 데이터가 아닌 고정된 가상 데이터만 사용합니다. 이 선택은 실제 로그인이나 운영 권한을 의미하지 않습니다.</p>
-          <label htmlFor="demo-user">시연 역할</label>
+          <p className="demo-environment-label">G2 ERP</p>
+          <h1 id="demo-session-title">사용자 선택</h1>
+          <p>담당 업무에 맞는 사용자를 선택해 시작하세요.</p>
+          <label htmlFor="demo-user">사용자 역할</label>
           <select id="demo-user" value={selectedUserId} onChange={(event) => setSelectedUserId(event.target.value)} disabled={loading || users.length === 0}>
-            {users.map((user) => <option key={user.Id} value={user.Id}>{user.Name} · {user.Role}</option>)}
+            {users.map((user) => <option key={user.Id} value={user.Id}>{user.Name}</option>)}
           </select>
           {error && <p role="alert" className="demo-error">{error}</p>}
           <button type="button" onClick={() => void startSession()} disabled={loading || users.length === 0}>
-            {loading ? "연결 확인 중" : "사내 시연 시작"}
+            {loading ? "연결 확인 중" : "업무 화면 시작"}
           </button>
         </section>
       </main>
@@ -148,30 +155,24 @@ export function DemoEnvironmentGate({ children }: { children: ReactNode }) {
   const canReset = context?.User.Role === "Manager" || context?.User.Role === "Admin";
   return (
     <>
-      <aside className="demo-environment-banner" data-testid="demo-environment-banner" aria-label="시연 환경 안내">
+      {demoEnvironment === "shared" && <aside className="demo-environment-banner" data-testid="current-user-menu" aria-label="현재 사용자 메뉴">
         <div>
-          <strong>개발·사내 시연 환경 · 실제 운영 데이터가 아닙니다</strong>
-          <span>{demoEnvironment === "personal"
-            ? "개인 안전 시연 · 이 브라우저의 데이터는 다른 사용자와 공유되지 않습니다."
-            : demoEnvironment === "development"
-              ? "개발 API 검증 · 현재 개발 서버의 데이터 저장소를 사용합니다."
-              : `공유 시연 · ${context?.User.Name} (${context?.User.Role}) · 서버가 역할과 작업 권한을 검증합니다.`}</span>
+          <strong>현재 사용자</strong>
+          <span>{context ? roleLabels[context.User.Role] : ""}</span>
         </div>
-        {demoEnvironment === "shared" && (
-          <div className="demo-banner-actions">
-            {canReset && <button type="button" onClick={() => setResetOpen((value) => !value)}>시연 데이터 초기화</button>}
-            <button type="button" onClick={() => { clearDemoSession(); setContext(null); setResetOpen(false); }}>사용자 변경</button>
-          </div>
-        )}
-      </aside>
+        <div className="demo-banner-actions">
+          {canReset && <button type="button" onClick={() => setResetOpen((value) => !value)}>초기 데이터 복원</button>}
+          <button type="button" onClick={() => { clearDemoSession(); setContext(null); setResetOpen(false); }}>사용자 전환</button>
+        </div>
+      </aside>}
       {resetOpen && (
-        <section className="demo-reset-panel" aria-label="시연 데이터 초기화">
-          <strong>공유 시연 데이터 초기화</strong>
-          <p>수주·발주·작업지시를 안전한 고정 시연 데이터로 되돌립니다. 실제 운영 DB에는 연결되지 않습니다.</p>
-          <label htmlFor="demo-reset-confirmation">계속하려면 DEMO RESET 입력</label>
+        <section className="demo-reset-panel" aria-label="초기 데이터 복원">
+          <strong>초기 데이터 복원</strong>
+          <p>수주·발주·작업지시 데이터를 업무 확인을 시작하기 전 상태로 되돌립니다.</p>
+          <label htmlFor="demo-reset-confirmation">계속하려면 초기 데이터 복원 입력</label>
           <div>
             <input id="demo-reset-confirmation" value={resetText} onChange={(event) => setResetText(event.target.value)} />
-            <button type="button" disabled={resetText !== "DEMO RESET"} onClick={() => void resetDemo()}>초기화 실행</button>
+            <button type="button" disabled={resetText !== "초기 데이터 복원"} onClick={() => void resetDemo()}>복원 실행</button>
           </div>
           {resetStatus && <p role="status">{resetStatus}</p>}
         </section>

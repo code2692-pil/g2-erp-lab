@@ -162,7 +162,7 @@ export function createReviewRecord(session: SolutionSession, unresolved: readonl
     fieldReview: safe(draft.fieldReview, 2000),
     decisionReason: safe(draft.decisionReason, 2000),
     checklist: { ...draft.checklist },
-    limitations: ["검토 상태는 실제 승인·전자결재 또는 적용 완료를 의미하지 않습니다.", "검토 패키지는 로컬 파일 기반 PoC이며 사용자 인증·권한·DB·감사 로그와 연결하지 않습니다.", "민감정보 탐지는 기초 패턴 기반이며 실제 공유 전 담당자 검토가 필요합니다."],
+    limitations: ["검토 상태는 실제 승인·전자결재 또는 적용 완료를 의미하지 않습니다.", "검토 패키지는 로컬 파일 기반이며 사용자 인증·권한·DB·감사 로그와 연결하지 않습니다.", "민감정보 탐지는 기초 패턴 기반이며 실제 공유 전 담당자 검토가 필요합니다."],
     analysisFingerprint: reviewAnalysisFingerprint(session)
   };
 }

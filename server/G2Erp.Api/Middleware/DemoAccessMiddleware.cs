@@ -10,7 +10,7 @@ public sealed class DemoAccessMiddleware(RequestDelegate next, IConfiguration co
         if (!demoMode && context.Request.Path.StartsWithSegments("/api/demo"))
         {
             context.Response.StatusCode = StatusCodes.Status404NotFound;
-            await context.Response.WriteAsJsonAsync(new { error = "Demo API is not enabled.", traceId = context.TraceIdentifier });
+            await context.Response.WriteAsJsonAsync(new { error = "이 서비스는 현재 사용할 수 없습니다.", traceId = context.TraceIdentifier });
             return;
         }
         if (!demoMode || !context.Request.Path.StartsWithSegments("/api"))
@@ -29,7 +29,7 @@ public sealed class DemoAccessMiddleware(RequestDelegate next, IConfiguration co
         if (session is null)
         {
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            await context.Response.WriteAsJsonAsync(new { error = "Demo 사용자를 선택해 세션을 시작하세요.", traceId = context.TraceIdentifier });
+            await context.Response.WriteAsJsonAsync(new { error = "사용자를 선택해 다시 시작하세요.", traceId = context.TraceIdentifier });
             return;
         }
 
@@ -37,7 +37,7 @@ public sealed class DemoAccessMiddleware(RequestDelegate next, IConfiguration co
         if (!access.CanAccess(session, context.Request.Method, context.Request.Path))
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
-            await context.Response.WriteAsJsonAsync(new { error = "현재 Demo 역할에는 이 작업 권한이 없습니다.", traceId = context.TraceIdentifier });
+            await context.Response.WriteAsJsonAsync(new { error = "현재 사용자에게 이 작업 권한이 없습니다.", traceId = context.TraceIdentifier });
             access.AppendAudit(session, context);
             return;
         }

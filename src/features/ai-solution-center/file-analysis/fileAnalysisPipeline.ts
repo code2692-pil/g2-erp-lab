@@ -90,7 +90,7 @@ async function imageMetadata(file: File): Promise<AnalyzerOutput> {
     structureSummary: "이미지 메타정보 확인에 실패했습니다.",
     structuredMetadata: { mimeType: file.type || "알 수 없음", fileSize: file.size },
     redactedText: "",
-    warnings: ["이미지 크기를 확인하지 못했습니다. 사용자 메모를 입력해 주세요.", "현재 PoC에서는 OCR이나 장면 분석을 지원하지 않습니다."],
+    warnings: ["이미지 크기를 확인하지 못했습니다. 사용자 메모를 입력해 주세요.", "OCR이나 장면 분석은 지원하지 않습니다."],
     sensitiveFindings: [],
     analysisSucceeded: false,
     requiresUserDescription: true
@@ -100,7 +100,7 @@ async function imageMetadata(file: File): Promise<AnalyzerOutput> {
     structureSummary: `가로 ${width}px · 세로 ${height}px · 비율 ${(width / Math.max(height, 1)).toFixed(2)}`,
     structuredMetadata: { mimeType: file.type || "알 수 없음", fileSize: file.size, width, height, aspectRatio: Number((width / Math.max(height, 1)).toFixed(2)) },
     redactedText: "",
-    warnings: ["이미지 메타정보만 확인했습니다. 현재 PoC에서는 OCR이나 장면 분석을 지원하지 않습니다."],
+    warnings: ["이미지 메타정보만 확인했습니다. OCR이나 장면 분석은 지원하지 않습니다."],
     sensitiveFindings: [],
     analysisSucceeded: true,
     requiresUserDescription: true
@@ -143,7 +143,7 @@ async function mediaMetadata(file: File, category: "AUDIO" | "VIDEO"): Promise<A
     structureSummary: "재생 시간 또는 화면 크기 메타정보를 확인하지 못했습니다.",
     structuredMetadata: baseMetadata,
     redactedText: "",
-    warnings: ["메타정보 확인에 실패했습니다. 사용자 메모·전사문을 입력해 주세요.", category === "AUDIO" ? "현재 PoC에서는 음성 전사를 지원하지 않습니다." : "현재 PoC에서는 영상 장면·음성 분석을 지원하지 않습니다."],
+    warnings: ["메타정보 확인에 실패했습니다. 사용자 메모·전사문을 입력해 주세요.", category === "AUDIO" ? "음성 전사를 지원하지 않습니다." : "영상 장면·음성 분석을 지원하지 않습니다."],
     sensitiveFindings: [],
     analysisSucceeded: false,
     requiresUserDescription: true
@@ -173,7 +173,7 @@ async function mediaMetadata(file: File, category: "AUDIO" | "VIDEO"): Promise<A
         ? { ...baseMetadata, durationSeconds, width: videoMetadata.width, height: videoMetadata.height }
         : { ...baseMetadata, durationSeconds },
       redactedText: "",
-      warnings: [category === "AUDIO" ? "현재 PoC에서는 음성 전사를 지원하지 않습니다." : "현재 PoC에서는 영상 장면·음성 분석을 지원하지 않습니다."],
+      warnings: [category === "AUDIO" ? "음성 전사를 지원하지 않습니다." : "영상 장면·음성 분석을 지원하지 않습니다."],
       sensitiveFindings: [],
       analysisSucceeded: true,
       requiresUserDescription: true
@@ -194,7 +194,7 @@ function descriptionOnlyOutput(file: File, category: FileCategory): AnalyzerOutp
     structureSummary: "파일 유형과 크기만 확인했습니다.",
     structuredMetadata: { mimeType: file.type || "알 수 없음", fileSize: file.size },
     redactedText: "",
-    warnings: ["현재 PoC에서는 본문 자동 추출을 지원하지 않습니다. 주요 내용·전사문·요약을 입력해 주세요."],
+    warnings: ["본문 자동 추출을 지원하지 않습니다. 주요 내용·전사문·요약을 입력해 주세요."],
     sensitiveFindings: [],
     analysisSucceeded: true,
     requiresUserDescription: true

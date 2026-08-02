@@ -7,6 +7,7 @@ import { verifyApiReadiness, verifyFrontendReadiness, waitForReadiness } from ".
 const [action, mode] = process.argv.slice(2);
 const host = "127.0.0.1";
 const bindHost = mode === "demo" ? "0.0.0.0" : host;
+const backendBindHost = host;
 const frontendUrl = `http://${host}:5173`;
 const backendUrl = `http://${host}:5080`;
 const isApi = mode !== "mock";
@@ -140,9 +141,9 @@ async function stop(child) {
 }
 
 async function main() {
-  if (!['dev', 'test'].includes(action) || !['mock', 'inmemory', 'sqlserver', 'demo'].includes(mode))
-    throw new Error("Usage: node scripts/run-mode.mjs <dev|test> <mock|inmemory|sqlserver|demo>");
-  if (action === "test") {
+  if (!['dev', 'test', 'verify'].includes(action) || !['mock', 'inmemory', 'sqlserver', 'demo'].includes(mode) || (action === "verify" && !isSharedDemo))
+    throw new Error("Usage: node scripts/run-mode.mjs <dev|test|verify> <mock|inmemory|sqlserver|demo> (verify requires demo)");
+  if (action !== "dev") {
     const artifactFailures = removePlaywrightArtifacts();
     for (const failure of artifactFailures) console.error(`[test-lifecycle] pre-run artifact cleanup failed: ${failure}`);
     if (artifactFailures.length) process.exitCode = 1;
@@ -153,13 +154,13 @@ async function main() {
       : { RepositoryMode: "InMemory", ASPNETCORE_ENVIRONMENT: "Development", ...(isSharedDemo ? { DemoMode: "true" } : {}) };
     const apiBuild = start("dotnet", ["build", "--no-restore", "server/G2Erp.Api/G2Erp.Api.csproj"], apiEnv);
     await waitForExit(apiBuild, "ASP.NET API build");
-    const api = start("dotnet", ["run", "--no-build", "--project", "server/G2Erp.Api/G2Erp.Api.csproj", "--urls", `http://${bindHost}:5080`], apiEnv);
+    const api = start("dotnet", ["run", "--no-build", "--project", "server/G2Erp.Api/G2Erp.Api.csproj", "--urls", `http://${backendBindHost}:5080`], apiEnv);
     await waitForApi(api);
   }
   const frontendEnv = isApi
-    ? { VITE_DATA_MODE: "api", VITE_API_BASE_URL: isSharedDemo ? "same-host-demo" : backendUrl, ...(isSharedDemo ? { VITE_DEMO_MODE: "shared" } : {}) }
+    ? { VITE_DATA_MODE: "api", VITE_API_BASE_URL: isSharedDemo ? "same-origin" : backendUrl, ...(isSharedDemo ? { VITE_DEMO_MODE: "shared" } : {}) }
     : { VITE_DATA_MODE: "mock", VITE_DEMO_MODE: "personal" };
-  if (action === "test") {
+  if (action !== "dev") {
     const e2eBuildEnvironment = isProductionContract
       ? frontendEnv
       : { ...frontendEnv, VITE_E2E_TEST_MODE: "true" };
@@ -172,9 +173,13 @@ async function main() {
     await waitForFrontend(frontend);
   }
   console.log(`Mode: ${mode}`); console.log(`Frontend readiness: ${frontendUrl}`); console.log(`Backend readiness: ${isApi ? backendUrl : "not started"}`); console.log(`Repository: ${isSqlServer ? "SqlServer (localhost / G2ERP_DEV_LOCAL_TEST)" : isApi ? "InMemory" : "Mock"}`);
-  if (isSharedDemo) console.log("Shared demo: open http://<this-PC-private-IPv4>:5173 from the same trusted internal network. Windows Firewall may require an explicit private-network inbound rule for ports 5173 and 5080.");
+  if (isSharedDemo) console.log("Shared access: open http://<this-PC-private-IPv4>:5173 from the same trusted internal network. Windows Firewall may require an explicit private-network inbound rule for port 5173.");
   openBrowserWhenRequested(frontendUrl);
-  if (action === "test") {
+  if (action === "verify") {
+    console.log("[test-lifecycle] shared access verification uses the production bundle and the actual private IPv4 address.");
+    const verification = start(process.execPath, ["scripts/verify-shared-access.mjs"], frontendEnv);
+    process.exitCode = await new Promise(resolve => verification.once("exit", code => resolve(code ?? 1)));
+  } else if (action === "test") {
     console.log("[test-lifecycle] frontend production bundle prepared before the parallel run.");
     if (isSqlServer || isProductionContract || isSharedDemo) {
       console.log(`[test-lifecycle] ${isSqlServer ? "SQL Server" : "production-contract"} run skips fixture-specific frontend warmup.`);

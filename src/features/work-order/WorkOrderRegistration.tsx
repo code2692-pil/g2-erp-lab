@@ -666,7 +666,7 @@ export function WorkOrderRegistration({ onNavigate, onScreenIntent, showDevelopm
           <button className="menu-item active" data-testid="nav-work-order" type="button">작업지시등록</button>
           <div className="menu-title">AI 솔루션</div>
           <button {...screenIntentProps("ai")} className="menu-item" data-testid="nav-ai-solution-center" onClick={() => void handleNavigate("ai")} type="button">AI 솔루션 센터</button>
-          {showDevelopmentDataManager && <><div className="menu-title">개발 도구</div><button {...screenIntentProps("development")} className="menu-item" data-testid="nav-development-data" onClick={() => void handleNavigate("development")} type="button">테스트 데이터 관리</button></>}
+          {showDevelopmentDataManager && <><div className="menu-title">운영 지원</div><button {...screenIntentProps("development")} className="menu-item" data-testid="nav-development-data" onClick={() => void handleNavigate("development")} type="button">기준 데이터 관리</button></>}
         </nav>
       </aside>
       <main aria-busy={processing} className="workbench" data-processing-state={operation}>

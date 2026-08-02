@@ -29,7 +29,7 @@ function expectNoBrowserProblems(problems: ReturnType<typeof collectBrowserProbl
 async function applyCompanyKnowledgeSample(page: Page) {
   await page.getByTestId("company-knowledge-input").setInputFiles(resolve("docs/ai-solution-center/company-knowledge-sample.json"));
   await expect(page.getByTestId("company-knowledge-count")).toHaveText("현재 적용된 회사 지식 3개");
-  await expect(page.getByTestId("company-knowledge-list")).toContainText("PoC 예시: 자재 LOT 연결 관리");
+  await expect(page.getByTestId("company-knowledge-list")).toContainText("자재 LOT 연결 관리");
 }
 
 async function openCompanyLotQuestion(page: Page) {
@@ -139,7 +139,7 @@ test("AI 센터 B: 지원하지 않는 MP4도 첨부를 유지하고 상황 설�
   await openCenter(page);
   await page.getByTestId("ai-file-input").setInputFiles({ name: "process-video.mp4", mimeType: "video/mp4", buffer: Buffer.from("not-a-real-video") });
   await expect(page.getByTestId("ai-file-list")).toContainText("process-video.mp4");
-  await expect(page.getByTestId("ai-file-list")).toContainText("현재 PoC에서는 내용을 자동 추출하지 않습니다.");
+  await expect(page.getByTestId("ai-file-list")).toContainText("내용 자동 추출, 음성 전사, 영상 장면 분석은 지원하지 않습니다.");
   await page.getByTestId("ai-consultant-analyze").click();
   await expect(page.getByRole("alert")).toHaveText("분석할 수 있는 텍스트 내용이나 상황 설명을 입력해 주세요.");
   await page.getByTestId("ai-situation-input").fill("현장 작업 영상에는 핵심 공정의 검사 누락과 입력 부담이 나타납니다. 우선 적용 기준을 검토해 주세요.");
@@ -427,7 +427,7 @@ test("Gate 12-5 E: handover and Markdown include priorities, comparison, and roa
   const markdown = await page.evaluate(() => navigator.clipboard.readText());
   expect(markdown).toContain("## 솔루션 대안 비교");
   expect(markdown).toContain("## 적용 로드맵");
-  expect(markdown).toContain("비교 점수는 PoC의 상대 우선순위");
+  expect(markdown).toContain("비교 점수는 상대 우선순위");
   expect(markdown).not.toMatch(/\b\d+\s*(원|일|개월|주)\b/);
   expectNoBrowserProblems(problems);
 });

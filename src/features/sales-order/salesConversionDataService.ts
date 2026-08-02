@@ -15,6 +15,7 @@ import { mockWarehouses } from "../common-code/warehouse/mockData";
 import { mockPurchaseOrderHeaders } from "../purchase-order/mockData";
 import { mockWorkOrderHeaders } from "../work-order/mockData";
 import type { SalesOrderLine } from "./types";
+import { createClientId } from "../../utils/clientId";
 
 const purchaseRequests = new Map<string, PurchaseConversionResult>();
 const workOrderRequests = new Map<string, WorkOrderConversionResult>();
@@ -51,7 +52,7 @@ function sourceIdentity(type: "POR" | "WMO", companyCode: string, salesOrderNo: 
 }
 
 function newId() {
-  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return createClientId("conversion");
 }
 
 export async function convertSalesToPurchase(

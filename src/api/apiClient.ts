@@ -3,10 +3,24 @@ export type DataMode = "mock" | "api";
 const configuredMode = import.meta.env.VITE_DATA_MODE;
 export const dataMode: DataMode = configuredMode === "api" ? "api" : "mock";
 const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL;
-const apiBaseUrl = (configuredApiBaseUrl === "same-host-demo"
-  ? `${window.location.protocol}//${window.location.hostname}:5080`
+const apiBaseUrl = (configuredApiBaseUrl === "same-origin"
+  ? ""
   : configuredApiBaseUrl ?? "http://127.0.0.1:5080").replace(/\/$/, "");
 export const demoSessionStorageKey = "g2erp.demo.session";
+
+export function readStoredDemoSessionToken() {
+  if (typeof window === "undefined") return null;
+  const raw = window.sessionStorage.getItem(demoSessionStorageKey);
+  if (!raw) return null;
+  try {
+    const stored = JSON.parse(raw) as { version?: unknown; token?: unknown };
+    if (stored.version === 1 && typeof stored.token === "string" && stored.token) return stored.token;
+  } catch {
+    // Legacy raw tokens are intentionally removed so an outdated role cannot leak into a new session.
+  }
+  window.sessionStorage.removeItem(demoSessionStorageKey);
+  return null;
+}
 
 export function isApiMode() {
   return dataMode === "api";
@@ -26,7 +40,7 @@ export class ApiClientError extends Error {
 
 export async function apiClient<T>(path: string, options: RequestInit = {}): Promise<T> {
   const demoSessionToken = typeof window !== "undefined" && import.meta.env.VITE_DEMO_MODE === "shared"
-    ? window.sessionStorage.getItem(demoSessionStorageKey)
+    ? readStoredDemoSessionToken()
     : null;
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...options,

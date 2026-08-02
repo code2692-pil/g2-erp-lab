@@ -199,6 +199,6 @@ export function buildSolutionOptionComparison(request: SolutionRequest, result: 
     priorities: { ...priorities },
     options,
     recommendationReason: `${top.title}은(는) 현재 입력과 선택한 우선순위에서 ${solutionPriorityLabels.traceability} ${top.dimensionScores.traceability}/5, ${solutionPriorityLabels.fieldBurden} ${top.dimensionScores.fieldBurden}/5를 기준으로 상대 비교 1순위입니다${second ? ` (${second.title}와 비교)` : ""}. 동점은 입력·지식 일치 점수, 추적성 점수, option id 순으로 결정합니다.`,
-    scoreNotice: "비교 점수는 PoC의 상대 우선순위이며 실제 비용·기간·효과를 보장하지 않습니다. 최종 적용은 컨설턴트·개발 담당자와 회사 업무 규칙·기술 조건을 확인해 결정해야 합니다."
+    scoreNotice: "비교 점수는 상대 우선순위이며 실제 비용·기간·효과를 보장하지 않습니다. 최종 적용은 컨설턴트와 회사 업무 규칙·기술 조건을 확인해 결정해야 합니다."
   };
 }

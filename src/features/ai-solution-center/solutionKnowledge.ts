@@ -32,7 +32,7 @@ export const solutionKnowledge: readonly KnowledgeArticle[] = [
     additionalInfo: ["현재 사용 장치", "네트워크 조건", "교대·작업자별 입력 방식"],
     risks: ["입력을 과도하게 줄이면 품질·추적 근거가 부족해질 수 있습니다.", "현장 검증 없이 화면만 바꾸면 실제 작업 순서와 어긋날 수 있습니다."],
     consultantQuestions: ["현재 가장 시간이 오래 걸리는 입력은 무엇인가요?", "입력하지 않으면 문제가 되는 값은 무엇인가요?"],
-    developmentQuestions: ["자동 채움 기준정보의 최신성은 어떻게 보장할까요?", "오프라인 또는 단말 장애 시 임시 입력을 어떻게 처리할까요?"]
+    developmentQuestions: ["자동 채움 기준정보의 최신성은 어떻게 보장할까요?", "오프라인 또는 단말 장애 시 별도 입력을 어떻게 처리할까요?"]
   },
   {
     id: "critical-process-tracking",

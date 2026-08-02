@@ -361,7 +361,7 @@ export function analyzeXmlContent(text: string): AnalyzerOutput {
       summary: "XML 구조 오류: parsererror가 감지되었습니다.",
       structureSummary: "XML 구조 분석에 실패해 일반 텍스트 요약만 제공했습니다.",
       structuredMetadata: { ...fallback.structuredMetadata, parserError: true },
-      warnings: ["XML 요소의 열고 닫는 구조를 확인해 주세요.", ...(doctypeDetected ? ["외부 엔터티 또는 문서 유형 선언이 포함돼 있습니다. 현재 PoC에서는 외부 리소스를 불러오지 않습니다."] : []), ...fallback.warnings],
+      warnings: ["XML 요소의 열고 닫는 구조를 확인해 주세요.", ...(doctypeDetected ? ["외부 엔터티 또는 문서 유형 선언이 포함돼 있어 외부 리소스를 불러오지 않습니다."] : []), ...fallback.warnings],
       analysisSucceeded: false,
       requiresUserDescription: true
     };
@@ -382,7 +382,7 @@ export function analyzeXmlContent(text: string): AnalyzerOutput {
       elementPaths: structure.paths
     },
     redactedText: compact(`${summary}\nERP·MES element: ${structure.erpMesNames.join(", ")}`, 1_000),
-    warnings: doctypeDetected ? ["외부 엔터티 또는 문서 유형 선언이 포함돼 있습니다. 현재 PoC에서는 외부 리소스를 불러오지 않습니다."] : [],
+    warnings: doctypeDetected ? ["외부 엔터티 또는 문서 유형 선언이 포함돼 있어 외부 리소스를 불러오지 않습니다."] : [],
     sensitiveFindings: redaction.findings,
     analysisSucceeded: true
   };

@@ -283,9 +283,17 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
     setCheckedLineKeys([]);
   }, [filterCriteriaSignature, selectMaster, selectedNoSo, visibleHeaders]);
 
-  const selectedLines = lines
-    .filter((line) => line.NO_SO === selectedNoSo)
-    .sort((a, b) => a.NO_LINE - b.NO_LINE);
+  const selectedLines = useMemo(
+    () => lines.filter((line) => line.NO_SO === selectedNoSo).sort((a, b) => a.NO_LINE - b.NO_LINE),
+    [lines, selectedNoSo]
+  );
+
+  useLayoutEffect(() => {
+    const selectedLineStillExists = selectedLines.some((line) => line.NO_LINE === selectedLine);
+    if (selectedLineStillExists) return;
+    selectDetail(selectedLines[0]?.NO_LINE ?? null);
+  }, [selectDetail, selectedLine, selectedLines]);
+
   const selectedLineTotals = calculateSalesOrderLineTotals(selectedLines);
   const checkedLines = selectedLines.filter((line) =>
     checkedLineKeys.includes(createSalesOrderLineKey(line.CD_FIRM, line.NO_SO, line.NO_LINE))
@@ -557,7 +565,7 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
     setAppliedMailIds((current) => [...current, mailId]);
     markDirty();
     notify("success", "메일 수주 반영이 완료되었습니다.");
-    setMessage(`메일 ${mailId}의 수주를 신규 임시번호로 반영했습니다. 담당자 검토 후 저장하세요.`);
+    setMessage(`메일 ${mailId}의 수주를 신규 문서로 반영했습니다. 담당자 검토 후 저장하세요.`);
     return { success: true, message: "수주등록 화면에 반영했습니다." };
   };
 
@@ -952,7 +960,7 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
             </button>
             <div className="menu-title">AI 솔루션</div>
             <button {...screenIntentProps("ai")} className="menu-item" data-testid="nav-ai-solution-center" onClick={handleNavigateToAiSolutionCenter} type="button">AI 솔루션 센터</button>
-            {showDevelopmentDataManager && <><div className="menu-title">개발 도구</div><button {...screenIntentProps("development")} className="menu-item" data-testid="nav-development-data" onClick={handleNavigateToDevelopmentData} type="button">테스트 데이터 관리</button></>}
+            {showDevelopmentDataManager && <><div className="menu-title">운영 지원</div><button {...screenIntentProps("development")} className="menu-item" data-testid="nav-development-data" onClick={handleNavigateToDevelopmentData} type="button">기준 데이터 관리</button></>}
           </nav>
         </aside>
 

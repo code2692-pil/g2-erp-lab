@@ -7,10 +7,10 @@ public sealed class DemoAccessService : IDemoAccessService
 {
     private static readonly IReadOnlyList<DemoUser> Users =
     [
-        new("demo-viewer", "Demo Viewer", DemoRole.Viewer),
-        new("demo-operator", "Demo Operator", DemoRole.Operator),
-        new("demo-manager", "Demo Manager", DemoRole.Manager),
-        new("demo-admin", "Demo Admin", DemoRole.Admin)
+        new("demo-viewer", "조회 사용자", DemoRole.Viewer),
+        new("demo-operator", "업무 사용자", DemoRole.Operator),
+        new("demo-manager", "관리자", DemoRole.Manager),
+        new("demo-admin", "시스템 관리자", DemoRole.Admin)
     ];
 
     private readonly ConcurrentDictionary<string, DemoSession> sessions = new(StringComparer.Ordinal);
@@ -21,7 +21,7 @@ public sealed class DemoAccessService : IDemoAccessService
     public DemoSession CreateSession(string userId)
     {
         var user = Users.SingleOrDefault(candidate => string.Equals(candidate.Id, userId, StringComparison.Ordinal))
-            ?? throw new DomainValidationException(["허용된 Demo 사용자를 선택하세요."]);
+            ?? throw new DomainValidationException(["허용된 사용자를 선택하세요."]);
         var session = new DemoSession(Guid.NewGuid().ToString("N"), user, DateTime.UtcNow.AddHours(8));
         sessions[session.Token] = session;
         return session;

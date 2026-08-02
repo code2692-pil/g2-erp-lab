@@ -88,7 +88,7 @@ public sealed class InMemoryWorkOrderRepository : IWorkOrderRepository
         processes.AddRange(remaining.Select(x => Process(x.No, x.ProcessCode, x.ProcessName, x.EquipmentCode, x.EquipmentName, workQuantity, x.ResultQuantity ?? 0, x.Start, x.End, firstStatus)));
         return new WorkOrder
         {
-            Header = new WorkOrderHeader { CD_FIRM = firm, NO_WO = number, DT_WO = date, CD_ITEM = itemCode, NM_ITEM = itemName, STND_ITEM = standard, UNIT_ITEM = unit, QT_WO = workQuantity, QT_RESULT = resultQuantity, DT_PLAN_START = planStart, DT_PLAN_END = planEnd, CD_LINE = lineCode, NM_LINE = lineName, ST_WO = status, YN_URGENT = urgent, DC_RMK = "In-memory sample", CD_USER_REG = "SYSTEM", TM_REG = DateTime.UtcNow },
+            Header = new WorkOrderHeader { CD_FIRM = firm, NO_WO = number, DT_WO = date, CD_ITEM = itemCode, NM_ITEM = itemName, STND_ITEM = standard, UNIT_ITEM = unit, QT_WO = workQuantity, QT_RESULT = resultQuantity, DT_PLAN_START = planStart, DT_PLAN_END = planEnd, CD_LINE = lineCode, NM_LINE = lineName, ST_WO = status, YN_URGENT = urgent, DC_RMK = "정기 생산", CD_USER_REG = "SYSTEM", TM_REG = DateTime.UtcNow },
             Processes = processes
         };
 

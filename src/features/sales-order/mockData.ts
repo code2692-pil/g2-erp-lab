@@ -36,10 +36,10 @@ export const mockSalesOrderHeaders: SalesOrderHeader[] = [
     NO_SO: `SOR202608${String(index + 1).padStart(4, "0")}`,
     DT_SO: `2026-08-${String(index + 1).padStart(2, "0")}`,
     CD_PARTNER: index % 2 === 0 ? "P-10021" : "P-10044",
-    NM_PARTNER: index % 2 === 0 ? "가온모션 테스트 고객사" : "한빛산업 테스트 고객사",
-    CD_EMP: "FINAL-UAT",
+    NM_PARTNER: index % 2 === 0 ? "가온모션" : "한빛산업",
+    CD_EMP: "E-001",
     ST_SO: index < 5 ? "확정" : "진행",
-    DC_RMK: `FINAL-UAT-202608 수주 Sample ${index + 1}`
+    DC_RMK: `정기 수주 ${index + 1}`
   }))
 ];
 
@@ -49,7 +49,7 @@ const finalUatSalesLines: SalesOrderLine[] = Array.from({ length: 7 }, (_, index
   NO_LINE: 1,
   CD_ITEM: "ITM-1001",
   NM_ITEM: "220V 서보드라이브 모듈",
-  STND_ITEM: "FINAL-UAT-FG",
+  STND_ITEM: "SV-220V",
   UNIT_ITEM: "EA",
   QT_SO: [24, 60, 100, 80, 20, 60, 40][index],
   UM_SO: 280000,
@@ -57,7 +57,7 @@ const finalUatSalesLines: SalesOrderLine[] = Array.from({ length: 7 }, (_, index
   AM_VAT: [24, 60, 100, 80, 20, 60, 40][index] * 28000,
   AM_TOTAL: [24, 60, 100, 80, 20, 60, 40][index] * 308000,
   DT_DLV: `2026-08-${String(index + 15).padStart(2, "0")}`,
-  DC_RMK: `FINAL-UAT-202608 원본 행 ${index + 1}`
+  DC_RMK: `원본 행 ${index + 1}`
 }));
 
 export const mockSalesOrderLines: SalesOrderLine[] = [

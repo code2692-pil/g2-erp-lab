@@ -181,7 +181,7 @@ test("E: 수량과 단가 변경 시 금액 및 Footer 합계를 재계산한다
   await expect(page.getByTestId("sales-order-total-summary")).toContainText("1,980,330");
 });
 
-test("F: 체크 행, 현재 행, 미선택 행삭제를 각각 처리한다", async ({ page }) => {
+test("F: 체크 행과 자동 선택된 현재 행 삭제를 각각 처리한다", async ({ page }) => {
   test.setTimeout(60_000);
   await openSalesOrder(page);
   await searchSalesOrders(page);
@@ -204,8 +204,8 @@ test("F: 체크 행, 현재 행, 미선택 행삭제를 각각 처리한다", as
   await page.reload();
   await searchSalesOrders(page);
   await page.getByTestId("btn-delete-line").click();
-  await expect(page.getByTestId("confirm-dialog")).toHaveCount(0);
-  await expect(page.getByTestId("status-message")).not.toHaveText("조회되었습니다");
+  await expect(page.getByTestId("confirm-dialog")).toContainText("선택한 수주상세 1건");
+  await page.getByTestId("confirm-dialog-cancel").click();
 });
 
 test("G: 기존 주요 버튼과 Lookup, Grid 행추가/삭제 동작을 유지한다", async ({ page }) => {

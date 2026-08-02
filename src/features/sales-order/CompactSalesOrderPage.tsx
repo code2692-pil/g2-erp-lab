@@ -817,9 +817,9 @@ export function CompactSalesOrderPage({ mode, onNavigate }: Props) {
         <header className="compact-sales__topbar">
           <div>
             <span className="compact-sales__eyebrow">SMART ERP · 영업관리</span>
-            <h1 data-testid="page-title">{isMobile ? "모바일 수주등록 PoC" : "PDA 수주등록 PoC"}</h1>
+            <h1 data-testid="page-title">{isMobile ? "모바일 수주등록" : "PDA 수주등록"}</h1>
             <p>{isMobile
-              ? "PC 수주등록과 동일한 수주 데이터를 스마트폰 화면에 맞게 재구성한 브라우저 기반 PoC입니다."
+              ? "PC 수주등록과 동일한 수주 데이터를 스마트폰 화면에 맞게 제공합니다."
               : "산업용 소형 단말의 키보드 입력 흐름을 가정한 브라우저 기반 간편 수주등록 화면입니다."}</p>
           </div>
           <nav aria-label="수주등록 화면 이동" className="compact-sales__nav">

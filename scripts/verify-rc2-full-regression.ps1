@@ -174,6 +174,7 @@ try {
     Invoke-External "Bundle budget" $nodeExecutable @("scripts/performance/check-bundle-budget.mjs")
     Invoke-External "Bundle budget unit test" $nodeExecutable @("--test", "scripts/performance/tests/check-bundle-budget.test.mjs")
     Invoke-External "Grid preferences unit test" $nodeExecutable @("--experimental-strip-types", "--test", "tests/unit/grid-view-preferences.test.ts")
+    Invoke-External "Client identifier unit test" $nodeExecutable @("--experimental-strip-types", "--test", "tests/unit/client-id.test.ts")
     Invoke-External "AI file intelligence unit test" $nodeExecutable @("--experimental-strip-types", "--test", "tests/unit/ai-file-intelligence.test.ts")
     Invoke-External "Maintenance unit tests" $nodeExecutable @("--test", "scripts/qa/tests/*.test.mjs")
     Invoke-External ".NET solution build" "dotnet" @("build", "server/G2Erp.sln", "--no-restore")
@@ -185,6 +186,7 @@ try {
     Invoke-External "Production development-data Playwright" $nodeExecutable @("scripts/run-mode.mjs", "test", "mock") @{ PLAYWRIGHT_TEST_FILE = "tests/e2e/production-development-data.spec.ts"; PLAYWRIGHT_PRODUCTION_MODE = "true"; PLAYWRIGHT_WORKERS = "1" }
     $apiUxFiles = @("tests/e2e/mobile-pda-api-hardening.spec.ts", "tests/e2e/mobile-pda-api-inmemory.spec.ts", "tests/e2e/unsaved-navigation-saving.spec.ts") -join ";"
     Invoke-External "InMemory mobile/PDA Playwright" $nodeExecutable @("scripts/run-mode.mjs", "test", "inmemory") @{ PLAYWRIGHT_TEST_FILES = $apiUxFiles; PLAYWRIGHT_WORKERS = "1" }
+    Invoke-External "Shared access Playwright" $nodeExecutable @("scripts/run-mode.mjs", "test", "demo") @{ PLAYWRIGHT_WORKERS = "1" }
     Invoke-External "Local SQL worker verification" "powershell.exe" @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $requestScript, "-RepositoryRoot", $RepositoryRoot, "-Reason", "RC2 full regression", "-Wait", "-TimeoutSeconds", "1800")
     Invoke-Internal "Final ports and Git state" {
         if (-not (Test-LocalPortFree 5173) -or -not (Test-LocalPortFree 5080)) { throw "Ports 5173 and 5080 were not released." }

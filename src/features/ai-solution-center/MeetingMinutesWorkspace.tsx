@@ -3,6 +3,7 @@ import { ApiClientError } from "../../api/apiClient";
 import { demoEnvironment } from "../../api/demoApi";
 import { demoMeetingApi, type DemoMeetingDto } from "../../api/demoMeetingApi";
 import { useDemoRole } from "../../components/DemoEnvironmentGate";
+import { createClientId } from "../../utils/clientId";
 import { extractMeetingDocument, maximumMeetingFileBytes, meetingFileAccept, type MeetingSourceSegment } from "./meetingDocumentExtractor";
 
 interface MeetingFileState {
@@ -21,7 +22,7 @@ interface MeetingQuestion {
 }
 
 function id() {
-  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return createClientId("meeting");
 }
 
 function keywords(value: string) {
@@ -31,7 +32,7 @@ function keywords(value: string) {
 export function MeetingMinutesWorkspace() {
   const shared = demoEnvironment === "shared";
   const demoRole = useDemoRole();
-  const [title, setTitle] = useState("FINAL-UAT-202608 주간 생산회의");
+  const [title, setTitle] = useState("주간 생산회의");
   const [meetingCreated, setMeetingCreated] = useState(false);
   const [files, setFiles] = useState<MeetingFileState[]>([]);
   const [segments, setSegments] = useState<MeetingSourceSegment[]>([]);
@@ -70,7 +71,7 @@ export function MeetingMinutesWorkspace() {
     setStatus("추출 중");
     setError("");
     if (shared) {
-      if (!meetingId) { setError("공유 시연 회의를 다시 생성하세요."); setStatus("실패"); return; }
+      if (!meetingId) { setError("회의를 다시 생성하세요."); setStatus("실패"); return; }
       try {
         let latest = await demoMeetingApi.get(meetingId);
         for (const file of selectedFilesRef.current) {
@@ -178,14 +179,14 @@ export function MeetingMinutesWorkspace() {
   const canApprove = !shared || demoRole === "Manager" || demoRole === "Admin";
 
   return <section className="knowledge-workspace" data-testid="meeting-minutes-workspace">
-    <header className="knowledge-workspace__heading"><div><h2>회의록 문서 작업영역</h2><p>{shared ? "공유 시연 서버에 원본을 비공개 저장하고 백그라운드에서 추출합니다. 외부 AI provider로 전송하지 않습니다." : "브라우저 안에서 문서 원문을 추출하고 근거 위치와 함께 검토합니다. 다른 사용자와 공유되지 않습니다."}</p></div><span className="meeting-status" data-testid="meeting-status">{status}</span></header>
+    <header className="knowledge-workspace__heading"><div><h2>회의록 문서 작업영역</h2><p>{shared ? "권한이 적용된 비공개 저장소에서 원문을 추출합니다. 외부 AI 서비스로 전송하지 않습니다." : "브라우저에서 문서 원문을 추출하고 근거 위치와 함께 검토합니다. 다른 사용자와 공유되지 않습니다."}</p></div><span className="meeting-status" data-testid="meeting-status">{status}</span></header>
     <section className="knowledge-workspace__editor"><div className="knowledge-workspace__fields"><label>회의명<input data-testid="meeting-title" disabled={!canMutate || creatingMeeting} value={title} onChange={(event) => setTitle(event.target.value)} /></label><label>회의 생성 상태<input readOnly value={creatingMeeting ? "생성 중" : meetingCreated ? "생성됨" : "미생성"} /></label></div><div className="knowledge-workspace__actions"><button data-testid="meeting-create" disabled={!canMutate || creatingMeeting} onClick={() => void createMeeting()} type="button">{creatingMeeting ? "회의 생성 중..." : "회의 생성"}</button><label className="ai-solution-center__file-label">복수 파일 등록<input accept={meetingFileAccept} data-testid="meeting-files" disabled={!canMutate || (shared && !meetingCreated)} multiple type="file" onChange={(event) => selectFiles(Array.from(event.target.files ?? []))} /></label><button className="primary" data-testid="meeting-process" disabled={!canMutate || (shared && !meetingCreated) || status === "추출 중"} onClick={() => void processFiles()} type="button">{segments.length > 0 ? "재처리" : "원문 추출"}</button></div><p className="ai-solution-center__muted">지원: TXT/MD 줄, DOCX 문단, XLSX 시트/셀, PPTX 슬라이드 문단 · 파일당 {maximumMeetingFileBytes / 1024 / 1024}MB. 오디오·비디오는 provider와 자격증명이 없어 지원하지 않습니다.</p>{error && <p className="sales-conversion-error" data-testid="meeting-error" role="alert">{error}</p>}</section>
-    <section><h3>추출 Job 상태</h3><div className="sales-conversion-table-wrap"><table data-testid="meeting-file-grid"><thead><tr><th>파일</th><th>크기</th><th>상태</th><th>구간 수</th><th>오류</th></tr></thead><tbody>{files.map((file) => <tr key={file.name}><td>{file.name}</td><td>{file.size.toLocaleString()} B</td><td>{file.status}</td><td>{file.segmentCount}</td><td>{file.error ?? "-"}</td></tr>)}</tbody></table></div></section>
-    <section><h3>전체 원문 Segment</h3><div className="meeting-segment-grid sales-conversion-table-wrap"><table data-testid="meeting-segment-grid"><thead><tr><th>파일</th><th>Source locator</th><th>원문</th></tr></thead><tbody>{segments.map((segment) => <tr className={selectedSegmentId === segment.id ? "is-selected" : ""} data-testid={`meeting-segment-${segment.id}`} key={segment.id} ref={(element) => { if (element) segmentRefs.current.set(segment.id, element); else segmentRefs.current.delete(segment.id); }} tabIndex={-1}><td>{segment.fileName}</td><td>{segment.locator}</td><td>{segment.text}</td></tr>)}</tbody></table></div></section>
+    <section><h3>추출 작업 상태</h3><div className="sales-conversion-table-wrap"><table data-testid="meeting-file-grid"><thead><tr><th>파일</th><th>크기</th><th>상태</th><th>구간 수</th><th>오류</th></tr></thead><tbody>{files.map((file) => <tr key={file.name}><td>{file.name}</td><td>{file.size.toLocaleString()} B</td><td>{file.status}</td><td>{file.segmentCount}</td><td>{file.error ?? "-"}</td></tr>)}</tbody></table></div></section>
+    <section><h3>전체 원문 구간</h3><div className="meeting-segment-grid sales-conversion-table-wrap"><table data-testid="meeting-segment-grid"><thead><tr><th>파일</th><th>원문 위치</th><th>원문</th></tr></thead><tbody>{segments.map((segment) => <tr className={selectedSegmentId === segment.id ? "is-selected" : ""} data-testid={`meeting-segment-${segment.id}`} key={segment.id} ref={(element) => { if (element) segmentRefs.current.set(segment.id, element); else segmentRefs.current.delete(segment.id); }} tabIndex={-1}><td>{segment.fileName}</td><td>{segment.locator}</td><td>{segment.text}</td></tr>)}</tbody></table></div></section>
     <div className="sales-conversion-preview"><section><h3>구조화 요약</h3><ul data-testid="meeting-summary-grid">{summary.map((segment) => <li key={segment.id}><button onClick={() => goToEvidence(segment.id)} type="button">{segment.text}</button><small>{segment.locator}</small></li>)}</ul></section><section><h3>결정사항</h3><ul data-testid="meeting-decisions">{decisions.map((segment) => <li key={segment.id}><button onClick={() => goToEvidence(segment.id)} type="button">{segment.text}</button></li>)}</ul></section></div>
     <section><h3>할 일 / 담당자 / 기한</h3><div className="sales-conversion-table-wrap"><table data-testid="meeting-tasks"><thead><tr><th>할 일 근거</th><th>담당자</th><th>기한</th><th>Source locator</th></tr></thead><tbody>{tasks.map((segment) => <tr key={segment.id}><td>{segment.text}</td><td>검토 필요</td><td>검토 필요</td><td><button onClick={() => goToEvidence(segment.id)} type="button">{segment.locator}</button></td></tr>)}</tbody></table></div></section>
     <section className="knowledge-workspace__editor"><h3>회의별 Q&amp;A</h3><div className="lookup-input-group"><input data-testid="meeting-question" disabled={!canMutate} placeholder="회의 원문에 질문" value={question} onChange={(event) => setQuestion(event.target.value)} /><button data-testid="meeting-ask" disabled={!canMutate} onClick={() => void ask()} type="button">질문</button></div>{questions.map((item) => <article data-testid={`meeting-answer-${item.id}`} key={item.id}><strong>{item.question}</strong><p>{item.answer}</p><button onClick={() => goToEvidence(item.sourceSegmentId)} type="button">인용 근거로 이동</button></article>)}</section>
     <section className="knowledge-workspace__editor"><h3>검토 / 승인</h3><p>요약과 할 일은 규칙 기반 검토 초안이며 자동 확정이 아닙니다. 담당자가 원문 근거를 확인한 뒤 승인합니다.</p><div className="knowledge-workspace__actions"><button data-testid="meeting-review" disabled={segments.length === 0} onClick={() => setStatus("검토 대기")} type="button">검토 상태</button><button className="primary" data-testid="meeting-approve" disabled={!canApprove || segments.length === 0} onClick={() => void approveMeeting()} type="button">회의록 승인</button></div></section>
-    <section className="ai-solution-center__security"><h3>보안·감사·보존</h3><ul><li>확장자·MIME allowlist, Office ZIP 시그니처, 20MB 제한, 경로 이동 파일명 차단을 적용합니다.</li><li>{shared ? "원본은 웹 공개 경로 밖의 공유 시연 서버에 저장되며 작성자와 Manager 이상만 조회합니다." : "개인 모드는 브라우저 메모리에서만 처리하며 서버에 업로드하지 않습니다."}</li><li>Provider 전송 상태: 전송 안 함. 실제 회사 자료나 비밀정보를 입력하지 마세요.</li></ul></section>
+    <section className="ai-solution-center__security"><h3>보안·감사·보존</h3><ul><li>허용된 파일 형식, 20MB 제한, 안전한 파일명 검사를 적용합니다.</li><li>{shared ? "원본은 웹 공개 경로 밖에 저장되며 작성자와 관리자만 조회합니다." : "개인 모드는 브라우저 메모리에서만 처리하며 서버에 업로드하지 않습니다."}</li><li>외부 서비스 전송 상태: 전송 안 함. 실제 회사 자료나 비밀정보를 입력하지 마세요.</li></ul></section>
   </section>;
 }

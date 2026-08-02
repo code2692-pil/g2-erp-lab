@@ -160,7 +160,7 @@ public sealed class DemoMeetingService : BackgroundService, IDemoMeetingService
 
     public DemoMeeting Retry(DemoUser user, string meetingId, string fileId, DemoMeetingVersionRequest request)
     {
-        if (user.Role != DemoRole.Admin) throw new DevelopmentDataAccessException("Demo Admin만 실패 작업을 재처리할 수 있습니다.");
+        if (user.Role != DemoRole.Admin) throw new DevelopmentDataAccessException("시스템 관리자만 실패 작업을 재처리할 수 있습니다.");
         lock (gate)
         {
             var meeting = FindLocked(meetingId); RequireVersion(meeting, request.ExpectedVersion);
@@ -331,10 +331,10 @@ public sealed class DemoMeetingService : BackgroundService, IDemoMeetingService
     private void ReplaceLocked(DemoMeeting meeting) => meetings[meetings.FindIndex(item => item.Id == meeting.Id)] = meeting;
     private static void RequireVersion(DemoMeeting meeting, int version) { if (meeting.Version != version) throw new DomainConflictException("다른 사용자가 먼저 회의를 변경했습니다. 새로고침 후 다시 시도하세요."); }
     private static bool IsManager(DemoUser user) => user.Role is DemoRole.Manager or DemoRole.Admin;
-    private static void RequireManager(DemoUser user) { if (!IsManager(user)) throw new DevelopmentDataAccessException("Demo Manager 이상만 회의록을 승인할 수 있습니다."); }
-    private static void RequireMutation(DemoUser user) { if (user.Role == DemoRole.Viewer) throw new DevelopmentDataAccessException("Demo Viewer는 회의록을 변경할 수 없습니다."); }
+    private static void RequireManager(DemoUser user) { if (!IsManager(user)) throw new DevelopmentDataAccessException("관리자만 회의록을 승인할 수 있습니다."); }
+    private static void RequireMutation(DemoUser user) { if (user.Role == DemoRole.Viewer) throw new DevelopmentDataAccessException("조회 사용자는 회의록을 변경할 수 없습니다."); }
     private static void RequireVisible(DemoUser user, DemoMeeting meeting) { if (meeting.OwnerUserId != user.Id && !IsManager(user)) throw new KeyNotFoundException(); }
-    private static void RequireOwnerOrManager(DemoUser user, DemoMeeting meeting) { if (meeting.OwnerUserId != user.Id && !IsManager(user)) throw new DevelopmentDataAccessException("회의 작성자와 Demo Manager 이상만 파일을 변경할 수 있습니다."); }
+    private static void RequireOwnerOrManager(DemoUser user, DemoMeeting meeting) { if (meeting.OwnerUserId != user.Id && !IsManager(user)) throw new DevelopmentDataAccessException("회의 작성자와 관리자만 파일을 변경할 수 있습니다."); }
 
     private List<DemoMeeting>? Load()
     {

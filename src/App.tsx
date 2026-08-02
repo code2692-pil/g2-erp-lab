@@ -7,8 +7,9 @@ import { canShowDevelopmentDataManagerClient, developmentDataApi } from "./api/d
 import { preloadScreenModule, screenModules, type ScreenModuleId } from "./screenModules";
 import { DirtyNavigationProvider, useDirtyNavigation } from "./navigation/DirtyNavigationProvider";
 import { navigationDelta, readAppHistoryEntry, type AppHistoryEntry, withAppHistoryEntry } from "./navigation/appHistory";
-import { DemoEnvironmentGate, useDemoRole } from "./components/DemoEnvironmentGate";
-import { demoEnvironment } from "./api/demoApi";
+import { DemoEnvironmentGate } from "./components/DemoEnvironmentGate";
+import { clearDemoSession, demoEnvironment } from "./api/demoApi";
+import { createClientId } from "./utils/clientId";
 
 const PurchaseOrderRegistration = screenModules.purchase.component;
 const WorkOrderRegistration = screenModules.work.component;
@@ -39,7 +40,7 @@ function pathForPage(page: AppPage) {
 }
 
 function historyEntry(page: AppPage, index: number): AppHistoryEntry<AppPage> {
-  return { version: 1, id: `g2erp-${crypto.randomUUID()}`, index, page };
+  return { version: 1, id: createClientId("g2erp-history"), index, page };
 }
 
 function PageLoadingFallback() {
@@ -75,6 +76,59 @@ class PageLoadErrorBoundary extends Component<{ children: ReactNode }, { hasErro
   }
 }
 
+interface ApplicationErrorState {
+  hasError: boolean;
+  traceId: string;
+}
+
+class ApplicationErrorBoundary extends Component<{ children: ReactNode }, ApplicationErrorState> {
+  state: ApplicationErrorState = { hasError: false, traceId: "" };
+
+  static getDerivedStateFromError(): ApplicationErrorState {
+    return { hasError: true, traceId: createClientId("screen") };
+  }
+
+  componentDidCatch(reason: Error, info: React.ErrorInfo) {
+    console.error("Application screen error", { reason, componentStack: info.componentStack, traceId: this.state.traceId });
+  }
+
+  private retry = () => window.location.reload();
+
+  private goHome = () => {
+    window.history.replaceState(null, "", "/");
+    window.location.reload();
+  };
+
+  private changeUser = () => {
+    clearDemoSession();
+    window.history.replaceState(null, "", "/");
+    window.location.reload();
+  };
+
+  render() {
+    if (!this.state.hasError) return this.props.children;
+    return (
+      <main className="app-page-loading" data-testid="application-error-boundary">
+        <h1>화면을 표시하지 못했습니다</h1>
+        <p role="alert">일시적인 문제가 발생했습니다. 다시 시도하거나 처음 화면으로 이동해 주세요.</p>
+        <p>추적 ID: <code>{this.state.traceId}</code></p>
+        <div className="error-recovery-actions">
+          <button type="button" onClick={this.retry}>다시 시도</button>
+          <button type="button" onClick={this.goHome}>처음 화면</button>
+          {demoEnvironment === "shared" && <button type="button" onClick={this.changeUser}>사용자 전환</button>}
+        </div>
+      </main>
+    );
+  }
+}
+
+function E2eApplicationErrorProbe() {
+  if (import.meta.env.VITE_E2E_TEST_MODE && new URLSearchParams(window.location.search).has("__e2e_application_error")) {
+    throw new Error("E2E application error boundary probe");
+  }
+  return null;
+}
+
 function AppRouter() {
   const [page, setPage] = useState<AppPage>(() => pageFromPath(window.location.pathname));
   const [showDevelopmentDataManager, setShowDevelopmentDataManager] = useState(false);
@@ -82,9 +136,8 @@ function AppRouter() {
   const restoreTargetRef = useRef<AppHistoryEntry<AppPage> | null>(null);
   const replayTargetRef = useRef<AppHistoryEntry<AppPage> | null>(null);
   const { requestNavigation } = useDirtyNavigation();
-  const demoRole = useDemoRole();
   const purchaseOrderAdapter = isApiMode() ? apiPurchaseOrderAdapter : mockPurchaseOrderAdapter;
-  const sharedDevelopmentDataBlocked = demoEnvironment === "shared" && demoRole !== "Manager" && demoRole !== "Admin";
+  const sharedDevelopmentDataBlocked = demoEnvironment === "shared";
   const developmentDataRouteBlocked = page === "development" && (!canShowDevelopmentDataManagerClient() || sharedDevelopmentDataBlocked);
   const activePage = developmentDataRouteBlocked ? "sales" : page;
 
@@ -193,5 +246,10 @@ function AppRouter() {
 }
 
 export default function App() {
-  return <DemoEnvironmentGate><DirtyNavigationProvider><AppRouter /></DirtyNavigationProvider></DemoEnvironmentGate>;
+  return (
+    <ApplicationErrorBoundary>
+      <E2eApplicationErrorProbe />
+      <DemoEnvironmentGate><DirtyNavigationProvider><AppRouter /></DirtyNavigationProvider></DemoEnvironmentGate>
+    </ApplicationErrorBoundary>
+  );
 }

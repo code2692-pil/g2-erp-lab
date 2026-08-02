@@ -1,4 +1,4 @@
-import { apiClient, demoSessionStorageKey, isApiMode } from "./apiClient";
+import { apiClient, demoSessionStorageKey, isApiMode, readStoredDemoSessionToken } from "./apiClient";
 
 export type DemoRole = "Viewer" | "Operator" | "Manager" | "Admin";
 
@@ -28,7 +28,7 @@ export const demoEnvironment = import.meta.env.VITE_DEMO_MODE === "shared" && is
     : "development";
 
 export function storedDemoSessionToken() {
-  return window.sessionStorage.getItem(demoSessionStorageKey);
+  return readStoredDemoSessionToken();
 }
 
 export function clearDemoSession() {
@@ -43,7 +43,7 @@ export const demoApi = {
       method: "POST",
       body: JSON.stringify({ UserId: userId })
     });
-    window.sessionStorage.setItem(demoSessionStorageKey, session.Token);
+    window.sessionStorage.setItem(demoSessionStorageKey, JSON.stringify({ version: 1, token: session.Token }));
     return session;
   },
   reset: () => apiClient<{ Status: string; SeedVersion: string }>("/api/demo/reset", {

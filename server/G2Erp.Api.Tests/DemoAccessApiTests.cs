@@ -67,7 +67,7 @@ public sealed class DemoAccessApiTests
 
         Assert.Equal(HttpStatusCode.BadRequest, wrong.StatusCode);
         Assert.Equal(HttpStatusCode.OK, reset.StatusCode);
-        Assert.Contains("FINAL-UAT-202608", resetBody, StringComparison.Ordinal);
+        Assert.Contains("2026.08", resetBody, StringComparison.Ordinal);
         Assert.Equal(HttpStatusCode.OK, audit.StatusCode);
         Assert.Contains("/api/demo/reset", auditBody, StringComparison.Ordinal);
         Assert.Contains("demo-manager", auditBody, StringComparison.Ordinal);

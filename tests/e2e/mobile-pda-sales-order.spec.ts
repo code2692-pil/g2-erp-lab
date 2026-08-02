@@ -48,7 +48,7 @@ async function saveCompactOrder(page: Page, prefix: "mobile-sales" | "pda-sales"
 
 test("Gate 12-8 mobile A: queries card results and opens the same sales header and lines", async ({ page }) => {
   await page.goto("/mobile/sales-orders");
-  await expect(page.getByTestId("page-title")).toHaveText("모바일 수주등록 PoC");
+  await expect(page.getByTestId("page-title")).toHaveText("모바일 수주등록");
   await page.getByTestId("mobile-sales-search").click();
   await expect(page.getByTestId("mobile-sales-result-SO2026070001")).toBeVisible();
   await page.getByTestId("mobile-sales-result-SO2026070001").click();

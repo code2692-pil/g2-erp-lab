@@ -1,7 +1,7 @@
 import type { Warehouse } from "./types";
 
 export const mockWarehouses: Warehouse[] = [
-  { CD_FIRM: "1000", CD_WH: "UAT-WH-01", NM_WH: "FINAL UAT 자재창고", YN_USE: "Y" },
+  { CD_FIRM: "1000", CD_WH: "WH-RM-01", NM_WH: "자재창고", YN_USE: "Y" },
   { CD_FIRM: "1000", CD_WH: "WH-100", NM_WH: "Central Warehouse", YN_USE: "Y" },
   { CD_FIRM: "1000", CD_WH: "WH-110", NM_WH: "Parts Warehouse", YN_USE: "Y" },
   { CD_FIRM: "1000", CD_WH: "WH-120", NM_WH: "Quality Warehouse", YN_USE: "Y" },

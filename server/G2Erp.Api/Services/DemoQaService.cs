@@ -160,16 +160,16 @@ public sealed class DemoQaService : IDemoQaService
         return
         [
             new DemoQaQuestion(
-                "FINAL-UAT-202608-QA-01",
+                "QA-202608-01",
                 "부분 발주 후 발주 가능 잔량은 어떻게 계산하나요?",
                 "취소되지 않은 발주수량 합계를 원본 수주수량에서 차감하는 기준을 확인하고 싶습니다.",
                 "구매",
                 ["수주", "발주", "잔량"],
                 "전체",
                 "demo-manager",
-                "Demo Manager",
+                "관리자",
                 "SalesOrderLine",
-                "FINAL-UAT-202608-SO-01-L1",
+                "SO-202608-01-L1",
                 "SOR2026080001/1",
                 "미답변",
                 [],
@@ -188,10 +188,10 @@ public sealed class DemoQaService : IDemoQaService
     private static bool IsManager(DemoUser user) => user.Role is DemoRole.Manager or DemoRole.Admin;
     private static void RequireMutation(DemoUser user)
     {
-        if (user.Role == DemoRole.Viewer) throw new DevelopmentDataAccessException("Demo Viewer는 질문과 답변을 변경할 수 없습니다.");
+        if (user.Role == DemoRole.Viewer) throw new DevelopmentDataAccessException("조회 사용자는 질문과 답변을 변경할 수 없습니다.");
     }
     private static void RequireManager(DemoUser user)
     {
-        if (!IsManager(user)) throw new DevelopmentDataAccessException("Demo Manager 이상만 이 작업을 수행할 수 있습니다.");
+        if (!IsManager(user)) throw new DevelopmentDataAccessException("관리자만 이 작업을 수행할 수 있습니다.");
     }
 }

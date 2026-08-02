@@ -14,25 +14,25 @@ test("수주상세를 공급처·창고 확인 후 부분 발주로 전환한다
   await selectSourceLine(page);
   await page.getByTestId("btn-convert-purchase").click();
   await expect(page.getByTestId("sales-to-purchase-dialog")).toBeVisible();
-  await expect(page.getByTestId("purchase-conversion-supplier")).toHaveValue(/UAT-SUP-01/);
+  await expect(page.getByTestId("purchase-conversion-supplier")).toHaveValue(/SUP-001/);
 
   await page.getByTestId("sales-to-purchase-dialog").getByRole("button", { name: "도움창" }).first().click();
-  await page.getByTestId("purchase-conversion-supplier-lookup-search-input").fill("UAT-SUP-02");
+  await page.getByTestId("purchase-conversion-supplier-lookup-search-input").fill("SUP-002");
   await page.getByTestId("purchase-conversion-supplier-lookup-search-button").click();
-  await page.getByTestId("purchase-conversion-supplier-lookup-grid-row-1000:UAT-SUP-02").click();
+  await page.getByTestId("purchase-conversion-supplier-lookup-grid-row-1000:SUP-002").click();
   await page.getByTestId("purchase-conversion-supplier-lookup-confirm").click();
-  await expect(page.getByTestId("purchase-conversion-supplier")).toHaveValue(/UAT-SUP-02/);
+  await expect(page.getByTestId("purchase-conversion-supplier")).toHaveValue(/SUP-002/);
 
   await page.getByTestId("sales-to-purchase-dialog").getByRole("button", { name: "도움창" }).nth(1).click();
-  await page.getByTestId("purchase-conversion-warehouse-lookup-search-input").fill("UAT-WH-01");
+  await page.getByTestId("purchase-conversion-warehouse-lookup-search-input").fill("WH-RM-01");
   await page.getByTestId("purchase-conversion-warehouse-lookup-search-button").click();
-  await page.getByTestId("purchase-conversion-warehouse-lookup-grid-row-1000:UAT-WH-01").click();
+  await page.getByTestId("purchase-conversion-warehouse-lookup-grid-row-1000:WH-RM-01").click();
   await page.getByTestId("purchase-conversion-warehouse-lookup-confirm").click();
-  await expect(page.getByTestId("purchase-conversion-warehouse")).toHaveValue(/UAT-WH-01/);
+  await expect(page.getByTestId("purchase-conversion-warehouse")).toHaveValue(/WH-RM-01/);
 
   await page.getByTestId("purchase-conversion-quantity-1").fill("5");
   await page.getByTestId("sales-to-purchase-submit").click();
-  await expect(page.getByTestId("confirm-dialog")).toContainText("UAT-SUP-02");
+  await expect(page.getByTestId("confirm-dialog")).toContainText("SUP-002");
   await page.getByTestId("confirm-dialog-confirm").click();
   await expect(page.getByTestId("sales-to-purchase-result")).toContainText(/POR\d{10}/);
   await expect(page.getByTestId("sales-to-purchase-result")).toContainText("잔량 7");
@@ -47,7 +47,7 @@ test("승인 BOM·공정경로를 미리 본 뒤 작업지시와 공정·자재 
   await page.getByTestId("work-conversion-quantity").fill("4");
   await page.getByTestId("work-conversion-line").selectOption("LINE-C");
   await page.getByTestId("sales-to-work-order-submit").click();
-  await expect(page.getByTestId("confirm-dialog")).toContainText("FINAL-UAT-1");
+  await expect(page.getByTestId("confirm-dialog")).toContainText("승인된 BOM·공정경로 적용");
   await expect(page.getByTestId("confirm-dialog")).toContainText("LINE-C");
   await page.getByTestId("confirm-dialog-confirm").click();
   await expect(page.getByTestId("sales-to-work-order-result")).toContainText(/WMO\d{10}/);

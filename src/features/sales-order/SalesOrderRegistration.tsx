@@ -2,11 +2,13 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Building2,
   ChevronRight,
+  Factory,
   MailPlus,
   Plus,
   Rows3,
   Save,
   Search,
+  ShoppingCart,
   Trash2
 } from "lucide-react";
 import { ErpDataGrid } from "../../components/common/ErpDataGrid";
@@ -22,6 +24,8 @@ import { mockItems } from "../common-code/item/mockData";
 import type { Item } from "../common-code/item/types";
 import { mockPartners } from "../common-code/partner/mockData";
 import type { Partner } from "../common-code/partner/types";
+import { mockWarehouses } from "../common-code/warehouse/mockData";
+import type { Warehouse } from "../common-code/warehouse/types";
 import { MailOrderImportDialog } from "../mail-order/MailOrderImportDialog";
 import { mapParsedOrderToSalesOrder } from "../mail-order/mailMapping";
 import type { MailParseResult } from "../mail-order/types";
@@ -36,6 +40,7 @@ import { validateSalesOrders } from "./validation";
 import { isApiMode } from "../../api/apiClient";
 import { getItems } from "../../api/itemApi";
 import { getPartners } from "../../api/partnerApi";
+import { getWarehouses } from "../../api/warehouseApi";
 import {
   deleteSalesOrderRecord,
   loadSalesOrderRecords,
@@ -55,6 +60,7 @@ import { useDirtyState } from "../../hooks/useDirtyState";
 import { useNotification } from "../../hooks/useNotification";
 import { useMasterDetailSelection } from "../../hooks/useMasterDetailSelection";
 import type { ScreenModuleId } from "../../screenModules";
+import { SalesToPurchaseDialog, SalesToWorkOrderDialog } from "./SalesOrderConversionDialogs";
 
 type HeaderEditableField = Exclude<keyof SalesOrderHeader, "NO_SO">;
 type LineEditableField = Exclude<
@@ -175,10 +181,13 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
   const itemLookupLineKeyRef = useRef<string | null>(null);
   const [validationAttempted, setValidationAttempted] = useState(false);
   const [mailImportOpen, setMailImportOpen] = useState(false);
+  const [purchaseConversionOpen, setPurchaseConversionOpen] = useState(false);
+  const [workOrderConversionOpen, setWorkOrderConversionOpen] = useState(false);
   const [appliedMailIds, setAppliedMailIds] = useState<string[]>([]);
   const [selectedPartnerRowKey, setSelectedPartnerRowKey] = useState<string | null>(null);
   const [partners, setPartners] = useState<Partner[]>(mockPartners);
   const [items, setItems] = useState<Item[]>(mockItems);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>(mockWarehouses);
   const [filters, setFilters] = useState({
     cdFirm: "1000",
     dateFrom: "2026-07-01",
@@ -248,10 +257,11 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
   useEffect(() => {
     if (!isApiMode()) return;
 
-    Promise.all([getPartners(), getItems()])
-      .then(([nextPartners, nextItems]) => {
+    Promise.all([getPartners(), getItems(), getWarehouses()])
+      .then(([nextPartners, nextItems, nextWarehouses]) => {
         setPartners(nextPartners);
         setItems(nextItems);
+        setWarehouses(nextWarehouses);
       })
       .catch(() => setMessage("도움창 데이터를 불러오지 못했습니다."));
   }, []);
@@ -278,6 +288,7 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
   const checkedLines = selectedLines.filter((line) =>
     checkedLineKeys.includes(createSalesOrderLineKey(line.CD_FIRM, line.NO_SO, line.NO_LINE))
   );
+  const conversionLines = checkedLines.length > 0 ? checkedLines : selectedLineData ? [selectedLineData] : [];
   const deleteTargetLines = checkedLines.length > 0 ? checkedLines : selectedLineData ? [selectedLineData] : [];
 
   const focusValidationIssue = (issue: ValidationIssue) => {
@@ -959,6 +970,8 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
                 { dataTestId: "btn-delete-line", label: "행삭제", icon: <Trash2 size={15} />, onClick: () => void handleDeleteLine(), disabled: isLoading || isSaving },
                 { dataTestId: "btn-save", label: operation === "saving" ? "저장 중..." : "저장", icon: <Save size={15} />, onClick: () => void handleSave(), disabled: isLoading || isSaving, variant: "primary" },
                 { dataTestId: "btn-delete-order", label: operation === "deleting" ? "삭제 중..." : "삭제", icon: <Trash2 size={15} />, onClick: () => void handleDeleteOrder(), disabled: isLoading || isSaving, variant: "danger" },
+                { dataTestId: "btn-convert-purchase", label: "발주 전환", icon: <ShoppingCart size={15} />, onClick: () => setPurchaseConversionOpen(true), disabled: isLoading || isSaving || isDirty || conversionLines.length === 0 || selectedNoSo.startsWith("TEMP_SO_") },
+                { dataTestId: "btn-convert-work", label: "작업지시 전환", icon: <Factory size={15} />, onClick: () => setWorkOrderConversionOpen(true), disabled: isLoading || isSaving || isDirty || !selectedLineData || selectedNoSo.startsWith("TEMP_SO_") },
                 { dataTestId: "btn-mail-import", label: "메일 수주 불러오기", icon: <MailPlus size={15} />, onClick: () => setMailImportOpen(true), disabled: isLoading || isSaving }
               ]}
             />
@@ -1171,6 +1184,24 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
         }
         title="품목 도움창"
         width={820}
+      />
+
+      <SalesToPurchaseDialog
+        header={selectedHeader}
+        lines={conversionLines}
+        onClose={() => setPurchaseConversionOpen(false)}
+        onNavigate={() => { setPurchaseConversionOpen(false); handleNavigateToPurchase(); }}
+        open={purchaseConversionOpen}
+        partners={partners}
+        warehouses={warehouses}
+      />
+
+      <SalesToWorkOrderDialog
+        header={selectedHeader}
+        line={selectedLineData}
+        onClose={() => setWorkOrderConversionOpen(false)}
+        onNavigate={() => { setWorkOrderConversionOpen(false); handleNavigateToWorkOrder(); }}
+        open={workOrderConversionOpen}
       />
 
     </>

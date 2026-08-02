@@ -3699,6 +3699,268 @@ button:disabled {
   cursor: pointer;
 }
 
+.sales-conversion-form {
+  display: grid;
+  gap: 16px;
+}
+
+.sales-conversion-form > p,
+.sales-conversion-result p {
+  margin: 0;
+  color: #475569;
+}
+
+.sales-conversion-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.sales-conversion-fields label {
+  display: grid;
+  gap: 5px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sales-conversion-fields input,
+.sales-conversion-fields select,
+.sales-conversion-table-wrap input {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 1px solid #aebdcc;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.sales-conversion-table-wrap {
+  overflow: auto;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+}
+
+.sales-conversion-table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.sales-conversion-table-wrap th,
+.sales-conversion-table-wrap td {
+  padding: 8px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.sales-conversion-table-wrap th {
+  background: #f1f5f9;
+  color: #334155;
+  font-size: 12px;
+}
+
+.sales-conversion-preview {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.sales-conversion-preview section,
+.sales-conversion-result {
+  padding: 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  background: #f8fafc;
+}
+
+.sales-conversion-preview h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.sales-conversion-preview ol,
+.sales-conversion-preview ul {
+  margin: 0;
+  padding-left: 22px;
+}
+
+.sales-conversion-error {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #ef9a9a;
+  border-radius: 4px;
+  background: #fff1f2;
+  color: #b42318;
+}
+
+.knowledge-workspace {
+  display: grid;
+  gap: 16px;
+}
+
+.knowledge-workspace__heading,
+.knowledge-workspace__detail-heading,
+.knowledge-workspace__toolbar,
+.knowledge-workspace__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.knowledge-workspace__heading h2,
+.knowledge-workspace__heading p,
+.knowledge-workspace__detail-heading h3,
+.knowledge-workspace__detail-heading p {
+  margin: 0;
+}
+
+.knowledge-workspace__toolbar,
+.knowledge-workspace__editor,
+.knowledge-workspace__detail,
+.knowledge-workspace__list {
+  padding: 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.knowledge-workspace__toolbar input[type="text"],
+.knowledge-workspace__toolbar input:not([type]),
+.knowledge-workspace__editor input,
+.knowledge-workspace__editor select,
+.knowledge-workspace__editor textarea,
+.knowledge-workspace__detail textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 1px solid #aebdcc;
+  border-radius: 4px;
+}
+
+.knowledge-workspace__toolbar > input {
+  flex: 1;
+}
+
+.knowledge-workspace__fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.knowledge-workspace__fields label,
+.knowledge-workspace__editor > label {
+  display: grid;
+  gap: 5px;
+  color: #334155;
+  font-weight: 600;
+}
+
+.knowledge-workspace__layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.8fr) minmax(0, 2fr);
+  gap: 14px;
+}
+
+.knowledge-workspace__list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  max-height: 720px;
+  overflow: auto;
+}
+
+.knowledge-workspace__list > button {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  background: #f8fafc;
+  text-align: left;
+}
+
+.knowledge-workspace__list > button.is-active {
+  border-color: #2563a6;
+  background: #eaf4ff;
+}
+
+.knowledge-workspace__detail {
+  display: grid;
+  gap: 14px;
+}
+
+.knowledge-workspace__detail dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.knowledge-workspace__detail dl > div,
+.knowledge-workspace__detail section > article,
+.knowledge-workspace__editor > article {
+  padding: 10px;
+  border: 1px solid #d8e0e8;
+  border-radius: 5px;
+}
+
+.knowledge-workspace__detail section > article.is-accepted {
+  border-color: #3b9b70;
+  background: #effaf4;
+}
+
+.knowledge-workspace__knowledge {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.knowledge-workspace__knowledge span,
+.knowledge-workspace__message {
+  color: #47637d;
+}
+
+.meeting-status {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #e7f1fb;
+  color: #164f7d;
+  font-weight: 700;
+}
+
+.meeting-segment-grid {
+  max-height: 360px;
+}
+
+.meeting-segment-grid tr.is-selected td {
+  background: #eaf4ff;
+}
+
+.sales-conversion-preview li button,
+.knowledge-workspace button {
+  cursor: pointer;
+}
+
+.sales-conversion-preview li small {
+  display: block;
+  color: #64748b;
+}
+
+@media (max-width: 760px) {
+  .sales-conversion-fields,
+  .sales-conversion-preview,
+  .knowledge-workspace__fields,
+  .knowledge-workspace__layout,
+  .knowledge-workspace__detail dl {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* RC2 usability pass: retain the compact ERP density while making state and keyboard use easier to follow. */
 :root {
   --erp-font-ui: "Segoe UI Variable", "Noto Sans KR", "Malgun Gothic", "Segoe UI", Arial, sans-serif;

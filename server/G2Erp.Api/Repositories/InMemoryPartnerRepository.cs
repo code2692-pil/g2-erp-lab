@@ -6,6 +6,8 @@ public sealed class InMemoryPartnerRepository : IPartnerRepository
 {
     private static readonly List<Partner> Partners =
     [
+        new() { CD_FIRM = "1000", CD_PARTNER = "UAT-SUP-01", NM_PARTNER = "세림정밀 테스트 공급사", NO_COMPANY = "000-00-20801", YN_USE = "Y" },
+        new() { CD_FIRM = "1000", CD_PARTNER = "UAT-SUP-02", NM_PARTNER = "한빛전자 테스트 공급사", NO_COMPANY = "000-00-20802", YN_USE = "Y" },
         new() { CD_FIRM = "1000", CD_PARTNER = "P-10021", NM_PARTNER = "G2 Trading", NO_COMPANY = "120-81-10021", YN_USE = "Y" },
         new() { CD_FIRM = "1000", CD_PARTNER = "P-10044", NM_PARTNER = "Hanul Industry", NO_COMPANY = "120-81-10044", YN_USE = "Y" },
         new() { CD_FIRM = "2000", CD_PARTNER = "P-20012", NM_PARTNER = "Daeyang Distribution", NO_COMPANY = "220-81-20012", YN_USE = "Y" }

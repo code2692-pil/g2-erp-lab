@@ -24,9 +24,13 @@ public sealed class DemoMeetingApiTests
             var viewer = await CreateSessionAsync(client, "demo-viewer");
             var operatorSession = await CreateSessionAsync(client, "demo-operator");
             var viewerCreate = await SendJsonAsync(client, HttpMethod.Post, "/api/demo/meetings", viewer.Token, new { Title = "차단 회의" });
-            var create = await SendJsonAsync(client, HttpMethod.Post, "/api/demo/meetings", operatorSession.Token, new { Title = "생산 일정 회의" });
+            var create = await SendJsonAsync(client, HttpMethod.Post, "/api/demo/meetings", operatorSession.Token, new { Title = "생산 일정 회의", MeetingDate = "2026-08-03" });
             var meeting = (await create.Content.ReadFromJsonAsync<DemoMeeting>())!;
             meetingId = meeting.Id;
+            using var listRequest = new HttpRequestMessage(HttpMethod.Get, "/api/demo/meetings");
+            listRequest.Headers.Add("X-Demo-Session", operatorSession.Token);
+            using var listResponse = await client.SendAsync(listRequest);
+            var meetingList = await listResponse.Content.ReadFromJsonAsync<DemoMeeting[]>();
             var upload = await UploadAsync(client, meetingId, operatorSession.Token, meeting.Version, "agenda.txt", "text/plain", "결정: 8월 10일까지 시제품 20개를 생산한다.\n할 일: 김담당이 자재를 확인한다.");
             var queued = (await upload.Content.ReadFromJsonAsync<DemoMeeting>())!;
             var duplicate = await UploadAsync(client, meetingId, operatorSession.Token, queued.Version, "agenda-copy.txt", "text/plain", "결정: 8월 10일까지 시제품 20개를 생산한다.\n할 일: 김담당이 자재를 확인한다.");
@@ -37,6 +41,8 @@ public sealed class DemoMeetingApiTests
 
             Assert.Equal(HttpStatusCode.Forbidden, viewerCreate.StatusCode);
             Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+            Assert.Equal("2026-08-03", meeting.MeetingDate);
+            Assert.Contains(meetingList!, item => item.Id == meetingId && item.MeetingDate == "2026-08-03");
             Assert.Equal(HttpStatusCode.OK, upload.StatusCode);
             Assert.Equal(HttpStatusCode.Conflict, duplicate.StatusCode);
             Assert.Equal("검토 대기", completed.Status);

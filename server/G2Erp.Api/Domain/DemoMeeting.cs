@@ -25,6 +25,7 @@ public sealed record DemoMeetingQuestion(
 public sealed record DemoMeeting(
     string Id,
     string Title,
+    string? MeetingDate,
     string OwnerUserId,
     string Status,
     IReadOnlyList<DemoMeetingFile> Files,

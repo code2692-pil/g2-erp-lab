@@ -23,13 +23,14 @@ function storedZip(entries: Record<string, string>) {
 
 async function openAiCenter(page: Page) {
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByTestId("nav-ai-solution-center").click();
+  await page.getByTestId("nav-ai-system-management").click();
   await expect(page.getByTestId("ai-solution-center-title")).toBeVisible();
 }
 
 test("업무 Q&A는 질문·사람 답변·단일 채택·검색·재오픈을 한 흐름으로 처리한다", async ({ page }) => {
   await openAiCenter(page);
-  await page.getByRole("tab", { name: "업무 Q&A", exact: true }).click();
+  await page.getByTestId("nav-ai-qa").click();
+  await page.getByTestId("ai-qa-details").locator("summary").click();
   await page.getByTestId("qa-new").click();
   await page.getByTestId("qa-title").fill("작업지시 분할 기준은 무엇인가요?");
   await page.getByTestId("qa-body").fill("수주수량 60을 25와 35로 나누어 작업지시할 때 잔량 기준을 확인합니다.");

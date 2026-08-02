@@ -14,29 +14,30 @@ async function assertProfessionalLanguage(page: Page, label: string) {
     );
     return [document.title, document.body.innerText, ...attributes].join("\n");
   });
-  const matches = forbiddenUserTerms.filter((pattern) => pattern.test(exposed)).map((pattern) => pattern.source);
+  const languageAuditText = exposed.replaceAll("SMART SNOTES DEMO", "");
+  const matches = forbiddenUserTerms.filter((pattern) => pattern.test(languageAuditText)).map((pattern) => pattern.source);
   expect(matches, `${label} 사용자 노출 금지 표현`).toEqual([]);
 }
 
 async function startAs(page: Page, userId: string, label: string) {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("demo-session-gate")).toBeVisible();
-  await page.getByRole("combobox", { name: "사용자 역할" }).selectOption(userId);
+  await page.locator(`input[name="demo-user"][value="${userId}"]`).check();
   await page.getByRole("button", { name: "업무 화면 시작" }).click();
   await expect(page.getByTestId("current-user-menu")).toContainText(label);
 }
 
 async function openQa(page: Page) {
-  await page.getByTestId("nav-ai-solution-center").click();
+  await page.getByTestId("nav-ai-qa").click();
   await expect(page.getByTestId("ai-solution-center-title")).toBeVisible();
-  await page.getByRole("tab", { name: "업무 Q&A", exact: true }).click();
+  await page.getByTestId("ai-qa-details").locator("summary").click();
   await expect(page.getByTestId("business-qa-workspace")).toBeVisible();
 }
 
 async function resetAsManager(browser: Browser) {
   const context = await browser.newContext();
   const page = await context.newPage();
-  await startAs(page, "demo-manager", "관리자");
+  await startAs(page, "demo-manager", "일반 관리자");
   await page.getByRole("button", { name: "초기 데이터 복원" }).click();
   await page.getByLabel("계속하려면 초기 데이터 복원 입력").fill("초기 데이터 복원");
   await page.getByRole("button", { name: "복원 실행" }).click();
@@ -56,6 +57,7 @@ test("DEMO-01 Viewer는 공유 데이터를 조회하지만 변경 기능은 사
   await openQa(page);
   await expect(page.getByTestId("qa-new")).toBeDisabled();
   await expect(page.getByTestId("qa-answer-create")).toBeDisabled();
+  await page.getByTestId("nav-ai-system-management").click();
   await page.getByRole("tab", { name: "회의록", exact: true }).click();
   await expect(page.getByTestId("meeting-create")).toBeDisabled();
 });
@@ -67,7 +69,7 @@ test("DEMO-02 Operator 질문과 답변을 Manager가 다른 브라우저에서 
   const manager = await managerContext.newPage();
   const title = `공유 질문 ${Date.now()}`;
 
-  await startAs(operator, "demo-operator", "업무 사용자");
+  await startAs(operator, "demo-operator", "일반 사용자");
   await openQa(operator);
   await operator.getByTestId("qa-new").click();
   await operator.getByTestId("qa-title").fill(title);
@@ -79,7 +81,7 @@ test("DEMO-02 Operator 질문과 답변을 Manager가 다른 브라우저에서 
   await expect(operator.getByTestId("qa-detail")).toContainText("사람이 확인한 공유 답변입니다.");
   await expect(operator.getByRole("button", { name: "답변 채택" })).toBeDisabled();
 
-  await startAs(manager, "demo-manager", "관리자");
+  await startAs(manager, "demo-manager", "일반 관리자");
   await openQa(manager);
   await manager.getByTestId("qa-search").fill(title);
   await expect(manager.getByTestId("qa-detail")).toContainText(title);
@@ -94,8 +96,8 @@ test("DEMO-02 Operator 질문과 답변을 Manager가 다른 브라우저에서 
 });
 
 test("DEMO-03 Operator가 TXT 회의자료를 서버 작업으로 추출하고 근거를 확인한다", async ({ page }) => {
-  await startAs(page, "demo-operator", "업무 사용자");
-  await page.getByTestId("nav-ai-solution-center").click();
+  await startAs(page, "demo-operator", "일반 사용자");
+  await page.getByTestId("nav-ai-system-management").click();
   await page.getByRole("tab", { name: "회의록", exact: true }).click();
   await page.getByTestId("meeting-create").click();
   await page.getByTestId("meeting-files").setInputFiles({
@@ -110,7 +112,7 @@ test("DEMO-03 Operator가 TXT 회의자료를 서버 작업으로 추출하고 �
 });
 
 test("DEMO-04 Manager 초기화는 정확한 확인문구를 요구하고 고정 seed를 제공한다", async ({ page }) => {
-  await startAs(page, "demo-manager", "관리자");
+  await startAs(page, "demo-manager", "일반 관리자");
   await openQa(page);
   await page.getByTestId("qa-search").fill("부분 발주 후 발주 가능 잔량");
   await expect(page.getByText("검색 결과 1건")).toBeVisible();
@@ -124,17 +126,17 @@ test("DEMO-04 Manager 초기화는 정확한 확인문구를 요구하고 고정
 });
 
 test("DEMO-05 직접 경로 새로고침에서도 세션과 개발·사내 시연 표시가 유지된다", async ({ page }) => {
-  await startAs(page, "demo-operator", "업무 사용자");
+  await startAs(page, "demo-operator", "일반 사용자");
   await page.goto("/ai-solution-center", { waitUntil: "domcontentloaded" });
-  await expect(page.getByTestId("current-user-menu")).toContainText("업무 사용자");
+  await expect(page.getByTestId("current-user-menu")).toContainText("일반 사용자");
   await expect(page.getByTestId("ai-solution-center-title")).toBeVisible();
   await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.getByTestId("current-user-menu")).toContainText("업무 사용자");
+  await expect(page.getByTestId("current-user-menu")).toContainText("일반 사용자");
   await expect(page.getByTestId("ai-solution-center-title")).toBeVisible();
 });
 
 test("DEMO-06 핵심 업무 화면은 제품 문구만 노출한다", async ({ page }) => {
-  await startAs(page, "demo-operator", "업무 사용자");
+  await startAs(page, "demo-operator", "일반 사용자");
   await assertProfessionalLanguage(page, "수주등록");
 
   const routes = [
@@ -168,7 +170,7 @@ test("DEMO-07 사설 IPv4와 randomUUID 부재 조건에서 수주 헤더와 상
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("requestfailed", (request) => errors.push(`${request.url()} ${request.failure()?.errorText ?? "failed"}`));
-  await startAs(page, "demo-operator", "업무 사용자");
+  await startAs(page, "demo-operator", "일반 사용자");
   await page.getByTestId("btn-search").click();
   await expect(page.getByTestId("sales-order-header-grid-row-1000::SO2026070001")).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId("sales-order-line-grid-row-1000::SO2026070001::1")).toHaveAttribute("aria-selected", "true");

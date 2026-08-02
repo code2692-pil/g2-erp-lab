@@ -75,11 +75,13 @@ async function createWorkOrderDraftFromLookups(page: Page) {
 test("API UI: work order item and production line lookup", async ({ page }) => {
   await test.step("Header Lookup", async () => {
     await openNewWorkOrder(page);
-    await page.getByTestId("wo-btn-item-lookup").click();
+    await expect(page.getByTestId("wo-btn-item-lookup")).toHaveCount(0);
+    await temporaryHeaderCellContainer(page, "CD_ITEM").dblclick();
     await page.getByTestId("wo-item-lookup-grid-row-1000::ITM-1001").click();
     await page.getByTestId("wo-item-lookup-confirm").click();
     await expect(temporaryHeaderCell(page, "CD_ITEM")).toHaveValue("ITM-1001");
-    await page.getByTestId("wo-btn-line-lookup").click();
+    await expect(page.getByTestId("wo-btn-line-lookup")).toHaveCount(0);
+    await temporaryHeaderCellContainer(page, "CD_LINE").dblclick();
     await page.getByTestId("wo-line-lookup-grid-row-1000::LINE-A").click();
     await page.getByTestId("wo-line-lookup-confirm").click();
     await expect(temporaryHeaderCell(page, "CD_LINE")).toHaveValue("LINE-A");

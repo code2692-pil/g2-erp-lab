@@ -184,6 +184,7 @@ test("Gate 12-8 shared data: PC save, mobile update, PDA update, and PC requery 
     .getByTestId("sales-order-header-grid-selected-document")
     .textContent();
   await page.getByLabel("수주일자 To").fill(temporaryOrderDate);
+  await page.getByTestId("btn-search").click();
   expect(selectedDocumentAfterSave).toMatch(/^선택 문서 SOR\d{10}$/);
   const savedOrderNo = selectedDocumentAfterSave?.match(/SOR\d{10}/)?.[0];
   expect(savedOrderNo).toBeTruthy();
@@ -210,6 +211,7 @@ test("Gate 12-8 shared data: PC save, mobile update, PDA update, and PC requery 
   await expect(page.getByTestId(`sales-order-line-grid-cell-${savedHeaderKey}::1-QT_SO`)).toHaveValue("3");
 
   await page.getByLabel("수주일자 To").fill("2026-07-31");
+  await page.getByTestId("btn-search").click();
   await expect(selectedDocumentLabel).toHaveText("선택 문서 SO2026070001");
   await expect(page.getByTestId("sales-order-line-grid-cell-1000::SO2026070001::1-QT_SO")).toHaveValue("12");
 

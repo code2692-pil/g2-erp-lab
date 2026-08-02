@@ -7,6 +7,7 @@ export interface PageToolbarAction {
   onClick: () => void;
   disabled?: boolean;
   variant?: "default" | "primary" | "danger";
+  group?: "document" | "rows" | "extra";
 }
 
 interface PageToolbarProps {
@@ -17,9 +18,9 @@ interface PageToolbarProps {
 export function PageToolbar({ actions, processing = false }: PageToolbarProps) {
   return (
     <div aria-busy={processing} className="button-bar" data-processing-state={processing ? "processing" : "idle"}>
-      {actions.map((action) => (
+      {actions.map((action, index) => (
         <button
-          className={action.variant === "primary" ? "primary" : action.variant === "danger" ? "danger" : undefined}
+          className={`${action.variant === "primary" ? "primary" : action.variant === "danger" ? "danger" : ""}${index > 0 && actions[index - 1].group !== action.group ? " toolbar-group-start" : ""}`.trim() || undefined}
           data-testid={action.dataTestId}
           disabled={action.disabled}
           key={action.dataTestId}

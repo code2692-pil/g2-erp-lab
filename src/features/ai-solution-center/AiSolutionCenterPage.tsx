@@ -1,5 +1,6 @@
 import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Building2, ChevronRight, ClipboardCopy, Download, FileText, RotateCcw } from "lucide-react";
+import { ClipboardCopy, Download, FileText, RotateCcw } from "lucide-react";
+import { AppNavigation, type AppNavigationPage } from "../../components/AppNavigation";
 import { useConfirm } from "../../hooks/useConfirm";
 import { useDirtyState } from "../../hooks/useDirtyState";
 import type { ScreenModuleId } from "../../screenModules";
@@ -22,11 +23,11 @@ import { BusinessQaWorkspace } from "./BusinessQaWorkspace";
 import { MeetingMinutesWorkspace } from "./MeetingMinutesWorkspace";
 import { demoEnvironment } from "../../api/demoApi";
 
-type NavigationPage = "sales" | "purchase" | "work" | "development" | "ai";
 type ActiveTab = "consultant" | "customer" | "businessQa" | "meeting";
 interface AiSolutionCenterPageProps {
-  onNavigate: (page: NavigationPage) => void;
+  onNavigate: (page: AppNavigationPage) => void;
   onScreenIntent?: (screen: ScreenModuleId) => void;
+  entryMode?: "system" | "solution" | "qa";
 }
 
 interface ResultPanelProps {
@@ -117,14 +118,14 @@ function ResultPanel({ session, answerMap, answerError, refining, exportStatus, 
   </section>;
 }
 
-export function AiSolutionCenterPage({ onNavigate, onScreenIntent }: AiSolutionCenterPageProps) {
+export function AiSolutionCenterPage({ onNavigate, onScreenIntent, entryMode = "solution" }: AiSolutionCenterPageProps) {
   const screenIntentProps = (screen: ScreenModuleId) => ({
     onMouseEnter: () => onScreenIntent?.(screen),
     onFocus: () => onScreenIntent?.(screen),
     onPointerDown: () => onScreenIntent?.(screen)
   });
   const { confirm } = useConfirm();
-  const [activeTab, setActiveTab] = useState<ActiveTab>("consultant");
+  const [activeTab, setActiveTab] = useState<ActiveTab>(() => entryMode === "system" ? "consultant" : "customer");
   const [attachments, setAttachments] = useState<FileAnalysisAttachment[]>([]);
   const [fileProcessing, setFileProcessing] = useState(false);
   const [fileError, setFileError] = useState("");
@@ -158,6 +159,9 @@ export function AiSolutionCenterPage({ onNavigate, onScreenIntent }: AiSolutionC
   const [comparisonStatus, setComparisonStatus] = useState("");
   const [comparing, setComparing] = useState(false);
   const comparisonLock = useRef(false);
+  useEffect(() => {
+    setActiveTab(entryMode === "system" ? "consultant" : "customer");
+  }, [entryMode]);
   const { markDirty, clearDirty } = useDirtyState({
     label: "AI 솔루션 센터",
     saving: fileProcessing || consultantProcessing || consultantRefining || customerProcessing || customerRefining || comparing
@@ -203,7 +207,7 @@ export function AiSolutionCenterPage({ onNavigate, onScreenIntent }: AiSolutionC
       setAttachments((current) => [...current, ...prepared]);
       markDirty();
     } catch {
-      setFileError("선택한 파일을 로컬에서 처리하지 못했습니다. 파일은 외부로 전송되지 않았습니다.");
+      setFileError("선택한 파일을 처리하지 못했습니다. 파일은 외부로 전송되지 않았습니다.");
     } finally {
       setFileProcessing(false);
     }
@@ -382,7 +386,7 @@ export function AiSolutionCenterPage({ onNavigate, onScreenIntent }: AiSolutionC
   const resetAnalysisSession = () => {
     setAttachments([]); setDomain(""); setSituation(""); setInquiry(""); setCurrentManagement(""); setDesiredStandard(""); setFieldConstraints(""); setInvolvedDepartments(""); setSelectedScenarioId(""); setSelectedScenarioTitle(""); setFileError("");
     setConsultantError(""); setCustomerError(""); setConsultantFollowupError(""); setCustomerFollowupError("");
-    setConsultantSession(undefined); setCustomerSession(undefined); setConsultantReview(undefined); setCustomerReview(undefined); setConsultantAnswers({}); setCustomerAnswers({}); setExportStatus(""); setHandoverStatus(""); setActiveTab("consultant");
+    setConsultantSession(undefined); setCustomerSession(undefined); setConsultantReview(undefined); setCustomerReview(undefined); setConsultantAnswers({}); setCustomerAnswers({}); setExportStatus(""); setHandoverStatus(""); setActiveTab(entryMode === "system" ? "consultant" : "customer");
     setPriorities({ ...defaultSolutionPriorities }); setComparisonStatus("");
     clearDirty();
   };
@@ -419,7 +423,7 @@ export function AiSolutionCenterPage({ onNavigate, onScreenIntent }: AiSolutionC
   };
   const downloadReviewPackage = (review: ReviewRecord) => {
     const objectUrl = URL.createObjectURL(new Blob([JSON.stringify(toReviewPackage(review), null, 2)], { type: "application/json;charset=utf-8" }));
-    const link = document.createElement("a"); link.href = objectUrl; link.download = reviewPackageFilename(review); link.click(); URL.revokeObjectURL(objectUrl); setExportStatus("검토 패키지 JSON 다운로드를 시작했습니다.");
+    const link = document.createElement("a"); link.href = objectUrl; link.download = reviewPackageFilename(review); link.click(); URL.revokeObjectURL(objectUrl); setExportStatus("분석 결과 다운로드를 시작했습니다.");
   };
 
   const consultantBusy = fileProcessing || consultantProcessing || consultantRefining;
@@ -427,20 +431,17 @@ export function AiSolutionCenterPage({ onNavigate, onScreenIntent }: AiSolutionC
   const renderResult = (session: SolutionSession, answerMap: Record<string, string>, answerError: string, refining: boolean, mode: SolutionSource) => { const review = mode === "consultant-file" ? consultantReview : customerReview; const setReview = mode === "consultant-file" ? setConsultantReview : setCustomerReview; return <ResultPanel session={session} answerMap={answerMap} answerError={answerError} refining={refining} exportStatus={exportStatus} handoverStatus={handoverStatus} comparisonStatus={comparisonStatus} comparing={comparing} review={review} onAnswerChange={(id, answer) => { if (mode === "consultant-file") { setConsultantAnswers((current) => ({ ...current, [id]: answer })); setConsultantFollowupError(""); } else { setCustomerAnswers((current) => ({ ...current, [id]: answer })); setCustomerFollowupError(""); } markDirty(); }} onRefine={() => refine(mode)} onCopy={() => void copyResultMarkdown(session, answerMap, review)} onDownload={() => downloadMarkdown(session, answerMap, review)} onHandoverCopy={() => void copyHandoverMarkdown(session, answerMap, review)} onRecompare={() => recompare(mode)} onReviewRecord={(record) => { setReview(record); markDirty(); }} onReviewPackageDownload={downloadReviewPackage} />; };
 
   return <div className="erp-shell">
-    <aside className="side-nav"><div className="brand"><Building2 size={20} /><strong>SMART ERP</strong></div><nav><div className="menu-title">영업관리</div><button className="menu-item" data-testid="nav-sales-order" onClick={() => onNavigate("sales")} type="button">수주등록</button><div className="menu-title">구매관리</div><div className="menu-group"><ChevronRight size={14} /><span>발주관리</span></div><button {...screenIntentProps("purchase")} className="menu-item" data-testid="nav-purchase-order" onClick={() => onNavigate("purchase")} type="button">발주등록</button><div className="menu-title">생산관리</div><div className="menu-group"><ChevronRight size={14} /><span>작업지시관리</span></div><button {...screenIntentProps("work")} className="menu-item" data-testid="nav-work-order" onClick={() => onNavigate("work")} type="button">작업지시등록</button><div className="menu-title">AI 도구</div><button className="menu-item active" data-testid="nav-ai-solution-center" type="button">AI 솔루션 센터</button></nav></aside>
+    <AppNavigation currentPage={entryMode === "system" ? "aiSystem" : entryMode === "qa" ? "aiQa" : "ai"} onNavigate={onNavigate} onScreenIntent={onScreenIntent} />
     <main className="ai-solution-center" aria-busy={consultantBusy || customerBusy}>
-      <header className="page-header"><div><h1 data-testid="ai-solution-center-title">AI 솔루션 센터</h1><p>ERP·MES 업무 상황을 정리하고 검토 가능한 기본 가이드와 추가 확인사항을 제공합니다.</p></div><button className="ai-solution-center__reset-button" data-testid="analysis-session-reset" type="button" onClick={resetAnalysisSession}><RotateCcw size={15} />분석 세션 초기화</button></header>
-      <aside className="ai-solution-center__top-note" aria-label="기능 안내">현재 버전은 회사 지식 템플릿을 기반으로 분석합니다.<br />회사 지식과 보안 기준을 확인해 적용 범위를 확장할 수 있습니다.</aside>
-      <CompanyKnowledgeSettings companyKnowledge={companyKnowledge} generalKnowledgeCount={solutionKnowledge.length} onApply={(knowledge) => { setCompanyKnowledge(knowledge); markDirty(); }} onReset={() => { setCompanyKnowledge([]); markDirty(); }} />
-      <PriorityCard priorities={priorities} onChange={(key, value) => { setPriorities((current) => ({ ...current, [key]: value })); setComparisonStatus(""); markDirty(); }} onPreset={(preset) => { setPriorities(preset); setComparisonStatus(""); markDirty(); }} />
-      <ScenarioLibrary onApply={(scenario) => void applyScenario(scenario)} />
-      <ReviewPackageImportPanel />
-      <div className="ai-solution-center__tabs" role="tablist" aria-label="AI 솔루션 방식"><button type="button" role="tab" id="consultant-tab" aria-controls="consultant-panel" aria-selected={activeTab === "consultant"} className={activeTab === "consultant" ? "is-active" : ""} onClick={() => setActiveTab("consultant")}>컨설턴트 파일 분석</button><button type="button" role="tab" id="customer-tab" aria-controls="customer-panel" aria-selected={activeTab === "customer"} className={activeTab === "customer" ? "is-active" : ""} onClick={() => setActiveTab("customer")}>고객 업무 Q&amp;A</button><button type="button" role="tab" id="business-qa-tab" aria-controls="business-qa-panel" aria-selected={activeTab === "businessQa"} className={activeTab === "businessQa" ? "is-active" : ""} onClick={() => setActiveTab("businessQa")}>업무 Q&amp;A</button><button type="button" role="tab" id="meeting-tab" aria-controls="meeting-panel" aria-selected={activeTab === "meeting"} className={activeTab === "meeting" ? "is-active" : ""} onClick={() => setActiveTab("meeting")}>회의록</button></div>
+      <header className="page-header"><div><h1 data-testid="ai-solution-center-title">{entryMode === "system" ? "AI 시스템 관리" : entryMode === "qa" ? "AI Q&A" : "AI 솔루션 센터"}</h1><p>{entryMode === "system" ? "회사 지식을 관리하고 문서를 검토합니다." : entryMode === "qa" ? "업무와 프로그램 사용방법을 질문하고 답변을 확인합니다." : "업무 니즈와 개선 요구를 입력하고 실행 가능한 솔루션을 확인합니다."}</p></div><button className="ai-solution-center__reset-button" data-testid="analysis-session-reset" type="button" onClick={resetAnalysisSession}><RotateCcw size={15} />새로 시작</button></header>
+      {entryMode === "system" && <CompanyKnowledgeSettings companyKnowledge={companyKnowledge} generalKnowledgeCount={solutionKnowledge.length} onApply={(knowledge) => { setCompanyKnowledge(knowledge); markDirty(); }} onReset={() => { setCompanyKnowledge([]); markDirty(); }} />}
+      {entryMode !== "system" && <p className="ai-solution-center__muted" data-testid="company-knowledge-count">승인된 회사 지식 {companyKnowledge.length}개 적용</p>}
+      <details className="ai-disclosure" data-testid="ai-system-advanced"><summary>고급 설정</summary><PriorityCard priorities={priorities} onChange={(key, value) => { setPriorities((current) => ({ ...current, [key]: value })); setComparisonStatus(""); markDirty(); }} onPreset={(preset) => { setPriorities(preset); setComparisonStatus(""); markDirty(); }} /><ScenarioLibrary onApply={(scenario) => void applyScenario(scenario)} /><ReviewPackageImportPanel /></details>
+      {entryMode === "system" && <div className="ai-solution-center__tabs" role="tablist" aria-label="AI 시스템 관리 기능"><button type="button" role="tab" id="consultant-tab" aria-controls="consultant-panel" aria-selected={activeTab === "consultant"} className={activeTab === "consultant" ? "is-active" : ""} onClick={() => setActiveTab("consultant")}>문서 검토 및 확인</button><button type="button" role="tab" id="meeting-tab" aria-controls="meeting-panel" aria-selected={activeTab === "meeting"} className={activeTab === "meeting" ? "is-active" : ""} onClick={() => setActiveTab("meeting")}>회의록</button></div>}
       {activeTab === "consultant" ? <section id="consultant-panel" role="tabpanel" aria-labelledby="consultant-tab" className="ai-solution-center__panel">
         <div className="ai-solution-center__form-card">
-          <h2>컨설턴트 파일 분석</h2>
-          <label className="ai-solution-center__file-label" htmlFor="ai-file-input"><FileText size={16} />파일 선택 또는 추가<input id="ai-file-input" data-testid="ai-file-input" type="file" multiple onChange={(event) => void handleFiles(event)} /></label>
-          <p className="ai-solution-center__muted">선택한 파일은 서버로 업로드하지 않으며 브라우저 메모리에서만 처리합니다. 파일 첨부와 파일 내용 자동 분석의 지원 범위는 유형별로 다릅니다.</p>
+          <h2>문서 검토 및 확인</h2>
+          <label className="ai-solution-center__file-label" htmlFor="ai-file-input"><FileText size={16} />파일등록<input id="ai-file-input" data-testid="ai-file-input" type="file" multiple onChange={(event) => void handleFiles(event)} /></label>
           <FileAnalysisCards
             attachments={attachments}
             error={fileError}
@@ -449,7 +450,7 @@ export function AiSolutionCenterPage({ onNavigate, onScreenIntent }: AiSolutionC
             onIncludeChange={updateAttachmentInclusion}
             onRemove={(fileId) => { setAttachments((current) => current.filter((item) => item.fileId !== fileId)); markDirty(); }}
           />
-          <SensitiveDataNotice findings={combinedAttachmentFindings} dataTestId="consultant-sensitive-summary" />
+          <details className="ai-disclosure"><summary>상세 분석</summary><SensitiveDataNotice findings={combinedAttachmentFindings} dataTestId="consultant-sensitive-summary" /></details>
           <div className="ai-solution-center__fields">
             <label>업무영역<select data-testid="ai-domain-select" value={domain} onChange={(event) => { setDomain(event.target.value as BusinessDomain); markDirty(); }}><option value="">자동 추정</option>{businessDomains.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
             <label>공통 상황 설명<textarea data-testid="ai-situation-input" value={situation} aria-invalid={Boolean(consultantError) && !canAnalyzeFiles} onChange={(event) => { setSituation(event.target.value); setConsultantError(""); markDirty(); }} placeholder="업무 상황, 현재 문제, 확인하고 싶은 기준을 적어 주세요." rows={6} /></label>
@@ -460,22 +461,19 @@ export function AiSolutionCenterPage({ onNavigate, onScreenIntent }: AiSolutionC
         {consultantSession && renderResult(consultantSession, consultantAnswers, consultantFollowupError, consultantRefining, "consultant-file")}
       </section> : activeTab === "customer" ? <section id="customer-panel" role="tabpanel" aria-labelledby="customer-tab" className="ai-solution-center__panel">
         <div className="ai-solution-center__form-card">
-          <h2>고객 업무 Q&amp;A</h2>
+          <h2>{entryMode === "qa" ? "질문 내용" : "문의 내용"}</h2>
           {selectedScenarioTitle && <p className="ai-solution-center__scenario-selected" data-testid="selected-scenario">적용한 업무 예시: <strong>{selectedScenarioTitle}</strong> · 내용을 검토한 뒤 직접 가이드를 요청해 주세요.</p>}
           <div className="ai-solution-center__fields">
-            <label>문의 또는 문제<textarea data-testid="ai-customer-inquiry" value={inquiry} aria-invalid={Boolean(customerError)} onChange={(event) => { setInquiry(event.target.value); setCustomerError(""); markDirty(); }} rows={4} /></label>
-            <label>현재 관리 방식<textarea data-testid="ai-customer-current-management" value={currentManagement} onChange={(event) => { setCurrentManagement(event.target.value); markDirty(); }} rows={3} /></label>
-            <label>희망하는 기준<textarea data-testid="ai-customer-desired-standard" value={desiredStandard} onChange={(event) => { setDesiredStandard(event.target.value); markDirty(); }} rows={3} /></label>
-            <label>현장 제약<textarea data-testid="ai-customer-field-constraints" value={fieldConstraints} onChange={(event) => { setFieldConstraints(event.target.value); markDirty(); }} rows={3} /></label>
-            <label>관련 부서<textarea data-testid="ai-customer-departments" value={involvedDepartments} onChange={(event) => { setInvolvedDepartments(event.target.value); markDirty(); }} rows={2} /></label>
+            <label>{entryMode === "qa" ? "질문" : "문의 또는 문제"}<textarea data-testid="ai-customer-inquiry" value={inquiry} aria-invalid={Boolean(customerError)} onChange={(event) => { setInquiry(event.target.value); setCustomerError(""); markDirty(); }} rows={entryMode === "qa" ? 6 : 4} /></label>
           </div>
-          <SensitiveDataNotice findings={combinedCustomerFindings} dataTestId="customer-sensitive-summary" />
+          {entryMode !== "qa" && <details className="ai-disclosure"><summary>보완 설명</summary><div className="ai-solution-center__fields"><label>현재 관리 방식<textarea data-testid="ai-customer-current-management" value={currentManagement} onChange={(event) => { setCurrentManagement(event.target.value); markDirty(); }} rows={3} /></label><label>희망하는 기준<textarea data-testid="ai-customer-desired-standard" value={desiredStandard} onChange={(event) => { setDesiredStandard(event.target.value); markDirty(); }} rows={3} /></label><label>현장 제약<textarea data-testid="ai-customer-field-constraints" value={fieldConstraints} onChange={(event) => { setFieldConstraints(event.target.value); markDirty(); }} rows={3} /></label><label>관련 부서<textarea data-testid="ai-customer-departments" value={involvedDepartments} onChange={(event) => { setInvolvedDepartments(event.target.value); markDirty(); }} rows={2} /></label></div><SensitiveDataNotice findings={combinedCustomerFindings} dataTestId="customer-sensitive-summary" /></details>}
           {customerError && <p className="ai-solution-center__error" role="alert">{customerError}</p>}
-          <div className="ai-solution-center__actions"><button type="button" onClick={fillExample}>예시 질문 넣기</button><button className="ai-solution-center__primary-button" data-testid="ai-customer-guide" type="button" disabled={customerBusy} onClick={guideCustomer}>{customerProcessing ? "가이드 작성 중..." : "기본 가이드 받기"}</button></div>
+          <div className="ai-solution-center__actions"><button className="ai-solution-center__primary-button" data-testid="ai-customer-guide" type="button" disabled={customerBusy} onClick={guideCustomer}>{customerProcessing ? "답변 작성 중..." : entryMode === "qa" ? "질문하기" : "솔루션 확인"}</button></div>
         </div>
         {customerSession && renderResult(customerSession, customerAnswers, customerFollowupError, customerRefining, "customer-qa")}
       </section> : activeTab === "businessQa" ? <section id="business-qa-panel" role="tabpanel" aria-labelledby="business-qa-tab" className="ai-solution-center__panel"><BusinessQaWorkspace /></section> : <section id="meeting-panel" role="tabpanel" aria-labelledby="meeting-tab" className="ai-solution-center__panel"><MeetingMinutesWorkspace /></section>}
-      <section className="ai-solution-center__security" aria-label="보안 안내"><h2>보안 및 사용 안내</h2><ul><li>{activeTab === "meeting" && demoEnvironment === "shared" ? "회의록 파일은 권한이 적용된 비공개 경로에 업로드됩니다." : "이 화면에서 선택한 분석 파일은 서버로 업로드하지 않으며 브라우저 메모리에서만 처리합니다."}</li><li>구조화 파일은 규칙 기반으로 요약하며 원문 전체를 결과·Markdown·검토 패키지에 포함하지 않습니다.</li><li>이미지·음성·영상은 메타정보만 확인하며 OCR·STT·장면 분석을 수행하지 않습니다.</li><li>민감정보 탐지는 기초 패턴 기반이므로 오탐·미탐이 가능하며 실제 공유 전 담당자 검토가 필요합니다.</li><li>실제 도입 전에는 회사 보안·권한·감사 정책과 담당자 확인이 필요합니다.</li></ul></section>
+      {entryMode === "qa" && <details className="ai-disclosure" data-testid="ai-qa-details"><summary>상세 정보</summary><BusinessQaWorkspace /></details>}
+      <details className="ai-disclosure ai-solution-center__security"><summary>보안 및 사용 안내</summary><ul><li>{activeTab === "meeting" && demoEnvironment === "shared" ? "회의록 파일은 권한이 적용된 비공개 경로에 업로드됩니다." : "선택한 분석 파일은 현재 화면에서 처리합니다."}</li><li>민감정보 탐지는 기초 패턴 기반이므로 실제 공유 전 담당자 확인이 필요합니다.</li></ul></details>
     </main>
   </div>;
 }

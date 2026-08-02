@@ -10,6 +10,7 @@ import { navigationDelta, readAppHistoryEntry, type AppHistoryEntry, withAppHist
 import { DemoEnvironmentGate } from "./components/DemoEnvironmentGate";
 import { clearDemoSession, demoEnvironment } from "./api/demoApi";
 import { createClientId } from "./utils/clientId";
+import type { AppNavigationPage } from "./components/AppNavigation";
 
 const PurchaseOrderRegistration = screenModules.purchase.component;
 const WorkOrderRegistration = screenModules.work.component;
@@ -17,24 +18,36 @@ const DevelopmentDataManager = screenModules.development.component;
 const AiSolutionCenterPage = screenModules.ai.component;
 const CompactSalesOrderPage = screenModules.mobileSales.component;
 
-type AppPage = "sales" | "mobileSales" | "pdaSales" | "purchase" | "work" | "development" | "ai";
+type AppPage = AppNavigationPage;
 
 function pageFromPath(pathname: string): AppPage {
   if (pathname === "/mobile/sales-orders") return "mobileSales";
+  if (pathname === "/mobile/purchase-orders") return "mobilePurchase";
+  if (pathname === "/mobile/work-orders") return "mobileWork";
   if (pathname === "/pda/sales-orders") return "pdaSales";
+  if (pathname === "/pda/purchase-orders") return "pdaPurchase";
+  if (pathname === "/pda/work-orders") return "pdaWork";
   if (pathname === "/purchase-orders") return "purchase";
   if (pathname === "/work-orders") return "work";
   if (pathname === "/development-data") return "development";
+  if (pathname === "/ai-system-management") return "aiSystem";
+  if (pathname === "/ai-qa") return "aiQa";
   if (pathname === "/ai-solution-center") return "ai";
   return "sales";
 }
 
 function pathForPage(page: AppPage) {
   if (page === "mobileSales") return "/mobile/sales-orders";
+  if (page === "mobilePurchase") return "/mobile/purchase-orders";
+  if (page === "mobileWork") return "/mobile/work-orders";
   if (page === "pdaSales") return "/pda/sales-orders";
+  if (page === "pdaPurchase") return "/pda/purchase-orders";
+  if (page === "pdaWork") return "/pda/work-orders";
   if (page === "purchase") return "/purchase-orders";
   if (page === "work") return "/work-orders";
   if (page === "development") return "/development-data";
+  if (page === "aiSystem") return "/ai-system-management";
+  if (page === "aiQa") return "/ai-qa";
   if (page === "ai") return "/ai-solution-center";
   return "/";
 }
@@ -211,6 +224,7 @@ function AppRouter() {
       currentEntryRef.current = nextEntry;
     }
     setPage(nextPage);
+    requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: "auto" }));
   }, [page]);
 
   const navigate = useCallback((nextPage: AppPage) => {
@@ -231,15 +245,15 @@ function AppRouter() {
       <Suspense fallback={<PageLoadingFallback />}>
         {activePage === "development" && showDevelopmentDataManager
           ? <DevelopmentDataManager onNavigate={navigate} />
-          : activePage === "ai"
-            ? <AiSolutionCenterPage onNavigate={navigate} onScreenIntent={handleScreenIntent} />
+          : activePage === "ai" || activePage === "aiSystem" || activePage === "aiQa"
+            ? <AiSolutionCenterPage entryMode={activePage === "aiSystem" ? "system" : activePage === "aiQa" ? "qa" : "solution"} onNavigate={navigate} onScreenIntent={handleScreenIntent} />
             : activePage === "mobileSales"
               ? <CompactSalesOrderPage mode="mobile" onNavigate={navigate} />
               : activePage === "pdaSales"
                 ? <CompactSalesOrderPage mode="pda" onNavigate={navigate} />
-                : activePage === "purchase"
-                  ? <PurchaseOrderRegistration adapter={purchaseOrderAdapter} onNavigate={navigate} onScreenIntent={handleScreenIntent} showDevelopmentDataManager={showDevelopmentDataManager} />
-                  : <WorkOrderRegistration onNavigate={navigate} onScreenIntent={handleScreenIntent} showDevelopmentDataManager={showDevelopmentDataManager} />}
+                : activePage === "purchase" || activePage === "mobilePurchase" || activePage === "pdaPurchase"
+                  ? <PurchaseOrderRegistration adapter={purchaseOrderAdapter} navigationPage={activePage} onNavigate={navigate} onScreenIntent={handleScreenIntent} showDevelopmentDataManager={showDevelopmentDataManager} />
+                  : <WorkOrderRegistration navigationPage={activePage === "mobileWork" || activePage === "pdaWork" ? activePage : "work"} onNavigate={navigate} onScreenIntent={handleScreenIntent} showDevelopmentDataManager={showDevelopmentDataManager} />}
       </Suspense>
     </PageLoadErrorBoundary>
   );

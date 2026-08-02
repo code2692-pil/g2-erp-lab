@@ -12,7 +12,7 @@ export const fileSupportLevelLabels: Readonly<Record<FileSupportLevel, string>> 
 
 const processingStatusLabels: Readonly<Record<FileProcessingStatus, string>> = {
   ATTACHED: "첨부됨",
-  PROCESSING: "로컬 처리 중",
+  PROCESSING: "파일 처리 중",
   READY: "분석 준비 완료",
   READY_WITH_WARNING: "경고와 함께 준비 완료",
   REQUIRES_DESCRIPTION: "설명 필요",
@@ -50,9 +50,9 @@ export interface FileAnalysisCardsProps {
 }
 
 export function FileAnalysisCards({ attachments, error, processing, onNoteChange, onIncludeChange, onRemove }: FileAnalysisCardsProps) {
-  if (attachments.length === 0) return <p className="ai-solution-center__file-status" data-testid="ai-file-status" aria-live="polite">파일을 선택하면 로컬 지원 범위와 분석 상태를 안내합니다.</p>;
+  if (attachments.length === 0) return <p className="ai-solution-center__file-status" data-testid="ai-file-status" aria-live="polite">파일을 선택하면 지원 형식과 분석 상태를 안내합니다.</p>;
   return <>
-    <p className="ai-solution-center__file-status" data-testid="ai-file-status" aria-live="polite">첨부 파일 {attachments.length}건 · 외부 전송 0건 · {processing ? "로컬 처리 중" : "로컬 처리 완료"}</p>
+    <p className="ai-solution-center__file-status" data-testid="ai-file-status" aria-live="polite">첨부 파일 {attachments.length}건 · 외부 전송 0건 · {processing ? "파일 처리 중" : "파일 처리 완료"}</p>
     {error && <p className="ai-solution-center__error" data-testid="ai-file-error" role="alert">{error}</p>}
     <ul className="ai-solution-center__file-list ai-solution-center__analysis-files" data-testid="ai-file-list">{attachments.map((attachment) => {
       const blocked = attachment.supportLevel === "BLOCKED";

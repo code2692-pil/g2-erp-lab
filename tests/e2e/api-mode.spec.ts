@@ -187,7 +187,8 @@ test("API UI: purchase order lookup, save/delete dialogs, dirty navigation, and 
     await expect(page.getByTestId("confirm-dialog")).toHaveCount(0);
     await expect(page.getByTestId(`purchase-header-grid-cell-1000::${number}-CD_PARTNER`)).toHaveAttribute("aria-invalid", "true");
 
-    await page.getByTestId("po-btn-partner-lookup").click();
+    await expect(page.getByTestId("po-btn-partner-lookup")).toHaveCount(0);
+    await page.getByTestId(`purchase-header-grid-cell-container-1000::${number}-CD_PARTNER`).dblclick();
     await page.getByTestId("po-partner-lookup-grid-row-1000::P-10021").click();
     await page.getByTestId("po-partner-lookup-confirm").click();
     await page.getByTestId(`purchase-line-grid-row-1000::${number}::1`).click();
@@ -764,7 +765,7 @@ test("Gate 9: an unmounted sales query does not update the next screen", async (
     responseGate.resolve();
     await responseReleased.promise;
     await expect(page.getByTestId("purchase-page-title")).toBeVisible();
-    await expect(page.getByTestId("status-message")).toBeEmpty();
+    await expect(page.getByTestId("status-message")).toHaveCount(0);
     expect(requestCount).toBe(1);
     expect(consoleErrors).toEqual([]);
     expect(pageErrors).toEqual([]);

@@ -96,7 +96,7 @@ test("Gate 7: detail navigation alone does not mark the sales order as changed",
 test("B: 거래처 Lookup 선택값을 조회조건에 반영한다", async ({ page }) => {
   await openSalesOrder(page);
 
-  await page.getByTestId("btn-partner-lookup").click();
+  await page.getByTestId("filter-partner-code").dblclick();
   await page.getByTestId("partner-lookup-search-input").fill("P-10044");
   await page.getByTestId("partner-lookup-search-button").click();
   await page.getByTestId("partner-lookup-grid-row-1000::P-10044").click();
@@ -218,13 +218,12 @@ test("G: 기존 주요 버튼과 Lookup, Grid 행추가/삭제 동작을 유지�
     "btn-save",
     "btn-delete-order",
     "btn-add-line",
-    "btn-delete-line",
-    "btn-partner-lookup"
+    "btn-delete-line"
   ]) {
     await expect(page.getByTestId(testId)).toBeVisible();
   }
 
-  await page.getByTestId("btn-partner-lookup").click();
+  await page.getByTestId("filter-partner-code").press("F4");
   await expect(page.getByTestId("partner-lookup-search-input")).toBeVisible();
   await page.getByTestId("partner-lookup-cancel").click();
 
@@ -367,7 +366,7 @@ test("UX A: 저장 확인 취소와 완료 대화상자의 후속 처리 및 접
     (buttons) => buttons.map((button) => button.getAttribute("data-testid")).filter(Boolean)
   )).toEqual(["confirm-dialog-confirm", "confirm-dialog-cancel"]);
   await page.getByTestId("confirm-dialog-cancel").click();
-  await expect(page.getByTestId("status-message")).not.toHaveText("저장되었습니다");
+  await expect(page.getByTestId("status-message")).toHaveCount(0);
 
   await page.getByTestId("btn-save").click();
   await page.getByTestId("confirm-dialog-confirm").click();

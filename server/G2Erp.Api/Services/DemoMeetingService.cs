@@ -61,10 +61,13 @@ public sealed class DemoMeetingService : BackgroundService, IDemoMeetingService
     {
         RequireMutation(user);
         if (string.IsNullOrWhiteSpace(request.Title)) throw new DomainValidationException(["회의명을 입력하세요."]);
+        if (!string.IsNullOrWhiteSpace(request.MeetingDate) && !DateOnly.TryParseExact(request.MeetingDate, "yyyy-MM-dd", out _))
+            throw new DomainValidationException(["회의일자는 YYYY-MM-DD 형식으로 입력하세요."]);
         lock (gate)
         {
             var now = DateTime.UtcNow;
-            var meeting = new DemoMeeting($"MEET-{Guid.NewGuid():N}", request.Title.Trim(), user.Id, "초안", [], [], now, now, 1, false);
+            var meetingDate = string.IsNullOrWhiteSpace(request.MeetingDate) ? DateOnly.FromDateTime(now).ToString("yyyy-MM-dd") : request.MeetingDate;
+            var meeting = new DemoMeeting($"MEET-{Guid.NewGuid():N}", request.Title.Trim(), meetingDate, user.Id, "초안", [], [], now, now, 1, false);
             meetings.Insert(0, meeting);
             SaveLocked();
             return meeting;

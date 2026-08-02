@@ -58,9 +58,9 @@ interface GridViewSettingsDefinition {
 }
 
 const gridViewSettingsByDataTestId: Record<string, GridViewSettingsDefinition> = {
-  "sales-order-line-grid": { gridId: "sales-order-lines", title: "수주상세 Grid 보기 설정", lockedFields: ["NO_LINE"] },
-  "purchase-line-grid": { gridId: "purchase-order-lines", title: "발주상세 Grid 보기 설정", lockedFields: ["NO_LINE"] },
-  "work-order-process-grid": { gridId: "work-order-lines", title: "공정상세 Grid 보기 설정", lockedFields: ["NO_PROC"] }
+  "sales-order-line-grid": { gridId: "sales-order-lines", title: "수주상세 설정", lockedFields: ["NO_LINE"] },
+  "purchase-line-grid": { gridId: "purchase-order-lines", title: "발주상세 설정", lockedFields: ["NO_LINE"] },
+  "work-order-process-grid": { gridId: "work-order-lines", title: "공정상세 설정", lockedFields: ["NO_PROC"] }
 };
 
 export function registerErpDataGridPasteHandler<T extends object>(
@@ -237,13 +237,13 @@ export function ErpDataGrid<T extends object>({
     const saved = saveGridViewPreferences(gridViewSettings.gridId, gridViewDefinitions, nextPreferences);
     setGridViewPreferences(saved.preferences);
     setGridViewSettingsOpen(false);
-    notify(saved.persisted ? "success" : "warning", saved.persisted ? "Grid 보기 설정을 적용했습니다." : "보기 설정은 현재 화면에 적용되었습니다.");
+    notify(saved.persisted ? "success" : "warning", saved.persisted ? "Grid 설정을 적용했습니다." : "설정은 현재 화면에 적용되었습니다.");
   };
 
   const resetGridViewSettings = async () => {
     if (!gridViewSettings) return;
     const accepted = await confirm({
-      title: "Grid 보기 설정 초기화",
+      title: "Grid 설정 초기화",
       message: `${gridViewSettings.title}의 열 표시와 순서를 기본값으로 되돌리시겠습니까?`,
       description: "행 데이터와 입력값은 변경되지 않습니다.",
       confirmLabel: "기본값으로 초기화"
@@ -251,7 +251,7 @@ export function ErpDataGrid<T extends object>({
     if (!accepted) return;
     const reset = resetGridViewPreferences(gridViewSettings.gridId, gridViewDefinitions);
     setGridViewPreferences(reset.preferences);
-    notify(reset.persisted ? "success" : "warning", reset.persisted ? "Grid 보기 설정을 기본값으로 초기화했습니다." : "보기 설정을 기본값으로 적용했습니다.");
+    notify(reset.persisted ? "success" : "warning", reset.persisted ? "Grid 설정을 기본값으로 초기화했습니다." : "설정을 기본값으로 적용했습니다.");
   };
 
   const revealHiddenColumnForValidation = (columnId: string) => {
@@ -556,6 +556,12 @@ export function ErpDataGrid<T extends object>({
         onFocus={(event) => {
           if (column.dataType === "number") event.currentTarget.select();
         }}
+        onKeyDown={(event) => {
+          if (event.key !== "F4" || !column.lookup || lookupDisabled) return;
+          event.preventDefault();
+          event.stopPropagation();
+          onLookupCellDoubleClick?.(row, column);
+        }}
         type={column.dataType === "date" ? "date" : column.dataType === "number" ? "number" : "text"}
         value={value === null || value === undefined ? "" : String(value)}
       />
@@ -566,7 +572,7 @@ export function ErpDataGrid<T extends object>({
     <div className={`erp-data-grid${gridViewSettings ? " erp-data-grid--with-view-settings" : ""} ${className}`.trim()} data-testid={dataTestId}>
       {gridViewSettings && effectiveGridViewPreferences && (
         <div className="erp-data-grid__view-settings">
-          <button data-testid={`${dataTestId}-view-settings`} onClick={() => setGridViewSettingsOpen(true)} type="button">보기 설정</button>
+          <button aria-label="Grid 설정" data-testid={`${dataTestId}-view-settings`} onClick={() => setGridViewSettingsOpen(true)} type="button">설정</button>
         </div>
       )}
       <div className="erp-data-grid__viewport">

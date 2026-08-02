@@ -1,7 +1,5 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
-  Building2,
-  ChevronRight,
   Factory,
   MailPlus,
   Plus,
@@ -11,6 +9,7 @@ import {
   ShoppingCart,
   Trash2
 } from "lucide-react";
+import { AppNavigation, type AppNavigationPage } from "../../components/AppNavigation";
 import { ErpDataGrid } from "../../components/common/ErpDataGrid";
 import { DirtyIndicator } from "../../components/common/DirtyIndicator";
 import type { ErpDataGridColumn, ErpDataGridCellValue, ErpDataGridFocusRequest, ErpDataGridPasteRequest } from "../../components/common/ErpDataGrid";
@@ -19,6 +18,8 @@ import { ErpLookupDialog } from "../../components/common/ErpLookupDialog";
 import { ErpValidationSummary } from "../../components/common/ErpValidationSummary";
 import { PageToolbar } from "../../components/common/PageToolbar";
 import { SearchPanel } from "../../components/common/SearchPanel";
+import { RangeValidationDialog } from "../../components/common/validation/RangeValidationDialog";
+import { validateDateRange } from "../../components/common/validation/rangeValidation";
 import { sortValidationIssues, toValidationCellErrors, type ValidationIssue } from "../../components/common/validation/validation";
 import { mockItems } from "../common-code/item/mockData";
 import type { Item } from "../common-code/item/types";
@@ -54,6 +55,7 @@ import {
   salesOrderToday
 } from "./salesOrderDraft";
 import { allocateMockDocumentNumber } from "../../utils/documentNumber";
+import { initialCompanyCode } from "../../utils/companyContext";
 import { useCrudPage } from "../../hooks/useCrudPage";
 import { useConfirm } from "../../hooks/useConfirm";
 import { useDirtyState } from "../../hooks/useDirtyState";
@@ -140,7 +142,7 @@ function isLineEditableField(field: keyof SalesOrderLine): field is LineEditable
 }
 
 interface SalesOrderRegistrationProps {
-  onNavigate?: (page: "sales" | "mobileSales" | "pdaSales" | "purchase" | "work" | "development" | "ai") => void;
+  onNavigate?: (page: AppNavigationPage) => void;
   onScreenIntent?: (screen: ScreenModuleId) => void;
   showDevelopmentDataManager?: boolean;
 }
@@ -191,18 +193,21 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
   const [items, setItems] = useState<Item[]>(mockItems);
   const [warehouses, setWarehouses] = useState<Warehouse[]>(mockWarehouses);
   const [filters, setFilters] = useState({
-    cdFirm: "1000",
+    cdFirm: initialCompanyCode(),
     dateFrom: "2026-07-01",
     dateTo: "2026-07-31",
     cdPartner: "",
     nmPartner: ""
   });
+  const [appliedFilters, setAppliedFilters] = useState(filters);
+  const [rangeDialogOpen, setRangeDialogOpen] = useState(false);
+  const invalidDateInputRef = useRef<HTMLInputElement | null>(null);
   const filterCriteriaSignature = [
-    filters.cdFirm,
-    filters.dateFrom,
-    filters.dateTo,
-    filters.cdPartner,
-    filters.nmPartner
+    appliedFilters.cdFirm,
+    appliedFilters.dateFrom,
+    appliedFilters.dateTo,
+    appliedFilters.cdPartner,
+    appliedFilters.nmPartner
   ].join("\u0000");
   const previousFilterCriteriaSignatureRef = useRef(filterCriteriaSignature);
   const { confirm } = useConfirm();
@@ -245,16 +250,16 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
     return headers.filter((header) => {
       if (header.NO_SO.startsWith("TEMP_SO_")) return true;
 
-      const firmMatched = !filters.cdFirm || header.CD_FIRM.includes(filters.cdFirm);
+      const firmMatched = !appliedFilters.cdFirm || header.CD_FIRM.includes(appliedFilters.cdFirm);
       const partnerMatched =
-        (!filters.cdPartner || header.CD_PARTNER.includes(filters.cdPartner)) &&
-        (!filters.nmPartner || header.NM_PARTNER.includes(filters.nmPartner));
+        (!appliedFilters.cdPartner || header.CD_PARTNER.includes(appliedFilters.cdPartner)) &&
+        (!appliedFilters.nmPartner || header.NM_PARTNER.includes(appliedFilters.nmPartner));
       const dateMatched =
-        (!filters.dateFrom || header.DT_SO >= filters.dateFrom) &&
-        (!filters.dateTo || header.DT_SO <= filters.dateTo);
+        (!appliedFilters.dateFrom || header.DT_SO >= appliedFilters.dateFrom) &&
+        (!appliedFilters.dateTo || header.DT_SO <= appliedFilters.dateTo);
       return firmMatched && partnerMatched && dateMatched;
     });
-  }, [filters, headers]);
+  }, [appliedFilters, headers]);
 
   useEffect(() => {
     if (!isApiMode()) return;
@@ -413,6 +418,10 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
   };
 
   const handleSearch = async () => {
+    if (!validateDateRange(filters.dateFrom, filters.dateTo).valid) {
+      setRangeDialogOpen(true);
+      return;
+    }
     if (!(await confirmDiscardChanges())) return;
     setFeatureMessage("");
     await executeSearch({
@@ -430,13 +439,13 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
         });
         setHeaders(nextHeaders);
         setLines(nextLines);
+        setAppliedFilters(filters);
         selectMaster(matchedHeaders[0]?.NO_SO ?? "");
         setCheckedLineKeys([]);
         setValidationAttempted(false);
         clearDirty();
-        notify(matchedHeaders.length > 0 ? "success" : "info", matchedHeaders.length > 0 ? "조회되었습니다." : "조회된 데이터가 없습니다.");
       },
-      successMessage: () => "조회되었습니다.",
+      successMessage: "",
       errorMessage: "조회 중 오류가 발생했습니다. 다시 시도하세요."
     });
   };
@@ -929,40 +938,7 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
   return (
     <>
       <div className="erp-shell">
-        <aside className="side-nav">
-          <div className="brand">
-            <Building2 size={20} />
-            <strong>SMART ERP</strong>
-          </div>
-          <nav>
-            <button {...screenIntentProps("purchase")} className="menu-item" data-testid="nav-purchase-order" onClick={handleNavigateToPurchase} type="button">
-              구매관리 / 발주등록
-            </button>
-            <div className="menu-title">영업관리</div>
-            <div className="menu-group">
-              <ChevronRight size={14} />
-              <span>수주관리</span>
-            </div>
-            <button className="menu-item active">수주등록</button>
-            <button {...screenIntentProps("mobileSales")} className="menu-item" data-testid="nav-mobile-sales-order" onClick={() => void handleNavigateToCompactSales("mobileSales")} type="button">
-              모바일 수주등록
-            </button>
-            <button {...screenIntentProps("pdaSales")} className="menu-item" data-testid="nav-pda-sales-order" onClick={() => void handleNavigateToCompactSales("pdaSales")} type="button">
-              PDA 수주등록
-            </button>
-            <div className="menu-title">생산관리</div>
-            <div className="menu-group">
-              <ChevronRight size={14} />
-              <span>작업지시관리</span>
-            </div>
-            <button {...screenIntentProps("work")} className="menu-item" data-testid="nav-work-order" onClick={handleNavigateToWorkOrder} type="button">
-              작업지시등록
-            </button>
-            <div className="menu-title">AI 솔루션</div>
-            <button {...screenIntentProps("ai")} className="menu-item" data-testid="nav-ai-solution-center" onClick={handleNavigateToAiSolutionCenter} type="button">AI 솔루션 센터</button>
-            {showDevelopmentDataManager && <><div className="menu-title">운영 지원</div><button {...screenIntentProps("development")} className="menu-item" data-testid="nav-development-data" onClick={handleNavigateToDevelopmentData} type="button">기준 데이터 관리</button></>}
-          </nav>
-        </aside>
+        <AppNavigation currentPage="sales" onNavigate={(page) => onNavigate?.(page)} onScreenIntent={onScreenIntent} />
 
         <main aria-busy={isLoading || isSaving} className="workbench" data-processing-state={operation}>
           <header className="page-header">
@@ -974,15 +950,15 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
             <PageToolbar
               processing={isLoading || isSaving}
               actions={[
-                { dataTestId: "btn-search", label: isLoading ? "조회 중..." : "조회", icon: <Search size={15} />, onClick: () => void handleSearch(), disabled: isSaving },
-                { dataTestId: "btn-new", label: "신규", icon: <Plus size={15} />, onClick: () => void handleNew(), disabled: isLoading || isSaving },
-                { dataTestId: "btn-add-line", label: "행추가", icon: <Rows3 size={15} />, onClick: handleAddLine, disabled: isLoading || isSaving },
-                { dataTestId: "btn-delete-line", label: "행삭제", icon: <Trash2 size={15} />, onClick: () => void handleDeleteLine(), disabled: isLoading || isSaving },
-                { dataTestId: "btn-save", label: operation === "saving" ? "저장 중..." : "저장", icon: <Save size={15} />, onClick: () => void handleSave(), disabled: isLoading || isSaving, variant: "primary" },
-                { dataTestId: "btn-delete-order", label: operation === "deleting" ? "삭제 중..." : "삭제", icon: <Trash2 size={15} />, onClick: () => void handleDeleteOrder(), disabled: isLoading || isSaving, variant: "danger" },
-                { dataTestId: "btn-convert-purchase", label: "발주 전환", icon: <ShoppingCart size={15} />, onClick: () => setPurchaseConversionOpen(true), disabled: isLoading || isSaving || isDirty || conversionLines.length === 0 || selectedNoSo.startsWith("TEMP_SO_") },
-                { dataTestId: "btn-convert-work", label: "작업지시 전환", icon: <Factory size={15} />, onClick: () => setWorkOrderConversionOpen(true), disabled: isLoading || isSaving || isDirty || !selectedLineData || selectedNoSo.startsWith("TEMP_SO_") },
-                { dataTestId: "btn-mail-import", label: "메일 수주 불러오기", icon: <MailPlus size={15} />, onClick: () => setMailImportOpen(true), disabled: isLoading || isSaving }
+                { dataTestId: "btn-search", label: isLoading ? "조회 중..." : "조회", icon: <Search size={15} />, onClick: () => void handleSearch(), disabled: isSaving, group: "document" },
+                { dataTestId: "btn-new", label: "신규", icon: <Plus size={15} />, onClick: () => void handleNew(), disabled: isLoading || isSaving, group: "document" },
+                { dataTestId: "btn-save", label: operation === "saving" ? "저장 중..." : "저장", icon: <Save size={15} />, onClick: () => void handleSave(), disabled: isLoading || isSaving, variant: "primary", group: "document" },
+                { dataTestId: "btn-delete-order", label: operation === "deleting" ? "삭제 중..." : "삭제", icon: <Trash2 size={15} />, onClick: () => void handleDeleteOrder(), disabled: isLoading || isSaving, variant: "danger", group: "document" },
+                { dataTestId: "btn-add-line", label: "행추가", icon: <Rows3 size={15} />, onClick: handleAddLine, disabled: isLoading || isSaving, group: "rows" },
+                { dataTestId: "btn-delete-line", label: "행삭제", icon: <Trash2 size={15} />, onClick: () => void handleDeleteLine(), disabled: isLoading || isSaving, group: "rows" },
+                { dataTestId: "btn-convert-purchase", label: "발주 전환", icon: <ShoppingCart size={15} />, onClick: () => setPurchaseConversionOpen(true), disabled: isLoading || isSaving || isDirty || conversionLines.length === 0 || selectedNoSo.startsWith("TEMP_SO_"), group: "extra" },
+                { dataTestId: "btn-convert-work", label: "작업지시 전환", icon: <Factory size={15} />, onClick: () => setWorkOrderConversionOpen(true), disabled: isLoading || isSaving || isDirty || !selectedLineData || selectedNoSo.startsWith("TEMP_SO_"), group: "extra" },
+                { dataTestId: "btn-mail-import", label: "메일 수주 불러오기", icon: <MailPlus size={15} />, onClick: () => setMailImportOpen(true), disabled: isLoading || isSaving, group: "extra" }
               ]}
             />
           </header>
@@ -1009,17 +985,36 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
             <label>
               수주일자 From
               <input
+                data-testid="filter-date-from"
+                ref={(element) => { if (element && invalidDateInputRef.current === element) invalidDateInputRef.current = element; }}
                 type="date"
                 value={filters.dateFrom}
-                onChange={(event) => setFilters({ ...filters, dateFrom: event.target.value })}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  if (!validateDateRange(nextValue, filters.dateTo).valid) {
+                    invalidDateInputRef.current = event.currentTarget;
+                    setRangeDialogOpen(true);
+                    return;
+                  }
+                  setFilters({ ...filters, dateFrom: nextValue });
+                }}
               />
             </label>
             <label>
               수주일자 To
               <input
+                data-testid="filter-date-to"
                 type="date"
                 value={filters.dateTo}
-                onChange={(event) => setFilters({ ...filters, dateTo: event.target.value })}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  if (!validateDateRange(filters.dateFrom, nextValue).valid) {
+                    invalidDateInputRef.current = event.currentTarget;
+                    setRangeDialogOpen(true);
+                    return;
+                  }
+                  setFilters({ ...filters, dateTo: nextValue });
+                }}
               />
             </label>
             <div className="search-field partner-filter">
@@ -1030,6 +1025,8 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
                   className="mono"
                   data-testid="filter-partner-code"
                   placeholder="거래처코드"
+                  onDoubleClick={() => { partnerLookupHeaderKeyRef.current = null; setPartnerLookupOpen(true); }}
+                  onKeyDown={(event) => { if (event.key === "F4") { event.preventDefault(); partnerLookupHeaderKeyRef.current = null; setPartnerLookupOpen(true); } }}
                   value={filters.cdPartner}
                   onChange={(event) => {
                     setFilters({ ...filters, cdPartner: event.target.value, nmPartner: "" });
@@ -1041,18 +1038,10 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
                   data-testid="filter-partner-name"
                   placeholder="거래처명"
                   readOnly
+                  onDoubleClick={() => { partnerLookupHeaderKeyRef.current = null; setPartnerLookupOpen(true); }}
+                  onKeyDown={(event) => { if (event.key === "F4") { event.preventDefault(); partnerLookupHeaderKeyRef.current = null; setPartnerLookupOpen(true); } }}
                   value={filters.nmPartner}
                 />
-                <button
-                  aria-label="거래처 도움창 열기"
-                  className="lookup-open-button"
-                  data-testid="btn-partner-lookup"
-                  onClick={() => { partnerLookupHeaderKeyRef.current = null; setPartnerLookupOpen(true); }}
-                  title="거래처 도움창"
-                  type="button"
-                >
-                  <Search size={14} />
-                </button>
               </div>
             </div>
           </SearchPanel>
@@ -1195,6 +1184,7 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
         title="품목 도움창"
         width={820}
       />
+      <RangeValidationDialog open={rangeDialogOpen} onClose={() => { setRangeDialogOpen(false); requestAnimationFrame(() => invalidDateInputRef.current?.focus()); }} />
 
       <Suspense fallback={null}>
         {purchaseConversionOpen && <SalesToPurchaseDialog

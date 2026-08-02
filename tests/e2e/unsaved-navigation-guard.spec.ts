@@ -87,10 +87,8 @@ test("beforeunload guard is attached only for dirty data", async ({ page }) => {
 });
 
 test("AI input uses the same single global guard", async ({ page }) => {
-  await page.goto("/");
-  await page.getByTestId("nav-ai-solution-center").click();
+  await page.goto("/ai-qa");
   await expect(page.getByTestId("ai-solution-center-title")).toBeVisible();
-  await page.getByRole("tab", { name: "고객 업무 Q&A" }).click();
   await page.getByTestId("ai-customer-inquiry").fill("수주 변경 이력을 현장과 영업 부서가 함께 확인할 수 있도록 정리하고 싶습니다.");
   await page.getByTestId("nav-sales-order").click();
   await expect(page.getByTestId("confirm-dialog")).toHaveCount(1);

@@ -15,6 +15,6 @@ public interface IDemoMeetingService
     void Reset();
 }
 
-public sealed record CreateDemoMeeting(string Title);
+public sealed record CreateDemoMeeting(string Title, string? MeetingDate = null);
 public sealed record DemoMeetingVersionRequest(int ExpectedVersion);
 public sealed record AskDemoMeetingQuestion(string Question, int ExpectedVersion);

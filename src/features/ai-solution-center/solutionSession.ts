@@ -85,7 +85,7 @@ export function clarificationAnswersFor(result: SolutionResult, answerMap: Reado
 }
 
 export function analysisModeLabel(mode: SolutionSource) {
-  return mode === "consultant-file" ? "컨설턴트 파일 분석" : "고객 업무 Q&A";
+  return mode === "consultant-file" ? "문서 검토 및 확인" : "업무 Q&A";
 }
 
 function priorityLabel(key: string) {
@@ -151,7 +151,7 @@ export function consultantHandoverDetails(session: SolutionSession, unresolved: 
     { label: "분석 제외 파일", value: `${excludedCount}건` },
     { label: "민감정보 가림 적용", value: redactionApplied ? "적용 · 공유 전 담당자 확인 필요" : "감지된 패턴 없음" },
     { label: "선택 업무 예시", value: request.selectedScenarioTitle || "선택 안 함" },
-    { label: "파일 처리 한계", value: "OCR·STT·영상 장면 분석·PDF/Office 본문 파싱·압축 해제를 수행하지 않음" },
+    { label: "파일 처리 한계", value: "이미지 PDF OCR·STT·영상 장면 분석·압축 해제를 수행하지 않음" },
     { label: "회사 지식 사용", value: result.companyKnowledgeUsed ? "사용" : "미사용" },
     { label: "현재 신뢰도", value: result.confidence },
     { label: "분석 차수", value: `${revision?.revision ?? 1}차 분석` },

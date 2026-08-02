@@ -21,16 +21,22 @@ export interface DemoMeetingFileDto {
 export interface DemoMeetingDto {
   Id: string;
   Title: string;
+  MeetingDate?: string;
   OwnerUserId: string;
   Status: "초안" | "추출 중" | "검토 대기" | "일부 실패" | "승인";
   Files: DemoMeetingFileDto[];
   Questions: { Id: string; Question: string; Answer: string; SourceSegmentId: string; AuthorUserId: string; CreatedAt: string }[];
+  CreatedAt: string;
+  UpdatedAt: string;
   Version: number;
 }
 
 export const demoMeetingApi = {
-  create(title: string) {
-    return apiClient<DemoMeetingDto>("/api/demo/meetings", { method: "POST", body: JSON.stringify({ Title: title }) });
+  list() {
+    return apiClient<DemoMeetingDto[]>("/api/demo/meetings");
+  },
+  create(title: string, meetingDate: string) {
+    return apiClient<DemoMeetingDto>("/api/demo/meetings", { method: "POST", body: JSON.stringify({ Title: title, MeetingDate: meetingDate }) });
   },
   get(meetingId: string) {
     return apiClient<DemoMeetingDto>(`/api/demo/meetings/${encodeURIComponent(meetingId)}`);

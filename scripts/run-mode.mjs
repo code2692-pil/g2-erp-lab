@@ -112,7 +112,7 @@ async function warmFrontendForParallelRun() {
     await page.getByTestId("wo-btn-new").click();
     await page.getByTestId("work-order-header-grid-row-1000::TEMP-WO-001").waitFor();
 
-    await page.getByTestId("nav-development-data").click();
+    await page.goto(`${frontendUrl}/development-data`, { waitUntil: "domcontentloaded" });
     await page.getByTestId("development-data-page-title").waitFor();
     await page.getByTestId("tdm-btn-preview-all").click();
     await page.getByTestId("tdm-preview-result").waitFor();

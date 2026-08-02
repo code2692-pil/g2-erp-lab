@@ -128,7 +128,8 @@ test("B: 조회 결과와 Header-공정상세 연결, 결과 없음 안내를 �
 
   await page.getByTestId("wo-filter-no").fill("NO-SUCH-WO");
   await page.getByTestId("wo-btn-search").click();
-  await expect(page.getByTestId("status-message")).toHaveText("조회된 작업지시가 없습니다.");
+  await expect(page.getByTestId("status-message")).toHaveCount(0);
+  await expect(page.getByTestId("work-order-header-grid")).toContainText("조회된 작업지시가 없습니다.");
   await expect(page.getByTestId("work-order-header-grid-footer-total")).toContainText("0");
   await expect(page.getByTestId("work-order-header-grid-total-count")).toHaveText("전체 0건");
 });
@@ -147,6 +148,10 @@ test("C: 신규 작업지시와 품목·라인·공정·설비 Lookup을 저장�
   await page.getByTestId(`work-order-header-grid-cell-container-${tempHeaderKey}-CD_ITEM`).dblclick();
   await page.getByTestId("wo-item-lookup-grid-row-1000::ITM-1001").click();
   await page.getByTestId("wo-item-lookup-confirm").click();
+  await page.getByTestId(`work-order-header-grid-cell-${tempHeaderKey}-CD_ITEM`).press("F4");
+  await expect(page.getByRole("dialog", { name: "생산품목 도움" })).toBeVisible();
+  await page.getByTestId("wo-item-lookup-cancel").click();
+  await expect(page.getByTestId(`work-order-header-grid-cell-${tempHeaderKey}-CD_ITEM`)).toBeFocused();
   await page.getByTestId(`work-order-header-grid-cell-container-${tempHeaderKey}-CD_LINE`).dblclick();
   await page.getByTestId("wo-line-lookup-grid-row-1000::LINE-A").click();
   await page.getByTestId("wo-line-lookup-confirm").click();

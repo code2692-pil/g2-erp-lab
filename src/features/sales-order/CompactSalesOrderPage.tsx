@@ -816,7 +816,7 @@ export function CompactSalesOrderPage({ mode, onNavigate }: Props) {
       <div className={`compact-sales compact-sales--${mode}`} data-processing-state={operation} data-testid={`${prefix}-page`}>
         <header className="compact-sales__topbar">
           <div>
-            <span className="compact-sales__eyebrow">SMART ERP · 영업관리</span>
+            <span className="compact-sales__eyebrow">SMART SNOTES DEMO · 영업관리</span>
             <h1 data-testid="page-title">{isMobile ? "모바일 수주등록" : "PDA 수주등록"}</h1>
             <p>{isMobile
               ? "PC 수주등록과 동일한 수주 데이터를 스마트폰 화면에 맞게 제공합니다."

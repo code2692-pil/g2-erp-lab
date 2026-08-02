@@ -64,7 +64,7 @@ export function GridViewSettingsDialog({
     >
       <div className="grid-view-settings">
         <p className="grid-view-settings__hint">표시할 열, 순서와 너비를 조정할 수 있습니다. 고정 열은 Grid 동작을 위해 유지됩니다.</p>
-        <ol className="grid-view-settings__list" aria-label="Grid 열 보기 설정">
+        <ol className="grid-view-settings__list" aria-label="Grid 열 설정">
           {draft.columns.map((column, index) => {
             const definition = definitions.get(column.id);
             const locked = Boolean(definition?.locked);

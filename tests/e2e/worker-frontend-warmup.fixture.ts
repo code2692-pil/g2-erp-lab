@@ -26,7 +26,7 @@ async function warmWorkerFrontend(browser: Browser, target: WorkerWarmupTarget):
       await page.getByTestId("work-order-page-title").waitFor();
     }
     if (target === "development-data") {
-      await page.getByTestId("nav-development-data").click();
+      await page.goto(`${frontendUrl}/development-data`, { waitUntil: "domcontentloaded" });
       await page.getByTestId("development-data-page-title").waitFor();
     }
     preparedPages.add(page);

@@ -176,17 +176,22 @@ try {
     Invoke-External "Grid preferences unit test" $nodeExecutable @("--experimental-strip-types", "--test", "tests/unit/grid-view-preferences.test.ts")
     Invoke-External "Client identifier unit test" $nodeExecutable @("--experimental-strip-types", "--test", "tests/unit/client-id.test.ts")
     Invoke-External "AI file intelligence unit test" $nodeExecutable @("--experimental-strip-types", "--test", "tests/unit/ai-file-intelligence.test.ts")
+    Invoke-External "AI answer quality unit test" $nodeExecutable @("--experimental-strip-types", "--test", "tests/unit/ai-answer-quality.test.ts")
+    Invoke-External "Range validation unit test" $nodeExecutable @("--experimental-strip-types", "--test", "tests/unit/range-validation.test.ts")
+    Invoke-External "Final UX contracts unit test" $nodeExecutable @("--experimental-strip-types", "--test", "tests/unit/final-ux-contracts.test.ts")
     Invoke-External "Maintenance unit tests" $nodeExecutable @("--test", "scripts/qa/tests/*.test.mjs")
     Invoke-External ".NET solution build" "dotnet" @("build", "server/G2Erp.sln", "--no-restore")
     Invoke-External "Non-SQL .NET tests" "dotnet" @("test", "server/G2Erp.Api.Tests/G2Erp.Api.Tests.csproj", "--no-restore", "--filter", "FullyQualifiedName!~SqlServer", "--logger", "console;verbosity=minimal")
     Invoke-External "Mock core Playwright" $nodeExecutable @("scripts/run-mode.mjs", "test", "mock") @{ PLAYWRIGHT_WORKERS = "1" }
     Invoke-External "InMemory core Playwright" $nodeExecutable @("scripts/run-mode.mjs", "test", "inmemory")
-    $mockUxFiles = @("tests/e2e/ai-solution-center.spec.ts", "tests/e2e/grid-view-preferences.spec.ts", "tests/e2e/lazy-screen-loading.spec.ts", "tests/e2e/mobile-pda-sales-order.spec.ts", "tests/e2e/release-candidate-menu-smoke.spec.ts", "tests/e2e/screen-module-prefetch.spec.ts", "tests/e2e/unsaved-navigation-guard.spec.ts") -join ";"
+    $mockUxFiles = @("tests/e2e/ai-solution-center.spec.ts", "tests/e2e/grid-view-preferences.spec.ts", "tests/e2e/knowledge-workspaces.spec.ts", "tests/e2e/lazy-screen-loading.spec.ts", "tests/e2e/mobile-pda-sales-order.spec.ts", "tests/e2e/release-candidate-menu-smoke.spec.ts", "tests/e2e/sales-conversion.spec.ts", "tests/e2e/screen-module-prefetch.spec.ts", "tests/e2e/unsaved-navigation-guard.spec.ts") -join ";"
     Invoke-External "Mock UX Playwright" $nodeExecutable @("scripts/run-mode.mjs", "test", "mock") @{ PLAYWRIGHT_TEST_FILES = $mockUxFiles; PLAYWRIGHT_WORKERS = "1" }
     Invoke-External "Production development-data Playwright" $nodeExecutable @("scripts/run-mode.mjs", "test", "mock") @{ PLAYWRIGHT_TEST_FILE = "tests/e2e/production-development-data.spec.ts"; PLAYWRIGHT_PRODUCTION_MODE = "true"; PLAYWRIGHT_WORKERS = "1" }
     $apiUxFiles = @("tests/e2e/mobile-pda-api-hardening.spec.ts", "tests/e2e/mobile-pda-api-inmemory.spec.ts", "tests/e2e/unsaved-navigation-saving.spec.ts") -join ";"
     Invoke-External "InMemory mobile/PDA Playwright" $nodeExecutable @("scripts/run-mode.mjs", "test", "inmemory") @{ PLAYWRIGHT_TEST_FILES = $apiUxFiles; PLAYWRIGHT_WORKERS = "1" }
     Invoke-External "Shared access Playwright" $nodeExecutable @("scripts/run-mode.mjs", "test", "demo") @{ PLAYWRIGHT_WORKERS = "1" }
+    Invoke-External "Final product UX Playwright" $nodeExecutable @("scripts/run-mode.mjs", "test", "demo") @{ PLAYWRIGHT_TEST_FILE = "tests/e2e/final-product-ux.spec.ts"; PLAYWRIGHT_WORKERS = "1" }
+    Invoke-External "Final UI visual Playwright" $nodeExecutable @("scripts/run-mode.mjs", "test", "demo") @{ PLAYWRIGHT_TEST_FILE = "tests/e2e/final-ui-visual.spec.ts"; PLAYWRIGHT_WORKERS = "1" }
     Invoke-External "Shared access five-run rehearsal" $nodeExecutable @("scripts/run-mode.mjs", "verify", "demo")
     Invoke-External "Local SQL worker verification" "powershell.exe" @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $requestScript, "-RepositoryRoot", $RepositoryRoot, "-Reason", "RC2 full regression", "-Wait", "-TimeoutSeconds", "1800")
     Invoke-Internal "Final ports and Git state" {

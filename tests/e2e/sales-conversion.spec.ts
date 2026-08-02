@@ -44,6 +44,12 @@ test("승인 BOM·공정경로를 미리 본 뒤 작업지시와 공정·자재 
   await page.getByTestId("btn-convert-work").click();
   await expect(page.getByTestId("work-conversion-preview")).toContainText("공정 미리보기 (5)");
   await expect(page.getByTestId("work-conversion-preview")).toContainText("자재 소요 미리보기 (5)");
+  const previousStart = await page.getByTestId("work-conversion-start").inputValue();
+  await page.getByTestId("work-conversion-start").fill("2099-12-31");
+  await expect(page.getByTestId("range-validation-dialog")).toBeVisible();
+  await expect(page.getByTestId("work-conversion-start")).toHaveValue(previousStart);
+  await page.getByTestId("range-validation-confirm").click();
+  await expect(page.getByTestId("work-conversion-start")).toBeFocused();
   await page.getByTestId("work-conversion-quantity").fill("4");
   await page.getByTestId("work-conversion-line").selectOption("LINE-C");
   await page.getByTestId("sales-to-work-order-submit").click();

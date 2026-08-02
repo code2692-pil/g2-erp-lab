@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ErpDataGridColumn } from "../../components/common/ErpDataGrid";
 import { ErpDialog } from "../../components/common/ErpDialog";
 import { ErpLookupDialog } from "../../components/common/ErpLookupDialog";
+import { RangeValidationDialog } from "../../components/common/validation/RangeValidationDialog";
+import { validateDateRange } from "../../components/common/validation/rangeValidation";
 import { useConfirm } from "../../hooks/useConfirm";
 import { useNotification } from "../../hooks/useNotification";
 import type { Partner } from "../common-code/partner/types";
@@ -169,6 +171,8 @@ export function SalesToWorkOrderDialog({ header, line, onClose, onNavigate, open
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<WorkOrderConversionResult>();
+  const [rangeDialogOpen, setRangeDialogOpen] = useState(false);
+  const invalidDateInputRef = useRef<HTMLInputElement | null>(null);
   const requestKeyRef = useRef(requestKey("sales-to-work-order"));
   const previewRequestRef = useRef(0);
 
@@ -218,7 +222,7 @@ export function SalesToWorkOrderDialog({ header, line, onClose, onNavigate, open
     }
   };
 
-  return <ErpDialog
+  return <><ErpDialog
     dataTestId="sales-to-work-order-dialog"
     dismissOnBackdrop={!processing}
     dismissOnEscape={!processing}
@@ -233,8 +237,8 @@ export function SalesToWorkOrderDialog({ header, line, onClose, onNavigate, open
         <label>원본 수주상세<input readOnly value={header && line ? `${header.NO_SO}/${line.NO_LINE} · ${line.CD_ITEM}` : ""} /></label>
         <label>전환수량<input data-testid="work-conversion-quantity" min="0" type="number" value={quantity} onChange={(event) => setQuantity(Number(event.target.value))} /></label>
         <label>작업지시일자<input type="date" value={workOrderDate} onChange={(event) => setWorkOrderDate(event.target.value)} /></label>
-        <label>계획 시작일<input data-testid="work-conversion-start" type="date" value={plannedStart} onChange={(event) => setPlannedStart(event.target.value)} /></label>
-        <label>계획 종료일<input data-testid="work-conversion-end" type="date" value={plannedEnd} onChange={(event) => setPlannedEnd(event.target.value)} /></label>
+        <label>계획 시작일<input data-testid="work-conversion-start" type="date" value={plannedStart} onChange={(event) => { const nextValue = event.currentTarget.value; if (!validateDateRange(nextValue, plannedEnd).valid) { invalidDateInputRef.current = event.currentTarget; setRangeDialogOpen(true); return; } setPlannedStart(nextValue); }} /></label>
+        <label>계획 종료일<input data-testid="work-conversion-end" type="date" value={plannedEnd} onChange={(event) => { const nextValue = event.currentTarget.value; if (!validateDateRange(plannedStart, nextValue).valid) { invalidDateInputRef.current = event.currentTarget; setRangeDialogOpen(true); return; } setPlannedEnd(nextValue); }} /></label>
         <label>생산라인/작업장<select data-testid="work-conversion-line" value={productionLine} onChange={(event) => setProductionLine(event.target.value)}><option value="LINE-A">LINE-A 조립 작업장</option><option value="LINE-C">LINE-C 검사 작업장</option></select></label>
         <label>BOM 버전<input data-testid="work-conversion-bom" readOnly value="승인 버전" /></label>
         <label>공정경로 버전<input data-testid="work-conversion-routing" readOnly value="승인 버전" /></label>
@@ -242,5 +246,5 @@ export function SalesToWorkOrderDialog({ header, line, onClose, onNavigate, open
       {preview && <div className="sales-conversion-preview" data-testid="work-conversion-preview"><section><h3>공정 미리보기 ({preview.Operations.length})</h3><ol>{preview.Operations.map((operation) => <li key={operation.Sequence}>{operation.Sequence} · {operation.ProcessName} · {operation.WorkCenterName} · {operation.BaseMinutes}분</li>)}</ol></section><section><h3>자재 소요 미리보기 ({preview.Bills.length})</h3><ul>{preview.Bills.map((bill) => <li key={bill.LineNo}>{bill.ComponentCode} {bill.ComponentName} · {bill.BaseQuantity * quantity} {bill.Unit}</li>)}</ul></section></div>}
       {error && <p className="sales-conversion-error" data-testid="sales-to-work-order-error" role="alert">{error}</p>}
     </div>}
-  </ErpDialog>;
+  </ErpDialog><RangeValidationDialog open={rangeDialogOpen} onClose={() => { setRangeDialogOpen(false); requestAnimationFrame(() => invalidDateInputRef.current?.focus()); }} /></>;
 }

@@ -8,16 +8,11 @@ import {
   type DemoContext,
   type DemoUser
 } from "../api/demoApi";
+import { demoRoleDescriptions as roleDescriptions, demoRoleLabels as roleLabels } from "../utils/demoRoleLabels";
+import { PRODUCT_NAME } from "./AppNavigation";
 
 const DemoRoleContext = createContext<DemoUser["Role"] | null>(null);
 export function useDemoRole() { return useContext(DemoRoleContext); }
-
-const roleLabels: Record<DemoUser["Role"], string> = {
-  Viewer: "조회 사용자",
-  Operator: "업무 사용자",
-  Manager: "관리자",
-  Admin: "시스템 관리자"
-};
 
 export function DemoEnvironmentGate({ children }: { children: ReactNode }) {
   const [users, setUsers] = useState<DemoUser[]>([]);
@@ -136,13 +131,27 @@ export function DemoEnvironmentGate({ children }: { children: ReactNode }) {
     return (
       <main className="demo-session-gate" data-testid="demo-session-gate">
         <section aria-labelledby="demo-session-title">
-          <p className="demo-environment-label">G2 ERP</p>
+          <p className="demo-environment-label">{PRODUCT_NAME}</p>
           <h1 id="demo-session-title">사용자 선택</h1>
           <p>담당 업무에 맞는 사용자를 선택해 시작하세요.</p>
-          <label htmlFor="demo-user">사용자 역할</label>
-          <select id="demo-user" value={selectedUserId} onChange={(event) => setSelectedUserId(event.target.value)} disabled={loading || users.length === 0}>
-            {users.map((user) => <option key={user.Id} value={user.Id}>{user.Name}</option>)}
-          </select>
+          <fieldset className="demo-role-options" disabled={loading || users.length === 0}>
+            <legend>사용자 역할</legend>
+            {users.map((user) => (
+              <label className={`demo-role-option${selectedUserId === user.Id ? " is-selected" : ""}`} key={user.Id}>
+                <input
+                  checked={selectedUserId === user.Id}
+                  name="demo-user"
+                  onChange={() => setSelectedUserId(user.Id)}
+                  type="radio"
+                  value={user.Id}
+                />
+                <span className="demo-role-option__text">
+                  <strong data-testid={`role-label-${user.Role.toLowerCase()}`}>{roleLabels[user.Role]}</strong>
+                  <span>{roleDescriptions[user.Role]}</span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
           {error && <p role="alert" className="demo-error">{error}</p>}
           <button type="button" onClick={() => void startSession()} disabled={loading || users.length === 0}>
             {loading ? "연결 확인 중" : "업무 화면 시작"}

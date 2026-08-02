@@ -4051,7 +4051,7 @@ textarea:focus-visible,
 .demo-environment-banner {
   position: sticky;
   top: 0;
-  z-index: 1200;
+  z-index: 900;
   display: flex;
   align-items: center;
   justify-content: space-between;

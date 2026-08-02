@@ -187,6 +187,7 @@ try {
     $apiUxFiles = @("tests/e2e/mobile-pda-api-hardening.spec.ts", "tests/e2e/mobile-pda-api-inmemory.spec.ts", "tests/e2e/unsaved-navigation-saving.spec.ts") -join ";"
     Invoke-External "InMemory mobile/PDA Playwright" $nodeExecutable @("scripts/run-mode.mjs", "test", "inmemory") @{ PLAYWRIGHT_TEST_FILES = $apiUxFiles; PLAYWRIGHT_WORKERS = "1" }
     Invoke-External "Shared access Playwright" $nodeExecutable @("scripts/run-mode.mjs", "test", "demo") @{ PLAYWRIGHT_WORKERS = "1" }
+    Invoke-External "Shared access five-run rehearsal" $nodeExecutable @("scripts/run-mode.mjs", "verify", "demo")
     Invoke-External "Local SQL worker verification" "powershell.exe" @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $requestScript, "-RepositoryRoot", $RepositoryRoot, "-Reason", "RC2 full regression", "-Wait", "-TimeoutSeconds", "1800")
     Invoke-Internal "Final ports and Git state" {
         if (-not (Test-LocalPortFree 5173) -or -not (Test-LocalPortFree 5080)) { throw "Ports 5173 and 5080 were not released." }

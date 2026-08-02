@@ -111,20 +111,25 @@ try {
     await verifySalesFlow(page, mutationExpected);
     await page.goto("/purchase-orders", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("purchase-page-title")).toBeVisible();
+    await page.waitForLoadState("networkidle");
     await page.reload({ waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("purchase-page-title")).toBeVisible();
+    await page.waitForLoadState("networkidle");
     await assertProfessionalLanguage(page, `${name} 발주 화면`);
     if (userId === "demo-operator") {
       await page.goto("/mobile/sales-orders", { waitUntil: "domcontentloaded" });
       await expect(page.getByTestId("page-title")).toHaveText("모바일 수주등록");
+      await page.waitForLoadState("networkidle");
       await assertProfessionalLanguage(page, "모바일 수주등록");
       await page.goto("/pda/sales-orders", { waitUntil: "domcontentloaded" });
       await expect(page.getByTestId("page-title")).toHaveText("PDA 수주등록");
+      await page.waitForLoadState("networkidle");
       await assertProfessionalLanguage(page, "PDA 수주등록");
     }
     if (userId === "demo-admin") {
       await page.goto("/ai-solution-center", { waitUntil: "domcontentloaded" });
       await expect(page.getByTestId("ai-solution-center-title")).toBeVisible();
+      await page.waitForLoadState("networkidle");
       await assertProfessionalLanguage(page, "AI 솔루션 화면");
       await page.getByRole("tab", { name: "업무 Q&A", exact: true }).click();
       await page.getByTestId("qa-new").click();
@@ -147,9 +152,11 @@ try {
   await enterAs(page, "demo-operator", "업무 사용자");
   await page.goto("/work-orders", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("work-order-page-title")).toBeVisible();
+  await page.waitForLoadState("networkidle");
   await assertProfessionalLanguage(page, "작업지시 화면");
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("work-order-page-title")).toBeVisible();
+  await page.waitForLoadState("networkidle");
   await page.getByRole("button", { name: "사용자 전환" }).click();
   await expect(page.getByRole("heading", { name: "사용자 선택" })).toBeVisible();
   await page.evaluate(() => window.sessionStorage.setItem("g2erp.demo.session", "outdated-session-format"));

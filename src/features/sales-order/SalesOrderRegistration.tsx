@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Building2,
   ChevronRight,
@@ -60,7 +60,9 @@ import { useDirtyState } from "../../hooks/useDirtyState";
 import { useNotification } from "../../hooks/useNotification";
 import { useMasterDetailSelection } from "../../hooks/useMasterDetailSelection";
 import type { ScreenModuleId } from "../../screenModules";
-import { SalesToPurchaseDialog, SalesToWorkOrderDialog } from "./SalesOrderConversionDialogs";
+
+const SalesToPurchaseDialog = lazy(() => import("./SalesOrderConversionDialogs").then((module) => ({ default: module.SalesToPurchaseDialog })));
+const SalesToWorkOrderDialog = lazy(() => import("./SalesOrderConversionDialogs").then((module) => ({ default: module.SalesToWorkOrderDialog })));
 
 type HeaderEditableField = Exclude<keyof SalesOrderHeader, "NO_SO">;
 type LineEditableField = Exclude<
@@ -1186,23 +1188,25 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
         width={820}
       />
 
-      <SalesToPurchaseDialog
-        header={selectedHeader}
-        lines={conversionLines}
-        onClose={() => setPurchaseConversionOpen(false)}
-        onNavigate={() => { setPurchaseConversionOpen(false); handleNavigateToPurchase(); }}
-        open={purchaseConversionOpen}
-        partners={partners}
-        warehouses={warehouses}
-      />
+      <Suspense fallback={null}>
+        {purchaseConversionOpen && <SalesToPurchaseDialog
+          header={selectedHeader}
+          lines={conversionLines}
+          onClose={() => setPurchaseConversionOpen(false)}
+          onNavigate={() => { setPurchaseConversionOpen(false); handleNavigateToPurchase(); }}
+          open
+          partners={partners}
+          warehouses={warehouses}
+        />}
 
-      <SalesToWorkOrderDialog
-        header={selectedHeader}
-        line={selectedLineData}
-        onClose={() => setWorkOrderConversionOpen(false)}
-        onNavigate={() => { setWorkOrderConversionOpen(false); handleNavigateToWorkOrder(); }}
-        open={workOrderConversionOpen}
-      />
+        {workOrderConversionOpen && <SalesToWorkOrderDialog
+          header={selectedHeader}
+          line={selectedLineData}
+          onClose={() => setWorkOrderConversionOpen(false)}
+          onNavigate={() => { setWorkOrderConversionOpen(false); handleNavigateToWorkOrder(); }}
+          open
+        />}
+      </Suspense>
 
     </>
   );

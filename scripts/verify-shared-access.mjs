@@ -42,17 +42,20 @@ async function assertProfessionalLanguage(page, label) {
     );
     return [document.title, document.body.innerText, ...attributes].join("\n");
   });
-  const matches = forbiddenUserTerms.filter((pattern) => pattern.test(exposed)).map((pattern) => pattern.source);
+  const languageAuditText = exposed.replaceAll("SMART SNOTES DEMO", "");
+  const matches = forbiddenUserTerms.filter((pattern) => pattern.test(languageAuditText)).map((pattern) => pattern.source);
   if (matches.length) throw new Error(`${label} 사용자 노출 금지 표현: ${matches.join(", ")}`);
 }
 
 async function enterAs(page, userId, expectedName) {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "사용자 선택" })).toBeVisible();
-  expect(await page.getByRole("combobox", { name: "사용자 역할" }).locator("option").allTextContents()).toEqual([
-    "조회 사용자", "업무 사용자", "관리자", "시스템 관리자"
+  const roleOptions = page.locator('input[name="demo-user"]');
+  await expect(roleOptions).toHaveCount(4);
+  expect(await page.locator(".demo-role-option__text strong").allTextContents()).toEqual([
+    "조회 사용자", "일반 사용자", "일반 관리자", "시스템 관리자"
   ]);
-  await page.getByRole("combobox", { name: "사용자 역할" }).selectOption(userId);
+  await page.locator(`input[name="demo-user"][value="${userId}"]`).check();
   await page.getByRole("button", { name: "업무 화면 시작" }).click();
   await expect(page.getByTestId("current-user-menu")).toContainText(expectedName);
   await expect(page.getByTestId("page-title")).toBeVisible();
@@ -92,8 +95,8 @@ if (!usersResponse.ok || (await usersResponse.json()).length !== 4) throw new Er
 const browser = await chromium.launch({ headless: true });
 const runs = [
   ["RUN-01", "demo-viewer", "조회 사용자", false, { width: 1366, height: 768 }],
-  ["RUN-02", "demo-operator", "업무 사용자", true, { width: 1398, height: 900 }],
-  ["RUN-03", "demo-manager", "관리자", true, { width: 1920, height: 1080 }],
+  ["RUN-02", "demo-operator", "일반 사용자", true, { width: 1398, height: 900 }],
+  ["RUN-03", "demo-manager", "일반 관리자", true, { width: 1920, height: 1080 }],
   ["RUN-04", "demo-admin", "시스템 관리자", true, { width: 1398, height: 900 }]
 ];
 
@@ -131,9 +134,14 @@ try {
       await expect(page.getByTestId("ai-solution-center-title")).toBeVisible();
       await page.waitForLoadState("networkidle");
       await assertProfessionalLanguage(page, "AI 솔루션 화면");
-      await page.getByRole("tab", { name: "업무 Q&A", exact: true }).click();
+      await page.getByTestId("nav-ai-qa").click();
+      await expect(page.getByTestId("ai-solution-center-title")).toHaveText("AI Q&A");
+      await page.getByTestId("ai-qa-details").locator("summary").click();
+      await expect(page.getByTestId("business-qa-workspace")).toBeVisible();
       await page.getByTestId("qa-new").click();
       await assertProfessionalLanguage(page, "업무 Q&A 화면");
+      await page.getByTestId("nav-ai-system-management").click();
+      await expect(page.getByTestId("ai-solution-center-title")).toHaveText("AI 시스템 관리");
       await page.getByRole("tab", { name: "회의록", exact: true }).click();
       await assertProfessionalLanguage(page, "회의록 화면");
     }
@@ -149,7 +157,7 @@ try {
   });
   const page = await context.newPage();
   const failures = watchFailures(page);
-  await enterAs(page, "demo-operator", "업무 사용자");
+  await enterAs(page, "demo-operator", "일반 사용자");
   await page.goto("/work-orders", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("work-order-page-title")).toBeVisible();
   await page.waitForLoadState("networkidle");

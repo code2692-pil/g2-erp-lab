@@ -20,6 +20,7 @@ import { activeRevision, analysisRevision, appendSolutionRevision, buildConsulta
 import { businessDomains, solutionPriorityKeys, type BusinessDomain, type CompanyKnowledgeArticle, type ReviewRecord, type SolutionPriorities, type SolutionRequest, type SolutionSession, type SolutionSource } from "./solutionTypes";
 import { BusinessQaWorkspace } from "./BusinessQaWorkspace";
 import { MeetingMinutesWorkspace } from "./MeetingMinutesWorkspace";
+import { demoEnvironment } from "../../api/demoApi";
 
 type NavigationPage = "sales" | "purchase" | "work" | "development" | "ai";
 type ActiveTab = "consultant" | "customer" | "businessQa" | "meeting";
@@ -474,7 +475,7 @@ export function AiSolutionCenterPage({ onNavigate, onScreenIntent }: AiSolutionC
         </div>
         {customerSession && renderResult(customerSession, customerAnswers, customerFollowupError, customerRefining, "customer-qa")}
       </section> : activeTab === "businessQa" ? <section id="business-qa-panel" role="tabpanel" aria-labelledby="business-qa-tab" className="ai-solution-center__panel"><BusinessQaWorkspace /></section> : <section id="meeting-panel" role="tabpanel" aria-labelledby="meeting-tab" className="ai-solution-center__panel"><MeetingMinutesWorkspace /></section>}
-      <section className="ai-solution-center__security" aria-label="보안 안내"><h2>보안 및 사용 안내</h2><ul><li>선택한 파일은 서버로 업로드하지 않으며 브라우저 메모리에서만 처리합니다.</li><li>구조화 파일은 로컬 규칙으로 요약하며 원문 전체를 결과·Markdown·검토 패키지에 포함하지 않습니다.</li><li>이미지·음성·영상은 메타정보만 확인하며 OCR·STT·장면 분석을 수행하지 않습니다.</li><li>민감정보 탐지는 기초 패턴 기반이므로 오탐·미탐이 가능하며 실제 공유 전 담당자 검토가 필요합니다.</li><li>실제 도입 전에는 회사 보안·권한·감사 정책과 담당자 확인이 필요합니다.</li></ul></section>
+      <section className="ai-solution-center__security" aria-label="보안 안내"><h2>보안 및 사용 안내</h2><ul><li>{activeTab === "meeting" && demoEnvironment === "shared" ? "회의록 파일은 권한이 적용된 공유 시연 서버의 비공개 경로에 업로드됩니다." : "이 화면에서 선택한 분석 파일은 서버로 업로드하지 않으며 브라우저 메모리에서만 처리합니다."}</li><li>구조화 파일은 규칙 기반으로 요약하며 원문 전체를 결과·Markdown·검토 패키지에 포함하지 않습니다.</li><li>이미지·음성·영상은 메타정보만 확인하며 OCR·STT·장면 분석을 수행하지 않습니다.</li><li>민감정보 탐지는 기초 패턴 기반이므로 오탐·미탐이 가능하며 실제 공유 전 담당자 검토가 필요합니다.</li><li>실제 도입 전에는 회사 보안·권한·감사 정책과 담당자 확인이 필요합니다.</li></ul></section>
     </main>
   </div>;
 }

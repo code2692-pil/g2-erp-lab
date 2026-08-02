@@ -4047,3 +4047,64 @@ textarea:focus-visible,
     animation-iteration-count: 1 !important;
   }
 }
+/* The environment marker is intentionally persistent in every distributable demo build. */
+.demo-environment-banner {
+  position: sticky;
+  top: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 18px;
+  color: #fff;
+  background: #53389e;
+  border-bottom: 2px solid #7f56d9;
+  box-shadow: 0 2px 8px rgb(16 24 40 / 18%);
+}
+
+.demo-environment-banner > div:first-child { display: grid; gap: 2px; }
+.demo-environment-banner strong { font-size: 13px; }
+.demo-environment-banner span { font-size: 12px; color: #e9d7fe; }
+.demo-banner-actions { display: flex; gap: 8px; flex: none; }
+.demo-environment-banner button,
+.demo-reset-panel button,
+.demo-session-gate button {
+  border: 1px solid #d6bbfb;
+  border-radius: 6px;
+  padding: 7px 11px;
+  color: #fff;
+  background: #6941c6;
+  cursor: pointer;
+}
+
+.demo-environment-banner button:hover,
+.demo-reset-panel button:hover,
+.demo-session-gate button:hover { background: #7f56d9; }
+.demo-environment-banner button:focus-visible,
+.demo-reset-panel button:focus-visible,
+.demo-session-gate button:focus-visible,
+.demo-session-gate select:focus-visible,
+.demo-reset-panel input:focus-visible { outline: 3px solid #f4ebff; outline-offset: 2px; }
+.demo-reset-panel { padding: 12px 18px; color: #3e1c96; background: #f4ebff; border-bottom: 1px solid #d6bbfb; }
+.demo-reset-panel p { margin: 5px 0; font-size: 13px; }
+.demo-reset-panel label { display: block; margin: 8px 0 4px; font-size: 12px; font-weight: 700; }
+.demo-reset-panel > div { display: flex; gap: 8px; }
+.demo-reset-panel input { min-width: 220px; padding: 7px 9px; border: 1px solid #98a2b3; border-radius: 6px; }
+.demo-reset-panel button:disabled,
+.demo-session-gate button:disabled { cursor: not-allowed; opacity: .55; }
+.demo-session-gate { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #f9fafb; }
+.demo-session-gate section { width: min(440px, 100%); padding: 28px; border: 1px solid #d0d5dd; border-radius: 12px; background: #fff; box-shadow: 0 12px 30px rgb(16 24 40 / 12%); }
+.demo-session-gate h1 { margin: 6px 0 12px; }
+.demo-session-gate p { color: #475467; line-height: 1.55; }
+.demo-session-gate label { display: block; margin: 20px 0 6px; font-weight: 700; }
+.demo-session-gate select { width: 100%; padding: 10px; border: 1px solid #98a2b3; border-radius: 6px; background: #fff; }
+.demo-session-gate button { width: 100%; margin-top: 16px; }
+.demo-environment-label { margin: 0; color: #6941c6 !important; font-size: 12px; font-weight: 800; letter-spacing: .04em; }
+.demo-error { color: #b42318 !important; }
+
+@media (max-width: 720px) {
+  .demo-environment-banner { align-items: flex-start; flex-direction: column; padding: 8px 12px; }
+  .demo-banner-actions { width: 100%; }
+  .demo-banner-actions button { flex: 1; }
+}

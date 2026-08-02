@@ -6,10 +6,12 @@ import { verifyApiReadiness, verifyFrontendReadiness, waitForReadiness } from ".
 
 const [action, mode] = process.argv.slice(2);
 const host = "127.0.0.1";
+const bindHost = mode === "demo" ? "0.0.0.0" : host;
 const frontendUrl = `http://${host}:5173`;
 const backendUrl = `http://${host}:5080`;
 const isApi = mode !== "mock";
 const isSqlServer = mode === "sqlserver";
+const isSharedDemo = mode === "demo";
 const isProductionContract = process.env.PLAYWRIGHT_PRODUCTION_MODE === "true";
 const children = [];
 const e2eDirectory = resolve("tests", "e2e");
@@ -63,7 +65,14 @@ async function waitForApi(api) {
   await waitForReadiness({
     label: "ASP.NET API",
     child: api,
-    check: (signal) => verifyApiReadiness(`${backendUrl}/api/development-data/status`, { signal })
+    check: isSharedDemo
+      ? async (signal) => {
+          const response = await fetch(`${backendUrl}/api/demo/users`, { signal });
+          if (!response.ok) throw new Error(`Demo API readiness returned HTTP ${response.status}.`);
+          const users = await response.json();
+          if (!Array.isArray(users) || users.length !== 4) throw new Error("Demo API readiness returned an unexpected user list.");
+        }
+      : (signal) => verifyApiReadiness(`${backendUrl}/api/development-data/status`, { signal })
   });
 }
 
@@ -131,7 +140,8 @@ async function stop(child) {
 }
 
 async function main() {
-  if (!['dev', 'test'].includes(action) || !['mock', 'inmemory', 'sqlserver'].includes(mode)) throw new Error("Usage: node scripts/run-mode.mjs <dev|test> <mock|inmemory|sqlserver>");
+  if (!['dev', 'test'].includes(action) || !['mock', 'inmemory', 'sqlserver', 'demo'].includes(mode))
+    throw new Error("Usage: node scripts/run-mode.mjs <dev|test> <mock|inmemory|sqlserver|demo>");
   if (action === "test") {
     const artifactFailures = removePlaywrightArtifacts();
     for (const failure of artifactFailures) console.error(`[test-lifecycle] pre-run artifact cleanup failed: ${failure}`);
@@ -140,30 +150,33 @@ async function main() {
   if (isApi) {
     const apiEnv = isSqlServer
       ? { RepositoryMode: "SqlServer", ASPNETCORE_ENVIRONMENT: "Development", ConnectionStrings__G2Erp: "Server=.;Database=G2ERP_DEV_LOCAL_TEST;Trusted_Connection=True;Encrypt=True;TrustServerCertificate=True" }
-      : { RepositoryMode: "InMemory", ASPNETCORE_ENVIRONMENT: "Development" };
+      : { RepositoryMode: "InMemory", ASPNETCORE_ENVIRONMENT: "Development", ...(isSharedDemo ? { DemoMode: "true" } : {}) };
     const apiBuild = start("dotnet", ["build", "--no-restore", "server/G2Erp.Api/G2Erp.Api.csproj"], apiEnv);
     await waitForExit(apiBuild, "ASP.NET API build");
-    const api = start("dotnet", ["run", "--no-build", "--project", "server/G2Erp.Api/G2Erp.Api.csproj", "--urls", backendUrl], apiEnv);
+    const api = start("dotnet", ["run", "--no-build", "--project", "server/G2Erp.Api/G2Erp.Api.csproj", "--urls", `http://${bindHost}:5080`], apiEnv);
     await waitForApi(api);
   }
-  const frontendEnv = isApi ? { VITE_DATA_MODE: "api", VITE_API_BASE_URL: backendUrl } : { VITE_DATA_MODE: "mock" };
+  const frontendEnv = isApi
+    ? { VITE_DATA_MODE: "api", VITE_API_BASE_URL: isSharedDemo ? "same-host-demo" : backendUrl, ...(isSharedDemo ? { VITE_DEMO_MODE: "shared" } : {}) }
+    : { VITE_DATA_MODE: "mock", VITE_DEMO_MODE: "personal" };
   if (action === "test") {
     const e2eBuildEnvironment = isProductionContract
       ? frontendEnv
       : { ...frontendEnv, VITE_E2E_TEST_MODE: "true" };
     const build = start(process.execPath, ["./node_modules/vite/bin/vite.js", "build", "--mode", "e2e"], e2eBuildEnvironment);
     await waitForExit(build, "Vite production build");
-    const frontend = start(process.execPath, ["./node_modules/vite/bin/vite.js", "preview", "--host", host, "--port", "5173"], frontendEnv);
+    const frontend = start(process.execPath, ["./node_modules/vite/bin/vite.js", "preview", "--host", bindHost, "--port", "5173"], frontendEnv);
     await waitForFrontend(frontend);
   } else {
-    const frontend = start(process.execPath, ["./node_modules/vite/bin/vite.js", "--host", host, "--port", "5173"], frontendEnv);
+    const frontend = start(process.execPath, ["./node_modules/vite/bin/vite.js", "--host", bindHost, "--port", "5173"], frontendEnv);
     await waitForFrontend(frontend);
   }
-  console.log(`Mode: ${mode}`); console.log(`Frontend: ${frontendUrl}`); console.log(`Backend: ${isApi ? backendUrl : "not started"}`); console.log(`Repository: ${isSqlServer ? "SqlServer (localhost / G2ERP_DEV_LOCAL_TEST)" : isApi ? "InMemory" : "Mock"}`);
+  console.log(`Mode: ${mode}`); console.log(`Frontend readiness: ${frontendUrl}`); console.log(`Backend readiness: ${isApi ? backendUrl : "not started"}`); console.log(`Repository: ${isSqlServer ? "SqlServer (localhost / G2ERP_DEV_LOCAL_TEST)" : isApi ? "InMemory" : "Mock"}`);
+  if (isSharedDemo) console.log("Shared demo: open http://<this-PC-private-IPv4>:5173 from the same trusted internal network. Windows Firewall may require an explicit private-network inbound rule for ports 5173 and 5080.");
   openBrowserWhenRequested(frontendUrl);
   if (action === "test") {
     console.log("[test-lifecycle] frontend production bundle prepared before the parallel run.");
-    if (isSqlServer || isProductionContract) {
+    if (isSqlServer || isProductionContract || isSharedDemo) {
       console.log(`[test-lifecycle] ${isSqlServer ? "SQL Server" : "production-contract"} run skips fixture-specific frontend warmup.`);
     } else {
       await warmFrontendForParallelRun();
@@ -171,7 +184,9 @@ async function main() {
     const selectedFiles = selectedTestFiles();
     const testFiles = orderTestFiles(selectedFiles
       ? selectedFiles
-      : isApi
+      : isSharedDemo
+        ? ["tests/e2e/shared-demo.spec.ts"]
+        : isApi
         ? ["tests/e2e/api-mode.spec.ts", "tests/e2e/work-order-api-mode.spec.ts", "tests/e2e/work-order-api-validation.spec.ts", "tests/e2e/development-data.spec.ts"]
         : ["tests/e2e/sales-order.spec.ts", "tests/e2e/purchase-order.spec.ts", "tests/e2e/work-order.spec.ts", "tests/e2e/development-data.spec.ts"]);
     const grepArgs = process.env.PLAYWRIGHT_GREP ? ["--grep", process.env.PLAYWRIGHT_GREP] : [];
@@ -185,7 +200,7 @@ async function main() {
       ...headedArgs,
       ...testFiles
     ];
-    const test = start(process.execPath, testArgs, { CI: "true", ...(isApi ? { VITE_DATA_MODE: "api", VITE_API_BASE_URL: backendUrl } : { VITE_DATA_MODE: "mock" }) });
+    const test = start(process.execPath, testArgs, { CI: "true", ...frontendEnv });
     process.exitCode = await new Promise(resolve => test.once("exit", code => resolve(code ?? 1)));
   } else await new Promise(resolve => {
     const stop = () => resolve();

@@ -7,6 +7,8 @@ import { canShowDevelopmentDataManagerClient, developmentDataApi } from "./api/d
 import { preloadScreenModule, screenModules, type ScreenModuleId } from "./screenModules";
 import { DirtyNavigationProvider, useDirtyNavigation } from "./navigation/DirtyNavigationProvider";
 import { navigationDelta, readAppHistoryEntry, type AppHistoryEntry, withAppHistoryEntry } from "./navigation/appHistory";
+import { DemoEnvironmentGate, useDemoRole } from "./components/DemoEnvironmentGate";
+import { demoEnvironment } from "./api/demoApi";
 
 const PurchaseOrderRegistration = screenModules.purchase.component;
 const WorkOrderRegistration = screenModules.work.component;
@@ -80,8 +82,10 @@ function AppRouter() {
   const restoreTargetRef = useRef<AppHistoryEntry<AppPage> | null>(null);
   const replayTargetRef = useRef<AppHistoryEntry<AppPage> | null>(null);
   const { requestNavigation } = useDirtyNavigation();
+  const demoRole = useDemoRole();
   const purchaseOrderAdapter = isApiMode() ? apiPurchaseOrderAdapter : mockPurchaseOrderAdapter;
-  const developmentDataRouteBlocked = page === "development" && !canShowDevelopmentDataManagerClient();
+  const sharedDevelopmentDataBlocked = demoEnvironment === "shared" && demoRole !== "Manager" && demoRole !== "Admin";
+  const developmentDataRouteBlocked = page === "development" && (!canShowDevelopmentDataManagerClient() || sharedDevelopmentDataBlocked);
   const activePage = developmentDataRouteBlocked ? "sales" : page;
 
   useLayoutEffect(() => {
@@ -95,11 +99,11 @@ function AppRouter() {
 
   useEffect(() => {
     let cancelled = false;
-    if (!canShowDevelopmentDataManagerClient()) return () => { cancelled = true; };
+    if (!canShowDevelopmentDataManagerClient() || sharedDevelopmentDataBlocked) { setShowDevelopmentDataManager(false); return () => { cancelled = true; }; }
     if (!isApiMode()) { setShowDevelopmentDataManager(true); return () => { cancelled = true; }; }
     void developmentDataApi.status().then((status) => { if (!cancelled) setShowDevelopmentDataManager(status.IsAllowed); }).catch(() => { if (!cancelled) setShowDevelopmentDataManager(false); });
     return () => { cancelled = true; };
-  }, []);
+  }, [sharedDevelopmentDataBlocked]);
 
   useEffect(() => {
     const existing = readAppHistoryEntry<AppPage>(window.history.state);
@@ -189,5 +193,5 @@ function AppRouter() {
 }
 
 export default function App() {
-  return <DirtyNavigationProvider><AppRouter /></DirtyNavigationProvider>;
+  return <DemoEnvironmentGate><DirtyNavigationProvider><AppRouter /></DirtyNavigationProvider></DemoEnvironmentGate>;
 }

@@ -2,7 +2,11 @@ export type DataMode = "mock" | "api";
 
 const configuredMode = import.meta.env.VITE_DATA_MODE;
 export const dataMode: DataMode = configuredMode === "api" ? "api" : "mock";
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:5080").replace(/\/$/, "");
+const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL;
+const apiBaseUrl = (configuredApiBaseUrl === "same-host-demo"
+  ? `${window.location.protocol}//${window.location.hostname}:5080`
+  : configuredApiBaseUrl ?? "http://127.0.0.1:5080").replace(/\/$/, "");
+export const demoSessionStorageKey = "g2erp.demo.session";
 
 export function isApiMode() {
   return dataMode === "api";
@@ -21,10 +25,14 @@ export class ApiClientError extends Error {
 }
 
 export async function apiClient<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const demoSessionToken = typeof window !== "undefined" && import.meta.env.VITE_DEMO_MODE === "shared"
+    ? window.sessionStorage.getItem(demoSessionStorageKey)
+    : null;
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...options,
     headers: {
-      "Content-Type": "application/json",
+      ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+      ...(demoSessionToken ? { "X-Demo-Session": demoSessionToken } : {}),
       ...options.headers
     }
   });

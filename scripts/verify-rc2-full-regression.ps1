@@ -179,7 +179,7 @@ try {
     Invoke-External "Maintenance unit tests" $nodeExecutable @("--test", "scripts/qa/tests/*.test.mjs")
     Invoke-External ".NET solution build" "dotnet" @("build", "server/G2Erp.sln", "--no-restore")
     Invoke-External "Non-SQL .NET tests" "dotnet" @("test", "server/G2Erp.Api.Tests/G2Erp.Api.Tests.csproj", "--no-restore", "--filter", "FullyQualifiedName!~SqlServer", "--logger", "console;verbosity=minimal")
-    Invoke-External "Mock core Playwright" $nodeExecutable @("scripts/run-mode.mjs", "test", "mock")
+    Invoke-External "Mock core Playwright" $nodeExecutable @("scripts/run-mode.mjs", "test", "mock") @{ PLAYWRIGHT_WORKERS = "1" }
     Invoke-External "InMemory core Playwright" $nodeExecutable @("scripts/run-mode.mjs", "test", "inmemory")
     $mockUxFiles = @("tests/e2e/ai-solution-center.spec.ts", "tests/e2e/grid-view-preferences.spec.ts", "tests/e2e/lazy-screen-loading.spec.ts", "tests/e2e/mobile-pda-sales-order.spec.ts", "tests/e2e/release-candidate-menu-smoke.spec.ts", "tests/e2e/screen-module-prefetch.spec.ts", "tests/e2e/unsaved-navigation-guard.spec.ts") -join ";"
     Invoke-External "Mock UX Playwright" $nodeExecutable @("scripts/run-mode.mjs", "test", "mock") @{ PLAYWRIGHT_TEST_FILES = $mockUxFiles; PLAYWRIGHT_WORKERS = "1" }

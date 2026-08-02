@@ -597,7 +597,7 @@ test("Gate 12-7 E: 이미지는 크기 메타정보와 OCR 미지원 안내 후 
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZP1sAAAAASUVORK5CYII=", "base64");
   await page.getByTestId("ai-file-input").setInputFiles({ name: "inspection.png", mimeType: "image/png", buffer: png });
   await expect(page.getByTestId("ai-file-list")).toContainText("1×1");
-  await expect(page.getByTestId("ai-file-list")).toContainText("OCR이나 장면 분석을 지원하지 않습니다");
+  await expect(page.getByTestId("ai-file-list")).toContainText("OCR이나 장면 분석은 지원하지 않습니다");
   await page.locator("[data-testid^='file-note-']").fill("검사 화면에서 LOT와 부적합 결과를 함께 확인하는 예시입니다.");
   await page.getByTestId("ai-consultant-analyze").click();
   await expect(page.getByTestId("input-evidence-file-1-note")).toBeVisible();

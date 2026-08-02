@@ -117,7 +117,7 @@ export const developmentDataApi = {
     if (isApiMode()) return post<DevelopmentOperation>(`/api/development-data/seed/${scope}`);
     const keys = scopes(scope); const created = keys.reduce((total, key) => total + (plannedCounts[key] - mockCounts[key]), 0);
     keys.forEach((key) => { mockCounts[key] = plannedCounts[key]; });
-    return { Operation: "seed", Scope: scope, Status: "Success", CreatedRows: created, DeletedRows: 0, SkippedRows: 0, ConflictRows: 0, Message: created ? "기준 데이터를 생성했습니다." : "동일한 기준 데이터가 이미 있습니다.", ExecutedAt: now() };
+    return { Operation: "seed", Scope: scope, Status: "Success", CreatedRows: created, DeletedRows: 0, SkippedRows: 0, ConflictRows: 0, Message: created ? "기준 데이터를 생성했습니다." : "동일한 기준 데이터가 이미 있어 변경하지 않았습니다.", ExecutedAt: now() };
   },
   async cleanup(scope: DevelopmentScope, confirmationText: string): Promise<DevelopmentOperation> {
     if (isApiMode()) return post<DevelopmentOperation>("/api/development-data/cleanup/samples", { Scope: scope, ConfirmationText: confirmationText });

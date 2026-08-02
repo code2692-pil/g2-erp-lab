@@ -41,7 +41,7 @@ test("기준 데이터 관리에서 변경 예상, 생성, 재실행, 확인 문
     await expect(page.locator(".development-data-summary")).toContainText(/기준 품목\s*6/);
 
     await page.getByTestId("tdm-btn-seed-all").click();
-    await expect(page.locator(".development-data-log tbody tr:first-child")).toContainText("동일한 기준 데이터가 이미 있습니다.");
+    await expect(page.locator(".development-data-log tbody tr:first-child")).toContainText("동일한 기준 데이터가 이미 있어 변경하지 않았습니다.");
 
     await expect(page.getByTestId("tdm-btn-cleanup-all")).toBeDisabled();
     await page.getByTestId("tdm-cleanup-confirmation").fill("기준 데이터 삭제");

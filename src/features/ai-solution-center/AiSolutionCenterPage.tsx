@@ -18,9 +18,11 @@ import { buildSolutionOptionComparison, defaultSolutionPriorities, solutionPrior
 import type { SolutionScenario } from "./solutionScenarios";
 import { activeRevision, analysisRevision, appendSolutionRevision, buildConsultantHandoverMarkdown, buildExportFilename, buildSolutionMarkdown, canRefineSession, clarificationAnswersFor, consultantHandoverDetails, createSolutionSession, maximumAnalysisRevision, unresolvedItems, updateSolutionOptionComparison } from "./solutionSession";
 import { businessDomains, solutionPriorityKeys, type BusinessDomain, type CompanyKnowledgeArticle, type ReviewRecord, type SolutionPriorities, type SolutionRequest, type SolutionSession, type SolutionSource } from "./solutionTypes";
+import { BusinessQaWorkspace } from "./BusinessQaWorkspace";
+import { MeetingMinutesWorkspace } from "./MeetingMinutesWorkspace";
 
 type NavigationPage = "sales" | "purchase" | "work" | "development" | "ai";
-type ActiveTab = "consultant" | "customer";
+type ActiveTab = "consultant" | "customer" | "businessQa" | "meeting";
 interface AiSolutionCenterPageProps {
   onNavigate: (page: NavigationPage) => void;
   onScreenIntent?: (screen: ScreenModuleId) => void;
@@ -432,7 +434,7 @@ export function AiSolutionCenterPage({ onNavigate, onScreenIntent }: AiSolutionC
       <PriorityCard priorities={priorities} onChange={(key, value) => { setPriorities((current) => ({ ...current, [key]: value })); setComparisonStatus(""); markDirty(); }} onPreset={(preset) => { setPriorities(preset); setComparisonStatus(""); markDirty(); }} />
       <ScenarioLibrary onApply={(scenario) => void applyScenario(scenario)} />
       <ReviewPackageImportPanel />
-      <div className="ai-solution-center__tabs" role="tablist" aria-label="AI 솔루션 방식"><button type="button" role="tab" id="consultant-tab" aria-controls="consultant-panel" aria-selected={activeTab === "consultant"} className={activeTab === "consultant" ? "is-active" : ""} onClick={() => setActiveTab("consultant")}>컨설턴트 파일 분석</button><button type="button" role="tab" id="customer-tab" aria-controls="customer-panel" aria-selected={activeTab === "customer"} className={activeTab === "customer" ? "is-active" : ""} onClick={() => setActiveTab("customer")}>고객 업무 Q&amp;A</button></div>
+      <div className="ai-solution-center__tabs" role="tablist" aria-label="AI 솔루션 방식"><button type="button" role="tab" id="consultant-tab" aria-controls="consultant-panel" aria-selected={activeTab === "consultant"} className={activeTab === "consultant" ? "is-active" : ""} onClick={() => setActiveTab("consultant")}>컨설턴트 파일 분석</button><button type="button" role="tab" id="customer-tab" aria-controls="customer-panel" aria-selected={activeTab === "customer"} className={activeTab === "customer" ? "is-active" : ""} onClick={() => setActiveTab("customer")}>고객 업무 Q&amp;A</button><button type="button" role="tab" id="business-qa-tab" aria-controls="business-qa-panel" aria-selected={activeTab === "businessQa"} className={activeTab === "businessQa" ? "is-active" : ""} onClick={() => setActiveTab("businessQa")}>업무 Q&amp;A</button><button type="button" role="tab" id="meeting-tab" aria-controls="meeting-panel" aria-selected={activeTab === "meeting"} className={activeTab === "meeting" ? "is-active" : ""} onClick={() => setActiveTab("meeting")}>회의록</button></div>
       {activeTab === "consultant" ? <section id="consultant-panel" role="tabpanel" aria-labelledby="consultant-tab" className="ai-solution-center__panel">
         <div className="ai-solution-center__form-card">
           <h2>컨설턴트 파일 분석</h2>
@@ -455,7 +457,7 @@ export function AiSolutionCenterPage({ onNavigate, onScreenIntent }: AiSolutionC
           <button className="ai-solution-center__primary-button" data-testid="ai-consultant-analyze" type="button" disabled={consultantBusy} onClick={analyzeConsultant}>{consultantProcessing ? "분석 중..." : "기본 가이드 분석"}</button>
         </div>
         {consultantSession && renderResult(consultantSession, consultantAnswers, consultantFollowupError, consultantRefining, "consultant-file")}
-      </section> : <section id="customer-panel" role="tabpanel" aria-labelledby="customer-tab" className="ai-solution-center__panel">
+      </section> : activeTab === "customer" ? <section id="customer-panel" role="tabpanel" aria-labelledby="customer-tab" className="ai-solution-center__panel">
         <div className="ai-solution-center__form-card">
           <h2>고객 업무 Q&amp;A</h2>
           {selectedScenarioTitle && <p className="ai-solution-center__scenario-selected" data-testid="selected-scenario">적용한 업무 예시: <strong>{selectedScenarioTitle}</strong> · 내용을 검토한 뒤 직접 가이드를 요청해 주세요.</p>}
@@ -471,7 +473,7 @@ export function AiSolutionCenterPage({ onNavigate, onScreenIntent }: AiSolutionC
           <div className="ai-solution-center__actions"><button type="button" onClick={fillExample}>예시 질문 넣기</button><button className="ai-solution-center__primary-button" data-testid="ai-customer-guide" type="button" disabled={customerBusy} onClick={guideCustomer}>{customerProcessing ? "가이드 작성 중..." : "기본 가이드 받기"}</button></div>
         </div>
         {customerSession && renderResult(customerSession, customerAnswers, customerFollowupError, customerRefining, "customer-qa")}
-      </section>}
+      </section> : activeTab === "businessQa" ? <section id="business-qa-panel" role="tabpanel" aria-labelledby="business-qa-tab" className="ai-solution-center__panel"><BusinessQaWorkspace /></section> : <section id="meeting-panel" role="tabpanel" aria-labelledby="meeting-tab" className="ai-solution-center__panel"><MeetingMinutesWorkspace /></section>}
       <section className="ai-solution-center__security" aria-label="보안 안내"><h2>보안 및 사용 안내</h2><ul><li>선택한 파일은 서버로 업로드하지 않으며 브라우저 메모리에서만 처리합니다.</li><li>구조화 파일은 로컬 규칙으로 요약하며 원문 전체를 결과·Markdown·검토 패키지에 포함하지 않습니다.</li><li>이미지·음성·영상은 메타정보만 확인하며 OCR·STT·장면 분석을 수행하지 않습니다.</li><li>민감정보 탐지는 기초 패턴 기반이므로 오탐·미탐이 가능하며 실제 공유 전 담당자 검토가 필요합니다.</li><li>실제 도입 전에는 회사 보안·권한·감사 정책과 담당자 확인이 필요합니다.</li></ul></section>
     </main>
   </div>;

@@ -120,7 +120,7 @@ export function parseAndMapMailOrder(mail: MailMessage): MailParseResult {
     if (line.QT_SO.status === "오류") errors.push(`${line.NO_LINE}행 수량 형식이 올바르지 않습니다: ${line.QT_SO.rawValue}`);
     if (line.UM_SO.status === "오류") errors.push(`${line.NO_LINE}행 단가 형식이 올바르지 않습니다: ${line.UM_SO.rawValue}`);
   }
-  if (fields.some((value) => value.status === "추정됨")) warnings.push("일부 값은 메일 본문 또는 mock 마스터에서 추정했습니다.");
+  if (fields.some((value) => value.status === "추정됨")) warnings.push("일부 값은 메일 본문 또는 기준정보에서 추정했습니다.");
   if (header.DT_SO.status !== "확인됨") errors.push("수주일자를 확인할 수 없습니다.");
   const canApply = errors.length === 0 && lines.every((line) => line.QT_SO.value !== null && line.QT_SO.value > 0 && line.UM_SO.value !== null && line.UM_SO.value >= 0);
 

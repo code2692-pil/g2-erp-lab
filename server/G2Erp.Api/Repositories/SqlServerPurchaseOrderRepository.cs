@@ -32,6 +32,19 @@ public sealed class SqlServerPurchaseOrderRepository(SqlServerConnectionFactory 
     }
 
     public Task AddAsync(PurchaseOrder purchaseOrder, CancellationToken ct) => WriteAsync(purchaseOrder, false, ct);
+    public async Task<PurchaseOrder> AddWithGeneratedNumberAsync(PurchaseOrder purchaseOrder, string yearMonth, CancellationToken ct)
+    {
+        await using var connection = connections.Create(); await connection.OpenAsync(ct); await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
+        try
+        {
+            var serial = await DocumentNumberSqlAllocator.ReserveAsync(connection, (SqlTransaction)transaction, purchaseOrder.Header.CD_FIRM, "POR", yearMonth, ct);
+            var saved = DocumentNumberPolicy.Assign(purchaseOrder, DocumentNumberPolicy.Format("POR", yearMonth, serial));
+            await WriteWithinTransactionAsync(saved, false, connection, (SqlTransaction)transaction, ct);
+            await transaction.CommitAsync(ct);
+            return saved;
+        }
+        catch { await transaction.RollbackAsync(ct); throw; }
+    }
     public Task UpdateAsync(PurchaseOrder purchaseOrder, CancellationToken ct) => WriteAsync(purchaseOrder, true, ct);
 
     public async Task<bool> DeleteAsync(string companyCode, string purchaseOrderNo, CancellationToken ct)
@@ -51,16 +64,24 @@ public sealed class SqlServerPurchaseOrderRepository(SqlServerConnectionFactory 
         await using var connection = connections.Create(); await connection.OpenAsync(ct); await using var transaction = await connection.BeginTransactionAsync(ct);
         try
         {
-            var headerSql = isUpdate
-                ? "UPDATE POC.PUR_POH SET DT_PO=@date,CD_PARTNER=@partner,NM_PARTNER=@name,CD_EMP=@emp,NM_EMP=@empName,CD_CURRENCY=@currency,RT_EXCHANGE=@exchange,ST_PO=@status,DC_RMK=@remark,CD_USER_AMD=@user,TM_AMD=SYSUTCDATETIME() WHERE CD_FIRM=@firm AND NO_PO=@no"
-                : "INSERT INTO POC.PUR_POH(CD_FIRM,NO_PO,DT_PO,CD_PARTNER,NM_PARTNER,CD_EMP,NM_EMP,CD_CURRENCY,RT_EXCHANGE,ST_PO,DC_RMK,CD_USER_REG,TM_REG) VALUES(@firm,@no,@date,@partner,@name,@emp,@empName,@currency,@exchange,@status,@remark,@user,SYSUTCDATETIME())";
-            await using (var header = new SqlCommand(headerSql, connection, (SqlTransaction)transaction)) { AddHeader(header, order.Header); await header.ExecuteNonQueryAsync(ct); }
-            if (isUpdate) { await using var removeLines = new SqlCommand("DELETE FROM POC.PUR_POL WHERE CD_FIRM=@firm AND NO_PO=@no", connection, (SqlTransaction)transaction); removeLines.Parameters.AddWithValue("@firm", order.Header.CD_FIRM); removeLines.Parameters.AddWithValue("@no", order.Header.NO_PO); await removeLines.ExecuteNonQueryAsync(ct); }
-            const string lineSql = "INSERT INTO POC.PUR_POL(CD_FIRM,NO_PO,NO_LINE,CD_ITEM,NM_ITEM,STND_ITEM,UNIT_ITEM,QT_PO,UM_PO,AM_SUPPLY,AM_VAT,AM_TOTAL,DT_DLV,CD_WH,NM_WH,DC_RMK,CD_USER_REG,TM_REG) VALUES(@firm,@no,@line,@item,@name,@standard,@unit,@quantity,@price,@supply,@vat,@total,@delivery,@warehouse,@warehouseName,@remark,@user,SYSUTCDATETIME())";
-            foreach (var line in order.Lines) { await using var command = new SqlCommand(lineSql, connection, (SqlTransaction)transaction); AddLine(command, line); await command.ExecuteNonQueryAsync(ct); }
+            await WriteWithinTransactionAsync(order, isUpdate, connection, (SqlTransaction)transaction, ct);
             await transaction.CommitAsync(ct);
         }
         catch { await transaction.RollbackAsync(ct); throw; }
+    }
+
+    private static async Task WriteWithinTransactionAsync(PurchaseOrder order, bool isUpdate, SqlConnection connection, SqlTransaction transaction, CancellationToken ct)
+    {
+        var headerSql = isUpdate
+            ? "UPDATE POC.PUR_POH SET DT_PO=@date,CD_PARTNER=@partner,NM_PARTNER=@name,CD_EMP=@emp,NM_EMP=@empName,CD_CURRENCY=@currency,RT_EXCHANGE=@exchange,ST_PO=@status,DC_RMK=@remark,CD_USER_AMD=@user,TM_AMD=SYSUTCDATETIME() WHERE CD_FIRM=@firm AND NO_PO=@no"
+            : "INSERT INTO POC.PUR_POH(CD_FIRM,NO_PO,DT_PO,CD_PARTNER,NM_PARTNER,CD_EMP,NM_EMP,CD_CURRENCY,RT_EXCHANGE,ST_PO,DC_RMK,CD_USER_REG,TM_REG) VALUES(@firm,@no,@date,@partner,@name,@emp,@empName,@currency,@exchange,@status,@remark,@user,SYSUTCDATETIME())";
+        await using (var header = new SqlCommand(headerSql, connection, transaction)) { AddHeader(header, order.Header); await header.ExecuteNonQueryAsync(ct); }
+        await using var headerIdCommand = new SqlCommand("SELECT ID_POH FROM POC.PUR_POH WHERE CD_FIRM=@firm AND NO_PO=@no", connection, transaction);
+        headerIdCommand.Parameters.AddWithValue("@firm", order.Header.CD_FIRM); headerIdCommand.Parameters.AddWithValue("@no", order.Header.NO_PO);
+        var headerId = (Guid)(await headerIdCommand.ExecuteScalarAsync(ct) ?? throw new InvalidOperationException("Purchase order internal ID was not created."));
+        if (isUpdate) { await using var removeLines = new SqlCommand("DELETE FROM POC.PUR_POL WHERE CD_FIRM=@firm AND NO_PO=@no", connection, transaction); removeLines.Parameters.AddWithValue("@firm", order.Header.CD_FIRM); removeLines.Parameters.AddWithValue("@no", order.Header.NO_PO); await removeLines.ExecuteNonQueryAsync(ct); }
+        const string lineSql = "INSERT INTO POC.PUR_POL(ID_POH,CD_FIRM,NO_PO,NO_LINE,CD_ITEM,NM_ITEM,STND_ITEM,UNIT_ITEM,QT_PO,UM_PO,AM_SUPPLY,AM_VAT,AM_TOTAL,DT_DLV,CD_WH,NM_WH,DC_RMK,CD_USER_REG,TM_REG) VALUES(@headerId,@firm,@no,@line,@item,@name,@standard,@unit,@quantity,@price,@supply,@vat,@total,@delivery,@warehouse,@warehouseName,@remark,@user,SYSUTCDATETIME())";
+        foreach (var line in order.Lines) { await using var command = new SqlCommand(lineSql, connection, transaction); command.Parameters.AddWithValue("@headerId", headerId); AddLine(command, line); await command.ExecuteNonQueryAsync(ct); }
     }
 
     private static async Task<IReadOnlyList<PurchaseOrder>> WithLinesAsync(SqlConnection connection, IEnumerable<PurchaseOrderHeader> headers, CancellationToken ct)

@@ -53,6 +53,8 @@ test("saving navigation stays on the active mobile form and has one non-destruct
     await expect(page.getByTestId("mobile-sales-page")).toBeVisible();
 
     releaseSave();
+    await expect(page.getByRole("dialog", { name: "저장 완료" })).toBeVisible();
+    await page.getByTestId("confirm-dialog-confirm").click();
     await expect(page.getByTestId("mobile-sales-dirty-indicator")).toHaveCount(0);
     await page.getByTestId("mobile-sales-nav-pda").click();
     await expect(page.getByTestId("pda-sales-page")).toBeVisible();

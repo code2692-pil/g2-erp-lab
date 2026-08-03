@@ -44,7 +44,7 @@ export function ReviewRecordPanel({ session, unresolved, review, onRecord, onDow
   ];
 
   return <section className="ai-solution-center__review-panel" data-testid="review-record-panel" aria-busy={recording} aria-labelledby="review-record-heading">
-    <div><h3 id="review-record-heading">솔루션 검토 및 판단</h3><p>검토 상태는 실제 적용 완료·승인·전자결재를 뜻하지 않습니다. 현재 정보는 브라우저 세션과 검토 패키지에만 포함됩니다.</p></div>
+    <div><h3 id="review-record-heading">솔루션 검토 및 판단</h3><p>검토 상태는 실제 적용 완료·승인·전자결재를 뜻하지 않습니다.</p></div>
     {changedAfterReview && <p className="ai-solution-center__limit-notice" data-testid="review-analysis-changed" role="status">검토 시점 이후 분석 결과가 변경되었습니다. 변경된 결과를 검토하려면 상태를 다시 기록해 주세요.</p>}
     <div className="ai-solution-center__review-fields">
       <label>케이스 제목 <input data-testid="review-case-title" value={draft.caseTitle} maxLength={150} onChange={(event) => setDraft((current) => ({ ...current, caseTitle: event.target.value }))} placeholder="비워 두면 분석 유형·업무영역·생성일로 자동 제목을 사용합니다." /></label>
@@ -58,7 +58,7 @@ export function ReviewRecordPanel({ session, unresolved, review, onRecord, onDow
     </div>
     <div className="ai-solution-center__review-checklists">{groups.map((group) => <fieldset key={group.id}><legend>{group.title}</legend>{reviewChecklistDefinitions.filter((item) => item.group === group.id).map((item) => <label key={item.key}><input type="checkbox" data-testid={`review-check-${item.key}`} checked={draft.checklist[item.key]} onChange={(event) => { setDraft((current) => updateChecklist(current, item.key, event.target.checked)); setError(""); }} />{item.label}</label>)}</fieldset>)}</div>
     {error && <p className="ai-solution-center__error" data-testid="review-error" role="alert" aria-live="assertive">{error}</p>}
-    <div className="ai-solution-center__review-actions"><button className="ai-solution-center__primary-button" data-testid="review-record-save" type="button" disabled={recording} onClick={save}><FileCheck2 size={15} />{recording ? "검토 상태 기록 중..." : review ? "현재 분석 결과 기준으로 다시 기록" : "검토 상태 기록"}</button>{review && <button data-testid="review-package-download" type="button" onClick={() => onDownload(review)}><Download size={15} />검토 패키지 다운로드</button>}</div>
+    <div className="ai-solution-center__review-actions"><button className="ai-solution-center__primary-button" data-testid="review-record-save" type="button" disabled={recording} onClick={save}><FileCheck2 size={15} />{recording ? "검토 상태 기록 중..." : review ? "현재 분석 결과 기준으로 다시 기록" : "검토 상태 기록"}</button>{review && <button data-testid="review-package-download" type="button" onClick={() => onDownload(review)}><Download size={15} />분석 결과 다운로드</button>}</div>
     {review && <section className="ai-solution-center__review-summary" data-testid="review-summary"><h4>현재 검토 기록</h4><dl><div><dt>케이스</dt><dd>{review.caseTitle}</dd></div><div><dt>상태</dt><dd>{reviewStatusLabels[review.reviewStatus]}</dd></div><div><dt>추천 1순위</dt><dd>{review.recommendedOption}</dd></div><div><dt>기록 시각</dt><dd>{review.updatedAt}</dd></div></dl></section>}
   </section>;
 }

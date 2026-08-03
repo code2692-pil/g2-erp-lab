@@ -1,12 +1,14 @@
 import type { AnalyzerOutput, FileAnalysisRequest, FileAnalysisResult, FileCategory, FileProcessingStatus, FileSupportLevel } from "./fileAnalysisTypes.ts";
 import { redactSensitiveData } from "./sensitiveDataRedactor.ts";
 import { analyzeCsvContent, analyzeJsonContent, analyzeLogContent, analyzeTextContent, analyzeXmlContent } from "./structuredFileAnalyzers.ts";
+import { extractMeetingDocument } from "../meetingDocumentExtractor.ts";
 
 export const maximumAttachmentCount = 10;
 export const maximumAttachmentBytes = 50 * 1024 * 1024;
 export const maximumTotalAttachmentBytes = 100 * 1024 * 1024;
 export const maximumTextAnalysisBytes = 512 * 1024;
 export const maximumStructuredAnalysisBytes = 2 * 1024 * 1024;
+export const maximumDocumentAnalysisBytes = 20 * 1024 * 1024;
 
 const extensionCategories: Readonly<Record<string, FileCategory>> = {
   txt: "TEXT", md: "MARKDOWN", markdown: "MARKDOWN", csv: "CSV", json: "JSON", xml: "XML", log: "LOG",
@@ -44,6 +46,7 @@ export function classifyFile(fileName: string, mimeType = ""): FileCategory {
 function supportFor(category: FileCategory): FileSupportLevel {
   if (["TEXT", "MARKDOWN", "LOG"].includes(category)) return "CONTENT_SUPPORTED";
   if (["CSV", "JSON", "XML"].includes(category)) return "STRUCTURE_SUPPORTED";
+  if (["PDF", "WORD", "EXCEL", "POWERPOINT"].includes(category)) return "CONTENT_SUPPORTED";
   if (["IMAGE", "AUDIO", "VIDEO"].includes(category)) return "METADATA_ONLY";
   if (category === "EXECUTABLE") return "BLOCKED";
   return "REQUIRES_DESCRIPTION";
@@ -90,7 +93,7 @@ async function imageMetadata(file: File): Promise<AnalyzerOutput> {
     structureSummary: "이미지 메타정보 확인에 실패했습니다.",
     structuredMetadata: { mimeType: file.type || "알 수 없음", fileSize: file.size },
     redactedText: "",
-    warnings: ["이미지 크기를 확인하지 못했습니다. 사용자 메모를 입력해 주세요.", "현재 PoC에서는 OCR이나 장면 분석을 지원하지 않습니다."],
+    warnings: ["이미지 크기를 확인하지 못했습니다. 사용자 메모를 입력해 주세요.", "OCR이나 장면 분석은 지원하지 않습니다."],
     sensitiveFindings: [],
     analysisSucceeded: false,
     requiresUserDescription: true
@@ -100,7 +103,7 @@ async function imageMetadata(file: File): Promise<AnalyzerOutput> {
     structureSummary: `가로 ${width}px · 세로 ${height}px · 비율 ${(width / Math.max(height, 1)).toFixed(2)}`,
     structuredMetadata: { mimeType: file.type || "알 수 없음", fileSize: file.size, width, height, aspectRatio: Number((width / Math.max(height, 1)).toFixed(2)) },
     redactedText: "",
-    warnings: ["이미지 메타정보만 확인했습니다. 현재 PoC에서는 OCR이나 장면 분석을 지원하지 않습니다."],
+    warnings: ["이미지 메타정보만 확인했습니다. OCR이나 장면 분석은 지원하지 않습니다."],
     sensitiveFindings: [],
     analysisSucceeded: true,
     requiresUserDescription: true
@@ -143,7 +146,7 @@ async function mediaMetadata(file: File, category: "AUDIO" | "VIDEO"): Promise<A
     structureSummary: "재생 시간 또는 화면 크기 메타정보를 확인하지 못했습니다.",
     structuredMetadata: baseMetadata,
     redactedText: "",
-    warnings: ["메타정보 확인에 실패했습니다. 사용자 메모·전사문을 입력해 주세요.", category === "AUDIO" ? "현재 PoC에서는 음성 전사를 지원하지 않습니다." : "현재 PoC에서는 영상 장면·음성 분석을 지원하지 않습니다."],
+    warnings: ["메타정보 확인에 실패했습니다. 사용자 메모·전사문을 입력해 주세요.", category === "AUDIO" ? "음성 전사를 지원하지 않습니다." : "영상 장면·음성 분석을 지원하지 않습니다."],
     sensitiveFindings: [],
     analysisSucceeded: false,
     requiresUserDescription: true
@@ -173,7 +176,7 @@ async function mediaMetadata(file: File, category: "AUDIO" | "VIDEO"): Promise<A
         ? { ...baseMetadata, durationSeconds, width: videoMetadata.width, height: videoMetadata.height }
         : { ...baseMetadata, durationSeconds },
       redactedText: "",
-      warnings: [category === "AUDIO" ? "현재 PoC에서는 음성 전사를 지원하지 않습니다." : "현재 PoC에서는 영상 장면·음성 분석을 지원하지 않습니다."],
+      warnings: [category === "AUDIO" ? "음성 전사를 지원하지 않습니다." : "영상 장면·음성 분석을 지원하지 않습니다."],
       sensitiveFindings: [],
       analysisSucceeded: true,
       requiresUserDescription: true
@@ -194,11 +197,66 @@ function descriptionOnlyOutput(file: File, category: FileCategory): AnalyzerOutp
     structureSummary: "파일 유형과 크기만 확인했습니다.",
     structuredMetadata: { mimeType: file.type || "알 수 없음", fileSize: file.size },
     redactedText: "",
-    warnings: ["현재 PoC에서는 본문 자동 추출을 지원하지 않습니다. 주요 내용·전사문·요약을 입력해 주세요."],
+    warnings: ["본문 자동 추출을 지원하지 않습니다. 주요 내용·전사문·요약을 입력해 주세요."],
     sensitiveFindings: [],
     analysisSucceeded: true,
     requiresUserDescription: true
   };
+}
+
+function extractedDocumentOutput(text: string, label: string, segmentCount: number): AnalyzerOutput {
+  const analyzed = analyzeTextContent(text, false);
+  return {
+    ...analyzed,
+    summary: `${label} 본문 ${segmentCount.toLocaleString()}개 구간을 추출했습니다. ${analyzed.summary}`,
+    structureSummary: `${label} 본문 구간 ${segmentCount.toLocaleString()}개 · ${analyzed.structureSummary}`,
+    structuredMetadata: { ...analyzed.structuredMetadata, extractedSegmentCount: segmentCount, extractor: "local-document" }
+  };
+}
+
+async function officeDocumentOutput(file: File, category: "WORD" | "EXCEL" | "POWERPOINT"): Promise<AnalyzerOutput> {
+  const label = category === "WORD" ? "Word" : category === "EXCEL" ? "Excel" : "PowerPoint";
+  try {
+    const segments = await extractMeetingDocument(file);
+    const text = segments.map((segment) => `${segment.locator}: ${segment.text}`).join("\n");
+    if (!text.trim()) throw new Error("읽을 수 있는 본문이 없습니다.");
+    return extractedDocumentOutput(text, label, segments.length);
+  } catch (caught) {
+    const fallback = descriptionOnlyOutput(file, category);
+    return { ...fallback, warnings: [`본문 추출 실패: ${caught instanceof Error ? caught.message : "문서를 읽을 수 없습니다."}`, ...fallback.warnings] };
+  }
+}
+
+async function pdfDocumentOutput(file: File): Promise<AnalyzerOutput> {
+  try {
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const loadingTask = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), useWasm: false, stopAtErrors: true, maxImageSize: 0 });
+    const document = await loadingTask.promise;
+    const pages: string[] = [];
+    try {
+      for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+        const page = await document.getPage(pageNumber);
+        const content = await page.getTextContent();
+        const text = content.items.map((item) => "str" in item ? item.str : "").join(" ").replace(/\s+/g, " ").trim();
+        if (text) pages.push(`PDF 페이지 ${pageNumber}: ${text}`);
+      }
+    } finally {
+      await loadingTask.destroy();
+    }
+    if (pages.length === 0) {
+      return {
+        ...descriptionOnlyOutput(file, "PDF"),
+        summary: "PDF에서 읽을 수 있는 텍스트 본문을 찾지 못했습니다.",
+        warnings: ["이미지로 스캔된 PDF의 OCR은 지원하지 않습니다. 텍스트 PDF 또는 주요 내용 설명을 등록해 주세요."],
+        analysisSucceeded: false,
+        requiresUserDescription: true
+      };
+    }
+    return extractedDocumentOutput(pages.join("\n"), "PDF", pages.length);
+  } catch (caught) {
+    const fallback = descriptionOnlyOutput(file, "PDF");
+    return { ...fallback, warnings: [`PDF 본문 추출 실패: ${caught instanceof Error ? caught.message : "PDF를 읽을 수 없습니다."}`, ...fallback.warnings] };
+  }
 }
 
 export async function analyzeFile(request: FileAnalysisRequest): Promise<FileAnalysisResult> {
@@ -237,14 +295,17 @@ export async function analyzeFile(request: FileAnalysisRequest): Promise<FileAna
 
   if (category === "IMAGE") return resultFromOutput(request, category, supportLevel, await imageMetadata(request.file));
   if (category === "AUDIO" || category === "VIDEO") return resultFromOutput(request, category, supportLevel, await mediaMetadata(request.file, category));
-  if (["PDF", "WORD", "EXCEL", "POWERPOINT", "ARCHIVE", "UNKNOWN_BINARY"].includes(category)) return resultFromOutput(request, category, supportLevel, descriptionOnlyOutput(request.file, category));
+  if (["PDF", "WORD", "EXCEL", "POWERPOINT"].includes(category) && request.file.size > maximumDocumentAnalysisBytes) return resultFromOutput(request, category, supportLevel, descriptionOnlyOutput(request.file, category));
+  if (category === "PDF") return resultFromOutput(request, category, supportLevel, await pdfDocumentOutput(request.file));
+  if (category === "WORD" || category === "EXCEL" || category === "POWERPOINT") return resultFromOutput(request, category, supportLevel, await officeDocumentOutput(request.file, category));
+  if (["ARCHIVE", "UNKNOWN_BINARY"].includes(category)) return resultFromOutput(request, category, supportLevel, descriptionOnlyOutput(request.file, category));
 
   const limit = ["CSV", "JSON", "XML"].includes(category) ? maximumStructuredAnalysisBytes : maximumTextAnalysisBytes;
   if (request.file.size > limit) {
     return {
       ...baseResult(request, category, supportLevel),
       processingStatus: "REQUIRES_DESCRIPTION",
-      summary: `로컬 내용 읽기 제한(${Math.round(limit / 1024)}KB)을 초과했습니다.`,
+      summary: `내용 읽기 제한(${Math.round(limit / 1024)}KB)을 초과했습니다.`,
       structureSummary: "전체를 분석했다고 표시하지 않으며 사용자 설명이 필요합니다.",
       structuredMetadata: { mimeType: request.file.type || "알 수 없음", fileSize: request.file.size, analysisByteLimit: limit },
       redactedText: "",
@@ -284,7 +345,7 @@ export async function analyzeFile(request: FileAnalysisRequest): Promise<FileAna
     return {
       ...baseResult(request, category, supportLevel),
       processingStatus: "ERROR",
-      summary: "파일 내용을 로컬에서 읽지 못했습니다.",
+      summary: "파일 내용을 읽지 못했습니다.",
       structureSummary: "첨부 정보는 유지했으며 사용자 설명을 입력할 수 있습니다.",
       structuredMetadata: { fileSize: request.file.size },
       redactedText: redaction.redactedText,

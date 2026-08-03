@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Building2, ChevronRight, Plus, Rows3, Save, Search, Trash2 } from "lucide-react";
+import { Plus, Rows3, Save, Search, Trash2 } from "lucide-react";
+import { AppNavigation, type AppNavigationPage } from "../../components/AppNavigation";
 import { ErpDataGrid, registerErpDataGridPasteHandler } from "../../components/common/ErpDataGrid";
 import { DirtyIndicator } from "../../components/common/DirtyIndicator";
 import type { ErpDataGridCellValue, ErpDataGridColumn, ErpDataGridFocusRequest, ErpDataGridPasteRequest } from "../../components/common/ErpDataGrid";
@@ -8,6 +9,9 @@ import { ErpLookupDialog } from "../../components/common/ErpLookupDialog";
 import { ErpValidationSummary } from "../../components/common/ErpValidationSummary";
 import { PageToolbar } from "../../components/common/PageToolbar";
 import { SearchPanel } from "../../components/common/SearchPanel";
+import { RangeValidationDialog } from "../../components/common/validation/RangeValidationDialog";
+import { validateDateRange } from "../../components/common/validation/rangeValidation";
+import { initialCompanyCode } from "../../utils/companyContext";
 import { sortValidationIssues, toValidationCellErrors, type ValidationIssue } from "../../components/common/validation/validation";
 import { useCrudPage } from "../../hooks/useCrudPage";
 import { useConfirm } from "../../hooks/useConfirm";
@@ -24,9 +28,10 @@ import { calculatePurchaseOrderLineAmounts, calculatePurchaseOrderTotals, create
 import { validatePurchaseOrders } from "./validation";
 interface PurchaseOrderRegistrationProps {
     adapter: PurchaseOrderDataAdapter;
-    onNavigate: (page: "sales" | "purchase" | "work" | "development" | "ai") => void;
+    onNavigate: (page: AppNavigationPage) => void;
     onScreenIntent?: (screen: ScreenModuleId) => void;
     showDevelopmentDataManager?: boolean;
+    navigationPage?: "purchase" | "mobilePurchase" | "pdaPurchase";
 }
 type HeaderField = Exclude<keyof PurchaseOrderHeader, "NO_PO">;
 type LineField = Exclude<keyof PurchaseOrderLine, "CD_FIRM" | "NO_PO" | "NO_LINE" | "AM_SUPPLY" | "AM_VAT" | "AM_TOTAL">;
@@ -39,9 +44,9 @@ const itemColumns: readonly ErpDataGridColumn<Item>[] = [{ field: "CD_ITEM", hea
 const warehouseColumns: readonly ErpDataGridColumn<Warehouse>[] = [{ field: "CD_FIRM", headerName: "회사", width: 80 }, { field: "CD_WH", headerName: "창고코드", width: 120 }, { field: "NM_WH", headerName: "창고명", width: 180 }, { field: "YN_USE", headerName: "사용", width: 70 }];
 function today() { return new Date().toISOString().slice(0, 10); }
 function numberValue(value: ErpDataGridCellValue) { const result = Number(value); return Number.isFinite(result) ? result : 0; }
-function emptyHeader(no: string): PurchaseOrderHeader { return { CD_FIRM: "1000", NO_PO: no, DT_PO: today(), CD_PARTNER: "", NM_PARTNER: "", CD_EMP: "E-001", NM_EMP: "Buyer", CD_CURRENCY: "KRW", RT_EXCHANGE: 1, ST_PO: "미확정", DC_RMK: "" }; }
+function emptyHeader(no: string): PurchaseOrderHeader { return { CD_FIRM: initialCompanyCode(), NO_PO: no, DT_PO: today(), CD_PARTNER: "", NM_PARTNER: "", CD_EMP: "E-001", NM_EMP: "Buyer", CD_CURRENCY: "KRW", RT_EXCHANGE: 1, ST_PO: "미확정", DC_RMK: "" }; }
 function emptyLine(header: PurchaseOrderHeader, number: number): PurchaseOrderLine { return { CD_FIRM: header.CD_FIRM, NO_PO: header.NO_PO, NO_LINE: number, CD_ITEM: "", NM_ITEM: "", STND_ITEM: "", UNIT_ITEM: "", QT_PO: 0, UM_PO: 0, AM_SUPPLY: 0, AM_VAT: 0, AM_TOTAL: 0, DT_DLV: today(), CD_WH: "", NM_WH: "", DC_RMK: "" }; }
-export function PurchaseOrderRegistration({ adapter, onNavigate, onScreenIntent, showDevelopmentDataManager = false }: PurchaseOrderRegistrationProps) {
+export function PurchaseOrderRegistration({ adapter, onNavigate, onScreenIntent, showDevelopmentDataManager = false, navigationPage = "purchase" }: PurchaseOrderRegistrationProps) {
     const screenIntentProps = (screen: ScreenModuleId) => ({
         onMouseEnter: () => onScreenIntent?.(screen),
         onFocus: () => onScreenIntent?.(screen),
@@ -53,7 +58,9 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, onScreenIntent,
     const latestLines = useRef<PurchaseOrderLine[]>(lines);
     const detailRequestVersion = useRef(0);
     const persistedPurchaseOrderKeys = useRef(new Set<string>());
+    const savedSelectionKeyRef = useRef<string | null>(null);
     const lineLookupKeyRef = useRef<string | null>(null);
+    const partnerLookupOrderNoRef = useRef<string | null>(null);
     const { selectedMasterKey: selectedNoPo, selectedDetailKey: selectedLineNo, selectMaster, selectDetail } = useMasterDetailSelection<string, number | null>("", null);
     const { isLoading, isSaving, operation, message, setMessage, setFeatureMessage, executeCreate, executeDelete, executeSave, executeSearch } = useCrudPage();
     const [checkedLineKeys, setCheckedLineKeys] = useState<string[]>([]);
@@ -66,7 +73,10 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, onScreenIntent,
     const mockPartners = partners;
     const mockItems = items;
     const mockWarehouses = warehouses;
-    const [filters, setFilters] = useState({ firm: "1000", from: "2026-07-01", to: "2026-07-31", no: "", partner: "", status: "" });
+    const [filters, setFilters] = useState({ firm: initialCompanyCode(), from: "2026-07-01", to: "2026-07-31", no: "", partner: "", status: "" });
+    const [appliedFilters, setAppliedFilters] = useState(filters);
+    const [rangeDialogOpen, setRangeDialogOpen] = useState(false);
+    const invalidDateInputRef = useRef<HTMLInputElement | null>(null);
     const [tempSequence, setTempSequence] = useState(1);
     const [validationAttempted, setValidationAttempted] = useState(false);
     const [headerFocusRequest, setHeaderFocusRequest] = useState<ErpDataGridFocusRequest | null>(null);
@@ -79,7 +89,7 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, onScreenIntent,
     const selectedLine = lines.find((line) => line.NO_PO === selectedNoPo && line.NO_LINE === selectedLineNo);
     const issues = useMemo(() => sortValidationIssues(validatePurchaseOrders(headers, lines), { headerFields: purchaseHeaderValidationOrder, detailFields: purchaseLineValidationOrder }), [headers, lines]);
     const displayedIssues = validationAttempted ? issues : [];
-    const visibleHeaders = useMemo(() => headers.filter((header) => header.NO_PO.startsWith("TEMP_PO_") || ((!filters.firm || header.CD_FIRM === filters.firm) && (!filters.no || header.NO_PO.includes(filters.no)) && (!filters.partner || header.CD_PARTNER.includes(filters.partner)) && (!filters.status || header.ST_PO === filters.status) && (!filters.from || header.DT_PO >= filters.from) && (!filters.to || header.DT_PO <= filters.to))), [filters, headers]);
+    const visibleHeaders = useMemo(() => headers.filter((header) => header.NO_PO === savedSelectionKeyRef.current || header.NO_PO.startsWith("TEMP_PO_") || ((!appliedFilters.firm || header.CD_FIRM === appliedFilters.firm) && (!appliedFilters.no || header.NO_PO.includes(appliedFilters.no)) && (!appliedFilters.partner || header.CD_PARTNER.includes(appliedFilters.partner)) && (!appliedFilters.status || header.ST_PO === appliedFilters.status) && (!appliedFilters.from || header.DT_PO >= appliedFilters.from) && (!appliedFilters.to || header.DT_PO <= appliedFilters.to))), [appliedFilters, headers]);
     const selectedLines = lines.filter((line) => line.NO_PO === selectedNoPo).sort((a, b) => a.NO_LINE - b.NO_LINE);
     const checkedLines = selectedLines.filter((line) => checkedLineKeys.includes(createPurchaseOrderLineKey(line.CD_FIRM, line.NO_PO, line.NO_LINE)));
     const deleteTargetLines = checkedLines.length > 0 ? checkedLines : selectedLine ? [selectedLine] : [];
@@ -88,6 +98,9 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, onScreenIntent,
         latestHeaders.current = headers;
         latestLines.current = lines;
     }, [headers, lines]);
+    useEffect(() => {
+        savedSelectionKeyRef.current = null;
+    }, [filters]);
     const focusValidationIssue = (issue: ValidationIssue | undefined) => {
         if (!issue || !issue.rowKey || !issue.field || (issue.scope !== "header" && issue.scope !== "line"))
             return;
@@ -184,6 +197,10 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, onScreenIntent,
     };
     useLayoutEffect(() => registerErpDataGridPasteHandler("purchase-line-grid", handleLinePaste, (pasteMessage) => notify("error", pasteMessage)), [handleLinePaste, notify]);
     const handleSearch = async () => {
+        if (!validateDateRange(filters.from, filters.to).valid) {
+            setRangeDialogOpen(true);
+            return;
+        }
         if (!(await confirmDiscardChanges())) return;
         setFeatureMessage("");
         await executeSearch({
@@ -196,6 +213,7 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, onScreenIntent,
                 status: filters.status
             }),
             onSuccess: (result) => {
+                savedSelectionKeyRef.current = null;
                 const matchedHeaders = result.headers.filter((header) =>
                     (!filters.firm || header.CD_FIRM === filters.firm) &&
                     (!filters.no || header.NO_PO.includes(filters.no)) &&
@@ -206,14 +224,14 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, onScreenIntent,
                 );
                 setHeaders(result.headers);
                 setLines(result.lines);
+                setAppliedFilters(filters);
                 result.headers.forEach((header) => persistedPurchaseOrderKeys.current.add(createPurchaseOrderHeaderKey(header.CD_FIRM, header.NO_PO)));
                 selectMaster(matchedHeaders[0]?.NO_PO ?? "");
                 setCheckedLineKeys([]);
                 setValidationAttempted(false);
                 clearDirty();
-                notify(matchedHeaders.length ? "success" : "info", matchedHeaders.length ? "조회되었습니다." : "조회된 데이터가 없습니다.");
             },
-            successMessage: "조회되었습니다.",
+            successMessage: "",
             errorMessage: "조회 중 오류가 발생했습니다. 다시 시도하세요."
         });
     };
@@ -302,6 +320,7 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, onScreenIntent,
                     : adapter.create(document);
             },
             onSuccess: (document) => {
+                savedSelectionKeyRef.current = document.Header.NO_PO;
                 persistedPurchaseOrderKeys.current.add(createPurchaseOrderHeaderKey(document.Header.CD_FIRM, document.Header.NO_PO));
                 setHeaders((current) => current.map((header) => header.NO_PO === selectedNoPo ? document.Header : header));
                 setLines((current) => current.map((line) => line.NO_PO === selectedNoPo ? document.Lines.find((savedLine) => savedLine.NO_LINE === line.NO_LINE) ?? line : line));
@@ -309,7 +328,6 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, onScreenIntent,
                 setCheckedLineKeys([]);
                 setValidationAttempted(false);
                 clearDirty();
-                notify("success", "저장되었습니다.");
             },
             successMessage: "저장되었습니다.",
             errorMessage: "저장 중 오류가 발생했습니다. 입력값을 확인하고 다시 시도하세요."
@@ -321,11 +339,11 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, onScreenIntent,
         notify("info", "선택된 항목이 없습니다.");
         return;
     } if (!(await confirm({ title: "발주 삭제", message: `발주번호 ${selectedNoPo}을 삭제하시겠습니까?`, confirmLabel: "삭제", danger: true })))
-        return; setFeatureMessage(""); await executeDelete({ execute: async () => { await adapter.delete(selectedHeader.CD_FIRM, selectedNoPo); persistedPurchaseOrderKeys.current.delete(createPurchaseOrderHeaderKey(selectedHeader.CD_FIRM, selectedNoPo)); setHeaders((current) => current.filter((header) => header.NO_PO !== selectedNoPo)); setLines((current) => current.filter((line) => line.NO_PO !== selectedNoPo)); selectMaster(""); setCheckedLineKeys([]); setValidationAttempted(false); clearDirty(); notify("success", "삭제되었습니다."); return true; }, successMessage: "삭제되었습니다.", errorMessage: "삭제 중 오류가 발생했습니다. 다시 시도하세요." }); };
-    const choosePartner = (partner: Partner) => { if (!selectedHeader) {
+        return; const orderToDelete = selectedHeader; setFeatureMessage(""); await executeDelete({ execute: async () => { await adapter.delete(orderToDelete.CD_FIRM, orderToDelete.NO_PO); return orderToDelete; }, onSuccess: (deletedOrder) => { persistedPurchaseOrderKeys.current.delete(createPurchaseOrderHeaderKey(deletedOrder.CD_FIRM, deletedOrder.NO_PO)); setHeaders((current) => current.filter((header) => header.NO_PO !== deletedOrder.NO_PO)); setLines((current) => current.filter((line) => line.NO_PO !== deletedOrder.NO_PO)); selectMaster(""); setCheckedLineKeys([]); setValidationAttempted(false); clearDirty(); }, successMessage: "삭제되었습니다.", errorMessage: "삭제 중 오류가 발생했습니다. 다시 시도하세요." }); };
+    const choosePartner = (partner: Partner) => { const targetOrderNo = partnerLookupOrderNoRef.current ?? selectedHeader?.NO_PO; if (!targetOrderNo) {
         notify("info", "선택된 항목이 없습니다.");
         return;
-    } setHeaders((current) => current.map((header) => header.NO_PO === selectedHeader.NO_PO ? { ...header, CD_PARTNER: partner.CD_PARTNER, NM_PARTNER: partner.NM_PARTNER } : header)); markDirty(); notify("success", "거래처 선택이 반영되었습니다."); setPartnerOpen(false); };
+    } setHeaders((current) => current.map((header) => header.NO_PO === targetOrderNo ? { ...header, CD_PARTNER: partner.CD_PARTNER, NM_PARTNER: partner.NM_PARTNER } : header)); selectMaster(targetOrderNo); partnerLookupOrderNoRef.current = null; markDirty(); notify("success", "거래처 선택이 반영되었습니다."); setPartnerOpen(false); };
     const chooseItem = (item: Item) => { const targetKey = lineLookupKeyRef.current; if (!targetKey) {
         notify("info", "선택된 항목이 없습니다.");
         return;
@@ -345,8 +363,8 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, onScreenIntent,
         { field: "CD_FIRM", headerName: "회사", width: 80, editable: true },
         { field: "NO_PO", headerName: "발주번호", width: 145, readOnly: true },
         { field: "DT_PO", headerName: "발주일자", width: 120, editable: true, dataType: "date" },
-        { field: "CD_PARTNER", headerName: "거래처", width: 120, editable: true },
-        { field: "NM_PARTNER", headerName: "거래처명", width: 150, editable: true },
+        { field: "CD_PARTNER", headerName: "거래처", width: 120, editable: true, lookup: { instruction: "더블클릭하여 거래처를 선택합니다." } },
+        { field: "NM_PARTNER", headerName: "거래처명", width: 150, editable: true, lookup: { instruction: "더블클릭하여 거래처를 선택합니다." } },
         { field: "CD_EMP", headerName: "담당자", width: 90, editable: true },
         { field: "NM_EMP", headerName: "담당자명", width: 110, editable: true },
         { field: "CD_CURRENCY", headerName: "통화", width: 70, editable: true },
@@ -363,18 +381,19 @@ export function PurchaseOrderRegistration({ adapter, onNavigate, onScreenIntent,
     const lineColumns: readonly ErpDataGridColumn<PurchaseOrderLine>[] = [{ field: "NO_LINE", headerName: "행", width: 55, readOnly: true }, { field: "CD_ITEM", headerName: "품목코드", width: 110, editable: true, lookup: { instruction: "더블클릭하여 품목을 선택합니다." } }, { field: "NM_ITEM", headerName: "품목명", width: 150, editable: true }, { field: "STND_ITEM", headerName: "규격", width: 130, editable: true }, { field: "UNIT_ITEM", headerName: "단위", width: 60, editable: true }, { field: "QT_PO", headerName: "수량", width: 85, editable: true, dataType: "number", sum: true }, { field: "UM_PO", headerName: "단가", width: 100, editable: true, dataType: "number" }, { field: "AM_SUPPLY", headerName: "공급가", width: 105, readOnly: true, dataType: "number", sum: true, formatter: (value) => money.format(Number(value)) }, { field: "AM_VAT", headerName: "부가세", width: 95, readOnly: true, dataType: "number", sum: true, formatter: (value) => money.format(Number(value)) }, { field: "AM_TOTAL", headerName: "합계", width: 110, readOnly: true, dataType: "number", sum: true, formatter: (value) => money.format(Number(value)) }, { field: "DT_DLV", headerName: "납기일", width: 115, editable: true, dataType: "date" }, { field: "CD_WH", headerName: "창고", width: 100, editable: true, lookup: { instruction: "더블클릭하여 창고를 선택합니다." } }, { field: "NM_WH", headerName: "창고명", width: 130, editable: true }, { field: "DC_RMK", headerName: "비고", width: 140, editable: true }];
     return <>
       <div className="erp-shell">
-        <aside className="side-nav"><div className="brand"><Building2 size={20}/><strong>SMART ERP</strong></div><nav><div className="menu-title">영업관리</div><button className="menu-item" data-testid="nav-sales-order" onClick={() => onNavigate("sales")}>수주등록</button><div className="menu-title">구매관리</div><div className="menu-group"><ChevronRight size={14}/><span>발주관리</span></div><button className="menu-item active" data-testid="nav-purchase-order">발주등록</button><div className="menu-title">생산관리</div><div className="menu-group"><ChevronRight size={14}/><span>작업지시관리</span></div><button {...screenIntentProps("work")} className="menu-item" data-testid="nav-work-order" onClick={() => void navigateWorkOrder()} type="button">작업지시등록</button><div className="menu-title">AI 솔루션</div><button {...screenIntentProps("ai")} className="menu-item" data-testid="nav-ai-solution-center" onClick={() => void navigateAiSolutionCenter()} type="button">AI 솔루션 센터</button>{showDevelopmentDataManager && <><div className="menu-title">개발 도구</div><button {...screenIntentProps("development")} className="menu-item" data-testid="nav-development-data" onClick={() => onNavigate("development")} type="button">테스트 데이터 관리</button></>}</nav></aside>
+        <AppNavigation currentPage={navigationPage} onNavigate={onNavigate} onScreenIntent={onScreenIntent} />
         <main aria-busy={isLoading || isSaving} className="workbench" data-processing-state={operation}>
-          <header className="page-header"><div><h1 data-testid="purchase-page-title">발주등록</h1><p>PUR_POH / PUR_POL mock 입력 샘플</p><DirtyIndicator dataTestId="purchase-order-dirty-indicator" dirty={isDirty} /></div><PageToolbar actions={[{ dataTestId: "po-btn-search", label: isLoading ? "조회 중..." : "조회", icon: <Search size={15}/>, onClick: handleSearch, disabled: isSaving }, { dataTestId: "po-btn-new", label: "신규", icon: <Plus size={15}/>, onClick: handleNew, disabled: isLoading || isSaving }, { dataTestId: "po-btn-add-line", label: "행추가", icon: <Rows3 size={15}/>, onClick: handleAddLine, disabled: isLoading || isSaving }, { dataTestId: "po-btn-delete-line", label: "행삭제", icon: <Trash2 size={15}/>, onClick: handleDeleteLine, disabled: isLoading || isSaving }, { dataTestId: "po-btn-save", label: operation === "saving" ? "저장 중..." : "저장", icon: <Save size={15}/>, onClick: handleSave, disabled: isLoading || isSaving, variant: "primary" }, { dataTestId: "po-btn-delete", label: operation === "deleting" ? "삭제 중..." : "삭제", icon: <Trash2 size={15}/>, onClick: handleDelete, disabled: isLoading || isSaving, variant: "danger" }]}/></header>
-          <SearchPanel message={message}><label>회사<input data-testid="po-filter-firm" value={filters.firm} onChange={(event) => setFilters({ ...filters, firm: event.target.value })}/></label><label>발주일 From<input type="date" value={filters.from} onChange={(event) => setFilters({ ...filters, from: event.target.value })}/></label><label>발주일 To<input type="date" value={filters.to} onChange={(event) => setFilters({ ...filters, to: event.target.value })}/></label><label>발주번호<input data-testid="po-filter-no" value={filters.no} onChange={(event) => setFilters({ ...filters, no: event.target.value })}/></label><label>거래처<input data-testid="po-filter-partner" value={filters.partner} onChange={(event) => setFilters({ ...filters, partner: event.target.value })}/></label><label>상태<select data-testid="po-filter-status" value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">전체</option>{statuses.map((status) => <option key={status}>{status}</option>)}</select></label></SearchPanel>
+          <header className="page-header"><div><h1 data-testid="purchase-page-title">발주등록</h1><p>발주 정보를 조회하고 등록합니다.</p><DirtyIndicator dataTestId="purchase-order-dirty-indicator" dirty={isDirty} /></div><PageToolbar actions={[{ dataTestId: "po-btn-search", label: isLoading ? "조회 중..." : "조회", icon: <Search size={15}/>, onClick: handleSearch, disabled: isSaving, group: "document" }, { dataTestId: "po-btn-new", label: "신규", icon: <Plus size={15}/>, onClick: handleNew, disabled: isLoading || isSaving, group: "document" }, { dataTestId: "po-btn-save", label: operation === "saving" ? "저장 중..." : "저장", icon: <Save size={15}/>, onClick: handleSave, disabled: isLoading || isSaving, variant: "primary", group: "document" }, { dataTestId: "po-btn-delete", label: operation === "deleting" ? "삭제 중..." : "삭제", icon: <Trash2 size={15}/>, onClick: handleDelete, disabled: isLoading || isSaving, variant: "danger", group: "document" }, { dataTestId: "po-btn-add-line", label: "행추가", icon: <Rows3 size={15}/>, onClick: handleAddLine, disabled: isLoading || isSaving, group: "rows" }, { dataTestId: "po-btn-delete-line", label: "행삭제", icon: <Trash2 size={15}/>, onClick: handleDeleteLine, disabled: isLoading || isSaving, group: "rows" }]}/></header>
+          <SearchPanel message={message}><label>회사<input data-testid="po-filter-firm" value={filters.firm} onChange={(event) => setFilters({ ...filters, firm: event.target.value })}/></label><label>발주일 From<input data-testid="po-filter-date-from" type="date" value={filters.from} onChange={(event) => { const nextValue = event.target.value; if (!validateDateRange(nextValue, filters.to).valid) { invalidDateInputRef.current = event.currentTarget; setRangeDialogOpen(true); return; } setFilters({ ...filters, from: nextValue }); }}/></label><label>발주일 To<input data-testid="po-filter-date-to" type="date" value={filters.to} onChange={(event) => { const nextValue = event.target.value; if (!validateDateRange(filters.from, nextValue).valid) { invalidDateInputRef.current = event.currentTarget; setRangeDialogOpen(true); return; } setFilters({ ...filters, to: nextValue }); }}/></label><label>발주번호<input data-testid="po-filter-no" value={filters.no} onChange={(event) => setFilters({ ...filters, no: event.target.value })}/></label><label>거래처<input data-testid="po-filter-partner" value={filters.partner} onChange={(event) => setFilters({ ...filters, partner: event.target.value })}/></label><label>상태<select data-testid="po-filter-status" value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">전체</option>{statuses.map((status) => <option key={status}>{status}</option>)}</select></label></SearchPanel>
           <ErpValidationSummary dataTestId="purchase-validation-summary" issues={displayedIssues} onFocusFirst={() => focusValidationIssue(displayedIssues[0])} />
-          <section className="grid-section top-grid"><div className="section-title"><h2>발주정보</h2><button data-testid="po-btn-partner-lookup" onClick={() => setPartnerOpen(true)} type="button">거래처 도움창</button></div><ErpDataGrid columns={headerColumns} dataTestId="purchase-header-grid" rows={visibleHeaders} rowKey={(row) => createPurchaseOrderHeaderKey(row.CD_FIRM, row.NO_PO)} selectedRowKey={selectedHeader ? createPurchaseOrderHeaderKey(selectedHeader.CD_FIRM, selectedHeader.NO_PO) : undefined} selectionMode="single" showFooter showRowNumbers cellErrors={toValidationCellErrors(displayedIssues)} focusRequest={headerFocusRequest} onRowClick={selectHeader} onCellValueChange={(row, field, value) => { if (field !== "NO_PO") updateHeader(row.NO_PO, field as HeaderField, value); }}/></section>
+      <section className="grid-section top-grid"><div className="section-title"><h2>발주정보</h2></div><ErpDataGrid columns={headerColumns} dataTestId="purchase-header-grid" rows={visibleHeaders} rowKey={(row) => createPurchaseOrderHeaderKey(row.CD_FIRM, row.NO_PO)} selectedRowKey={selectedHeader ? createPurchaseOrderHeaderKey(selectedHeader.CD_FIRM, selectedHeader.NO_PO) : undefined} selectionMode="single" showFooter showRowNumbers cellErrors={toValidationCellErrors(displayedIssues)} focusRequest={headerFocusRequest} lookupDisabled={isLoading || isSaving || partnerOpen || itemOpen || warehouseOpen} onLookupCellDoubleClick={(row, column) => { if (column.field === "CD_PARTNER" || column.field === "NM_PARTNER") { detailRequestVersion.current += 1; partnerLookupOrderNoRef.current = row.NO_PO; selectMaster(row.NO_PO); setPartnerOpen(true); } }} onRowClick={selectHeader} onCellValueChange={(row, field, value) => { if (field !== "NO_PO") updateHeader(row.NO_PO, field as HeaderField, value); }}/></section>
           <section className="grid-section bottom-grid"><div className="section-title"><h2>발주상세</h2></div><ErpDataGrid columns={lineColumns} dataTestId="purchase-line-grid" rows={selectedLines} rowKey={(row) => createPurchaseOrderLineKey(row.CD_FIRM, row.NO_PO, row.NO_LINE)} selectedRowKey={selectedLine ? createPurchaseOrderLineKey(selectedLine.CD_FIRM, selectedLine.NO_PO, selectedLine.NO_LINE) : undefined} checkedRowKeys={checkedLineKeys} onCheckedRowKeysChange={setCheckedLineKeys} selectionMode="multiple" showCheckboxes showFooter showRowNumbers cellErrors={toValidationCellErrors(displayedIssues)} focusRequest={lineFocusRequest} lookupDisabled={isLoading || isSaving || itemOpen || warehouseOpen} onLookupCellDoubleClick={(row, column) => handleLineLookupCellDoubleClick(row, column.field)} onRowClick={(row) => selectDetail(row.NO_LINE)} onCellValueChange={(row, field, value) => updateLine(row.NO_PO, row.NO_LINE, field as LineField, value)}/></section>
           <div className="sales-order-total-summary" data-testid="purchase-total-summary"><span>수량 {money.format(totals.QT_PO)}</span><span>공급가 {money.format(totals.AM_SUPPLY)}</span><span>부가세 {money.format(totals.AM_VAT)}</span><strong>합계 {money.format(totals.AM_TOTAL)}</strong></div>
         </main>
       </div>
-      <ErpLookupDialog columns={partnerColumns} dataTestId="po-partner-lookup" emptyMessage="거래처가 없습니다." height={480} onClose={() => setPartnerOpen(false)} onSelect={choosePartner} open={partnerOpen} rowKey={(row) => `${row.CD_FIRM}::${row.CD_PARTNER}`} rows={mockPartners.filter((row) => row.YN_USE === "Y")} searchFields={["CD_PARTNER", "NM_PARTNER"]} title="거래처 도움창" width={700}/>
+      <ErpLookupDialog columns={partnerColumns} dataTestId="po-partner-lookup" emptyMessage="거래처가 없습니다." height={480} onClose={() => { partnerLookupOrderNoRef.current = null; setPartnerOpen(false); }} onSelect={choosePartner} open={partnerOpen} rowKey={(row) => `${row.CD_FIRM}::${row.CD_PARTNER}`} rows={mockPartners.filter((row) => row.YN_USE === "Y")} searchFields={["CD_PARTNER", "NM_PARTNER"]} title="거래처 도움창" width={700}/>
       <ErpLookupDialog columns={itemColumns} dataTestId="po-item-lookup" emptyMessage="품목이 없습니다." height={480} onClose={() => { lineLookupKeyRef.current = null; setItemOpen(false); }} onSelect={chooseItem} open={itemOpen} rowKey={(row) => `${row.CD_FIRM}::${row.CD_ITEM}`} rows={mockItems.filter((row) => row.YN_USE === "Y" && (!selectedHeader || row.CD_FIRM === selectedHeader.CD_FIRM))} searchFields={["CD_ITEM", "NM_ITEM"]} title="품목 도움창" width={700}/>
       <ErpLookupDialog columns={warehouseColumns} dataTestId="po-warehouse-lookup" emptyMessage="창고가 없습니다." height={480} onClose={() => { lineLookupKeyRef.current = null; setWarehouseOpen(false); }} onSelect={chooseWarehouse} open={warehouseOpen} rowKey={(row) => `${row.CD_FIRM}::${row.CD_WH}`} rows={mockWarehouses.filter((row) => !selectedHeader || row.CD_FIRM === selectedHeader.CD_FIRM)} searchFields={["CD_WH", "NM_WH"]} title="창고 도움창" width={700}/>
+      <RangeValidationDialog open={rangeDialogOpen} onClose={() => { setRangeDialogOpen(false); requestAnimationFrame(() => invalidDateInputRef.current?.focus()); }} />
     </>;
 }

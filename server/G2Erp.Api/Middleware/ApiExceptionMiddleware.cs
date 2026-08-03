@@ -1,4 +1,5 @@
 using G2Erp.Api.Services;
+using G2Erp.Api.Domain;
 using Microsoft.Data.SqlClient;
 
 namespace G2Erp.Api.Middleware;
@@ -12,6 +13,11 @@ public sealed class ApiExceptionMiddleware(RequestDelegate next, ILogger<ApiExce
         {
             context.Response.StatusCode = StatusCodes.Status400BadRequest;
             await context.Response.WriteAsJsonAsync(new { errors = exception.Errors, traceId = context.TraceIdentifier });
+        }
+        catch (DocumentNumberLimitException exception)
+        {
+            context.Response.StatusCode = StatusCodes.Status409Conflict;
+            await context.Response.WriteAsJsonAsync(new { error = exception.Message, traceId = context.TraceIdentifier });
         }
         catch (DomainConflictException exception)
         {

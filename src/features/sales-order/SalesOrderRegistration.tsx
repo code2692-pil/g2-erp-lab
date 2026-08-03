@@ -1,14 +1,15 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
-  Building2,
-  ChevronRight,
+  Factory,
   MailPlus,
   Plus,
   Rows3,
   Save,
   Search,
+  ShoppingCart,
   Trash2
 } from "lucide-react";
+import { AppNavigation, type AppNavigationPage } from "../../components/AppNavigation";
 import { ErpDataGrid } from "../../components/common/ErpDataGrid";
 import { DirtyIndicator } from "../../components/common/DirtyIndicator";
 import type { ErpDataGridColumn, ErpDataGridCellValue, ErpDataGridFocusRequest, ErpDataGridPasteRequest } from "../../components/common/ErpDataGrid";
@@ -17,11 +18,15 @@ import { ErpLookupDialog } from "../../components/common/ErpLookupDialog";
 import { ErpValidationSummary } from "../../components/common/ErpValidationSummary";
 import { PageToolbar } from "../../components/common/PageToolbar";
 import { SearchPanel } from "../../components/common/SearchPanel";
+import { RangeValidationDialog } from "../../components/common/validation/RangeValidationDialog";
+import { validateDateRange } from "../../components/common/validation/rangeValidation";
 import { sortValidationIssues, toValidationCellErrors, type ValidationIssue } from "../../components/common/validation/validation";
 import { mockItems } from "../common-code/item/mockData";
 import type { Item } from "../common-code/item/types";
 import { mockPartners } from "../common-code/partner/mockData";
 import type { Partner } from "../common-code/partner/types";
+import { mockWarehouses } from "../common-code/warehouse/mockData";
+import type { Warehouse } from "../common-code/warehouse/types";
 import { MailOrderImportDialog } from "../mail-order/MailOrderImportDialog";
 import { mapParsedOrderToSalesOrder } from "../mail-order/mailMapping";
 import type { MailParseResult } from "../mail-order/types";
@@ -36,6 +41,7 @@ import { validateSalesOrders } from "./validation";
 import { isApiMode } from "../../api/apiClient";
 import { getItems } from "../../api/itemApi";
 import { getPartners } from "../../api/partnerApi";
+import { getWarehouses } from "../../api/warehouseApi";
 import {
   deleteSalesOrderRecord,
   loadSalesOrderRecords,
@@ -45,17 +51,20 @@ import {
 import {
   createEmptySalesOrderHeader,
   createEmptySalesOrderLine,
-  createSavedSalesOrderNo,
   createTempSalesOrderNo,
-  getNextSavedSalesOrderIndex,
   salesOrderToday
 } from "./salesOrderDraft";
+import { allocateMockDocumentNumber } from "../../utils/documentNumber";
+import { initialCompanyCode } from "../../utils/companyContext";
 import { useCrudPage } from "../../hooks/useCrudPage";
 import { useConfirm } from "../../hooks/useConfirm";
 import { useDirtyState } from "../../hooks/useDirtyState";
 import { useNotification } from "../../hooks/useNotification";
 import { useMasterDetailSelection } from "../../hooks/useMasterDetailSelection";
 import type { ScreenModuleId } from "../../screenModules";
+
+const SalesToPurchaseDialog = lazy(() => import("./SalesOrderConversionDialogs").then((module) => ({ default: module.SalesToPurchaseDialog })));
+const SalesToWorkOrderDialog = lazy(() => import("./SalesOrderConversionDialogs").then((module) => ({ default: module.SalesToWorkOrderDialog })));
 
 type HeaderEditableField = Exclude<keyof SalesOrderHeader, "NO_SO">;
 type LineEditableField = Exclude<
@@ -133,7 +142,7 @@ function isLineEditableField(field: keyof SalesOrderLine): field is LineEditable
 }
 
 interface SalesOrderRegistrationProps {
-  onNavigate?: (page: "sales" | "mobileSales" | "pdaSales" | "purchase" | "work" | "development" | "ai") => void;
+  onNavigate?: (page: AppNavigationPage) => void;
   onScreenIntent?: (screen: ScreenModuleId) => void;
   showDevelopmentDataManager?: boolean;
 }
@@ -169,22 +178,38 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
   const [headerFocusRequest, setHeaderFocusRequest] = useState<ErpDataGridFocusRequest | null>(null);
   const lineFocusRequestId = useRef(0);
   const [tempSeq, setTempSeq] = useState(1);
+  const savedSelectionKeyRef = useRef<string | null>(null);
   const [partnerLookupOpen, setPartnerLookupOpen] = useState(false);
+  const partnerLookupHeaderKeyRef = useRef<string | null>(null);
   const [itemLookupOpen, setItemLookupOpen] = useState(false);
   const itemLookupLineKeyRef = useRef<string | null>(null);
   const [validationAttempted, setValidationAttempted] = useState(false);
   const [mailImportOpen, setMailImportOpen] = useState(false);
+  const [purchaseConversionOpen, setPurchaseConversionOpen] = useState(false);
+  const [workOrderConversionOpen, setWorkOrderConversionOpen] = useState(false);
   const [appliedMailIds, setAppliedMailIds] = useState<string[]>([]);
   const [selectedPartnerRowKey, setSelectedPartnerRowKey] = useState<string | null>(null);
   const [partners, setPartners] = useState<Partner[]>(mockPartners);
   const [items, setItems] = useState<Item[]>(mockItems);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>(mockWarehouses);
   const [filters, setFilters] = useState({
-    cdFirm: "1000",
+    cdFirm: initialCompanyCode(),
     dateFrom: "2026-07-01",
     dateTo: "2026-07-31",
     cdPartner: "",
     nmPartner: ""
   });
+  const [appliedFilters, setAppliedFilters] = useState(filters);
+  const [rangeDialogOpen, setRangeDialogOpen] = useState(false);
+  const invalidDateInputRef = useRef<HTMLInputElement | null>(null);
+  const filterCriteriaSignature = [
+    appliedFilters.cdFirm,
+    appliedFilters.dateFrom,
+    appliedFilters.dateTo,
+    appliedFilters.cdPartner,
+    appliedFilters.nmPartner
+  ].join("\u0000");
+  const previousFilterCriteriaSignatureRef = useRef(filterCriteriaSignature);
   const { confirm } = useConfirm();
   const { isDirty, markDirty, clearDirty } = useDirtyState({ label: "수주 등록", saving: isSaving });
   const { notify } = useNotification();
@@ -225,45 +250,60 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
     return headers.filter((header) => {
       if (header.NO_SO.startsWith("TEMP_SO_")) return true;
 
-      const firmMatched = !filters.cdFirm || header.CD_FIRM.includes(filters.cdFirm);
+      const firmMatched = !appliedFilters.cdFirm || header.CD_FIRM.includes(appliedFilters.cdFirm);
       const partnerMatched =
-        (!filters.cdPartner || header.CD_PARTNER.includes(filters.cdPartner)) &&
-        (!filters.nmPartner || header.NM_PARTNER.includes(filters.nmPartner));
+        (!appliedFilters.cdPartner || header.CD_PARTNER.includes(appliedFilters.cdPartner)) &&
+        (!appliedFilters.nmPartner || header.NM_PARTNER.includes(appliedFilters.nmPartner));
       const dateMatched =
-        (!filters.dateFrom || header.DT_SO >= filters.dateFrom) &&
-        (!filters.dateTo || header.DT_SO <= filters.dateTo);
+        (!appliedFilters.dateFrom || header.DT_SO >= appliedFilters.dateFrom) &&
+        (!appliedFilters.dateTo || header.DT_SO <= appliedFilters.dateTo);
       return firmMatched && partnerMatched && dateMatched;
     });
-  }, [filters, headers]);
+  }, [appliedFilters, headers]);
 
   useEffect(() => {
     if (!isApiMode()) return;
 
-    Promise.all([getPartners(), getItems()])
-      .then(([nextPartners, nextItems]) => {
+    Promise.all([getPartners(), getItems(), getWarehouses()])
+      .then(([nextPartners, nextItems, nextWarehouses]) => {
         setPartners(nextPartners);
         setItems(nextItems);
+        setWarehouses(nextWarehouses);
       })
       .catch(() => setMessage("도움창 데이터를 불러오지 못했습니다."));
   }, []);
 
   useLayoutEffect(() => {
-    if (visibleHeaders.some((header) => header.NO_SO === selectedNoSo)) return;
+    const filterCriteriaChanged = previousFilterCriteriaSignatureRef.current !== filterCriteriaSignature;
+    previousFilterCriteriaSignatureRef.current = filterCriteriaSignature;
+    const preserveSavedSelection = savedSelectionKeyRef.current === selectedNoSo && !filterCriteriaChanged;
+    const selectedHeaderVisible = visibleHeaders.some((header) => header.NO_SO === selectedNoSo);
+    if (selectedHeaderVisible || preserveSavedSelection) return;
 
     const nextSelectedNoSo = visibleHeaders[0]?.NO_SO ?? "";
     if (nextSelectedNoSo === selectedNoSo) return;
 
+    savedSelectionKeyRef.current = null;
     selectMaster(nextSelectedNoSo);
     setCheckedLineKeys([]);
-  }, [selectMaster, selectedNoSo, visibleHeaders]);
+  }, [filterCriteriaSignature, selectMaster, selectedNoSo, visibleHeaders]);
 
-  const selectedLines = lines
-    .filter((line) => line.NO_SO === selectedNoSo)
-    .sort((a, b) => a.NO_LINE - b.NO_LINE);
+  const selectedLines = useMemo(
+    () => lines.filter((line) => line.NO_SO === selectedNoSo).sort((a, b) => a.NO_LINE - b.NO_LINE),
+    [lines, selectedNoSo]
+  );
+
+  useLayoutEffect(() => {
+    const selectedLineStillExists = selectedLines.some((line) => line.NO_LINE === selectedLine);
+    if (selectedLineStillExists) return;
+    selectDetail(selectedLines[0]?.NO_LINE ?? null);
+  }, [selectDetail, selectedLine, selectedLines]);
+
   const selectedLineTotals = calculateSalesOrderLineTotals(selectedLines);
   const checkedLines = selectedLines.filter((line) =>
     checkedLineKeys.includes(createSalesOrderLineKey(line.CD_FIRM, line.NO_SO, line.NO_LINE))
   );
+  const conversionLines = checkedLines.length > 0 ? checkedLines : selectedLineData ? [selectedLineData] : [];
   const deleteTargetLines = checkedLines.length > 0 ? checkedLines : selectedLineData ? [selectedLineData] : [];
 
   const focusValidationIssue = (issue: ValidationIssue) => {
@@ -378,6 +418,10 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
   };
 
   const handleSearch = async () => {
+    if (!validateDateRange(filters.dateFrom, filters.dateTo).valid) {
+      setRangeDialogOpen(true);
+      return;
+    }
     if (!(await confirmDiscardChanges())) return;
     setFeatureMessage("");
     await executeSearch({
@@ -395,18 +439,32 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
         });
         setHeaders(nextHeaders);
         setLines(nextLines);
+        setAppliedFilters(filters);
         selectMaster(matchedHeaders[0]?.NO_SO ?? "");
         setCheckedLineKeys([]);
         setValidationAttempted(false);
         clearDirty();
-        notify(matchedHeaders.length > 0 ? "success" : "info", matchedHeaders.length > 0 ? "조회되었습니다." : "조회된 데이터가 없습니다.");
       },
-      successMessage: () => "조회되었습니다.",
+      successMessage: "",
       errorMessage: "조회 중 오류가 발생했습니다. 다시 시도하세요."
     });
   };
 
   const handleSelectPartner = (partner: Partner) => {
+    const targetHeaderKey = partnerLookupHeaderKeyRef.current;
+    if (targetHeaderKey) {
+      setHeaders((current) => current.map((header) =>
+        createSalesOrderHeaderKey(header.CD_FIRM, header.NO_SO) === targetHeaderKey
+          ? { ...header, CD_PARTNER: partner.CD_PARTNER, NM_PARTNER: partner.NM_PARTNER }
+          : header
+      ));
+      const targetHeader = headers.find((header) => createSalesOrderHeaderKey(header.CD_FIRM, header.NO_SO) === targetHeaderKey);
+      if (targetHeader) selectMaster(targetHeader.NO_SO);
+      partnerLookupHeaderKeyRef.current = null;
+      setPartnerLookupOpen(false);
+      markDirty();
+      return;
+    }
     setSelectedPartnerRowKey(getPartnerRowKey(partner));
     setFilters((current) => ({
       ...current,
@@ -516,7 +574,7 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
     setAppliedMailIds((current) => [...current, mailId]);
     markDirty();
     notify("success", "메일 수주 반영이 완료되었습니다.");
-    setMessage(`메일 ${mailId}의 수주를 신규 임시번호로 반영했습니다. 담당자 검토 후 저장하세요.`);
+    setMessage(`메일 ${mailId}의 수주를 신규 문서로 반영했습니다. 담당자 검토 후 저장하세요.`);
     return { success: true, message: "수주등록 화면에 반영했습니다." };
   };
 
@@ -595,7 +653,7 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
     setMessage(`${deleteTargetLines.length}건의 수주상세 행이 삭제되었습니다`);
   };
 
-  const saveSalesOrder = async () => {
+  const saveSalesOrder = async (targetSalesOrderNo: string) => {
     const issues = validateSalesOrders(headers, lines);
     if (issues.length > 0) {
       setValidationAttempted(true);
@@ -605,33 +663,32 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
     }
 
     if (isApiMode()) {
-      if (!selectedHeader) {
+      const targetHeader = headers.find((header) => header.NO_SO === targetSalesOrderNo);
+      if (!targetHeader) {
         setMessage("저장할 수주 정보를 선택하세요.");
         return;
       }
 
-      const isNewOrder = selectedHeader.NO_SO.startsWith("TEMP_SO_");
-      const yearMonth = salesOrderToday().slice(0, 7).replace("-", "");
-      const savedOrderNo = isNewOrder
-        ? createSavedSalesOrderNo(yearMonth, getNextSavedSalesOrderIndex(headers, yearMonth))
-        : selectedHeader.NO_SO;
+      const targetLines = lines.filter((line) => line.NO_SO === targetSalesOrderNo);
+      const isNewOrder = targetHeader.NO_SO.startsWith("TEMP_SO_");
       const headerToSave = {
-        ...selectedHeader,
-        NO_SO: savedOrderNo
+        ...targetHeader,
+        NO_SO: targetHeader.NO_SO
       };
-      const linesToSave = selectedLines.map((line) => ({
+      const linesToSave = targetLines.map((line) => ({
         ...line,
         CD_FIRM: headerToSave.CD_FIRM,
-        NO_SO: savedOrderNo
+        NO_SO: headerToSave.NO_SO
       }));
 
       try {
         const saved = await saveSalesOrderRecord(
           { Header: headerToSave, Lines: linesToSave },
-          isNewOrder ? null : selectedHeader.NO_SO
+          isNewOrder ? null : targetHeader.NO_SO
         );
-        setHeaders((current) => [saved.Header, ...current.filter((header) => header.NO_SO !== selectedHeader.NO_SO)]);
-        setLines((current) => [...current.filter((line) => line.NO_SO !== selectedHeader.NO_SO), ...saved.Lines]);
+        setHeaders((current) => [saved.Header, ...current.filter((header) => header.NO_SO !== targetHeader.NO_SO)]);
+        setLines((current) => [...current.filter((line) => line.NO_SO !== targetHeader.NO_SO), ...saved.Lines]);
+        savedSelectionKeyRef.current = saved.Header.NO_SO;
         selectMaster(saved.Header.NO_SO);
         setCheckedLineKeys([]);
         setMessage("API 서버에 저장되었습니다.");
@@ -641,15 +698,19 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
       return;
     }
 
-    const yearMonth = salesOrderToday().slice(0, 7).replace("-", "");
-    let nextIndex = getNextSavedSalesOrderIndex(headers, yearMonth);
     const noMap = new Map<string, string>();
+    const existingNumbers = headers.map((header) => header.NO_SO);
 
     const savedHeaders = headers.map((header) => {
       if (!header.NO_SO.startsWith("TEMP_SO_")) return header;
 
-      const nextNoSo = createSavedSalesOrderNo(yearMonth, nextIndex);
-      nextIndex += 1;
+      const nextNoSo = allocateMockDocumentNumber(
+        "SOR",
+        header.CD_FIRM,
+        header.DT_SO,
+        existingNumbers
+      );
+      existingNumbers.push(nextNoSo);
       noMap.set(header.NO_SO, nextNoSo);
 
       return {
@@ -674,7 +735,9 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
     setHeaders(savedHeaders);
     setLines(savedLines);
     replaceMockSalesOrderRecords(savedHeaders, savedLines);
-    selectMaster(noMap.get(selectedNoSo) ?? selectedNoSo);
+    const savedSelectionNoSo = noMap.get(targetSalesOrderNo) ?? targetSalesOrderNo;
+    savedSelectionKeyRef.current = savedSelectionNoSo;
+    selectMaster(savedSelectionNoSo);
     setCheckedLineKeys([]);
     setMessage("저장되었습니다.");
   };
@@ -686,6 +749,7 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
       notify("info", "선택된 항목이 없습니다.");
       return;
     }
+    const targetSalesOrderNo = selectedHeader.NO_SO;
     const currentIssues = validateSalesOrders(headers, lines);
     if (currentIssues.length > 0) {
       setValidationAttempted(true);
@@ -706,8 +770,8 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
         }
         return true;
       },
-      execute: saveSalesOrder,
-      onSuccess: () => { setValidationAttempted(false); clearDirty(); notify("success", "저장되었습니다."); },
+      execute: () => saveSalesOrder(targetSalesOrderNo),
+      onSuccess: () => { setValidationAttempted(false); clearDirty(); },
       successMessage: "저장되었습니다.",
       errorMessage: "저장 중 오류가 발생했습니다. 입력값을 확인하고 다시 시도하세요."
     });
@@ -728,11 +792,7 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
       throw new Error("수주 삭제에 실패했습니다.");
     }
 
-    setHeaders((current) => current.filter((header) => header.NO_SO !== selectedNoSo));
-    setLines((current) => current.filter((line) => line.NO_SO !== selectedNoSo));
-    selectMaster("");
-    setCheckedLineKeys([]);
-    setMessage("삭제되었습니다.");
+    return orderToDelete;
   };
 
   const handleDeleteOrder = async () => {
@@ -746,7 +806,15 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
     setFeatureMessage("");
     await executeDelete({
       execute: deleteSalesOrderAction,
-      onSuccess: () => { setValidationAttempted(false); clearDirty(); notify("success", "삭제되었습니다."); },
+      onSuccess: (deletedOrder) => {
+        if (!deletedOrder) return;
+        setHeaders((current) => current.filter((header) => header.NO_SO !== deletedOrder.NO_SO));
+        setLines((current) => current.filter((line) => line.NO_SO !== deletedOrder.NO_SO));
+        selectMaster("");
+        setCheckedLineKeys([]);
+        setValidationAttempted(false);
+        clearDirty();
+      },
       successMessage: "삭제되었습니다.",
       errorMessage: "삭제 중 오류가 발생했습니다. 다시 시도하세요."
     });
@@ -762,8 +830,8 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
     { field: "CD_FIRM", headerName: "회사코드", width: 90, dataType: "code", editable: true, required: true },
     { field: "NO_SO", headerName: "수주번호", width: 142, dataType: "code", readOnly: true },
     { field: "DT_SO", headerName: "수주일자", width: 128, dataType: "date", align: "center", editable: true, required: true },
-    { field: "CD_PARTNER", headerName: "거래처코드", width: 120, dataType: "code", editable: true, required: true },
-    { field: "NM_PARTNER", headerName: "거래처명", width: 150, editable: true },
+    { field: "CD_PARTNER", headerName: "거래처코드", width: 120, dataType: "code", editable: true, required: true, lookup: { instruction: "더블클릭하여 거래처를 선택합니다." } },
+    { field: "NM_PARTNER", headerName: "거래처명", width: 150, editable: true, lookup: { instruction: "더블클릭하여 거래처를 선택합니다." } },
     { field: "CD_EMP", headerName: "담당자코드", width: 110, dataType: "code", editable: true },
     {
       field: "ST_SO",
@@ -870,40 +938,7 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
   return (
     <>
       <div className="erp-shell">
-        <aside className="side-nav">
-          <div className="brand">
-            <Building2 size={20} />
-            <strong>SMART ERP</strong>
-          </div>
-          <nav>
-            <button {...screenIntentProps("purchase")} className="menu-item" data-testid="nav-purchase-order" onClick={handleNavigateToPurchase} type="button">
-              구매관리 / 발주등록
-            </button>
-            <div className="menu-title">영업관리</div>
-            <div className="menu-group">
-              <ChevronRight size={14} />
-              <span>수주관리</span>
-            </div>
-            <button className="menu-item active">수주등록</button>
-            <button {...screenIntentProps("mobileSales")} className="menu-item" data-testid="nav-mobile-sales-order" onClick={() => void handleNavigateToCompactSales("mobileSales")} type="button">
-              모바일 수주등록
-            </button>
-            <button {...screenIntentProps("pdaSales")} className="menu-item" data-testid="nav-pda-sales-order" onClick={() => void handleNavigateToCompactSales("pdaSales")} type="button">
-              PDA 수주등록
-            </button>
-            <div className="menu-title">생산관리</div>
-            <div className="menu-group">
-              <ChevronRight size={14} />
-              <span>작업지시관리</span>
-            </div>
-            <button {...screenIntentProps("work")} className="menu-item" data-testid="nav-work-order" onClick={handleNavigateToWorkOrder} type="button">
-              작업지시등록
-            </button>
-            <div className="menu-title">AI 솔루션</div>
-            <button {...screenIntentProps("ai")} className="menu-item" data-testid="nav-ai-solution-center" onClick={handleNavigateToAiSolutionCenter} type="button">AI 솔루션 센터</button>
-            {showDevelopmentDataManager && <><div className="menu-title">개발 도구</div><button {...screenIntentProps("development")} className="menu-item" data-testid="nav-development-data" onClick={handleNavigateToDevelopmentData} type="button">테스트 데이터 관리</button></>}
-          </nav>
-        </aside>
+        <AppNavigation currentPage="sales" onNavigate={(page) => onNavigate?.(page)} onScreenIntent={onScreenIntent} />
 
         <main aria-busy={isLoading || isSaving} className="workbench" data-processing-state={operation}>
           <header className="page-header">
@@ -915,13 +950,15 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
             <PageToolbar
               processing={isLoading || isSaving}
               actions={[
-                { dataTestId: "btn-search", label: isLoading ? "조회 중..." : "조회", icon: <Search size={15} />, onClick: () => void handleSearch(), disabled: isSaving },
-                { dataTestId: "btn-new", label: "신규", icon: <Plus size={15} />, onClick: () => void handleNew(), disabled: isLoading || isSaving },
-                { dataTestId: "btn-add-line", label: "행추가", icon: <Rows3 size={15} />, onClick: handleAddLine, disabled: isLoading || isSaving },
-                { dataTestId: "btn-delete-line", label: "행삭제", icon: <Trash2 size={15} />, onClick: () => void handleDeleteLine(), disabled: isLoading || isSaving },
-                { dataTestId: "btn-save", label: operation === "saving" ? "저장 중..." : "저장", icon: <Save size={15} />, onClick: () => void handleSave(), disabled: isLoading || isSaving, variant: "primary" },
-                { dataTestId: "btn-delete-order", label: operation === "deleting" ? "삭제 중..." : "삭제", icon: <Trash2 size={15} />, onClick: () => void handleDeleteOrder(), disabled: isLoading || isSaving, variant: "danger" },
-                { dataTestId: "btn-mail-import", label: "메일 수주 불러오기", icon: <MailPlus size={15} />, onClick: () => setMailImportOpen(true), disabled: isLoading || isSaving }
+                { dataTestId: "btn-search", label: isLoading ? "조회 중..." : "조회", icon: <Search size={15} />, onClick: () => void handleSearch(), disabled: isSaving, group: "document" },
+                { dataTestId: "btn-new", label: "신규", icon: <Plus size={15} />, onClick: () => void handleNew(), disabled: isLoading || isSaving, group: "document" },
+                { dataTestId: "btn-save", label: operation === "saving" ? "저장 중..." : "저장", icon: <Save size={15} />, onClick: () => void handleSave(), disabled: isLoading || isSaving, variant: "primary", group: "document" },
+                { dataTestId: "btn-delete-order", label: operation === "deleting" ? "삭제 중..." : "삭제", icon: <Trash2 size={15} />, onClick: () => void handleDeleteOrder(), disabled: isLoading || isSaving, variant: "danger", group: "document" },
+                { dataTestId: "btn-add-line", label: "행추가", icon: <Rows3 size={15} />, onClick: handleAddLine, disabled: isLoading || isSaving, group: "rows" },
+                { dataTestId: "btn-delete-line", label: "행삭제", icon: <Trash2 size={15} />, onClick: () => void handleDeleteLine(), disabled: isLoading || isSaving, group: "rows" },
+                { dataTestId: "btn-convert-purchase", label: "발주 전환", icon: <ShoppingCart size={15} />, onClick: () => setPurchaseConversionOpen(true), disabled: isLoading || isSaving || isDirty || conversionLines.length === 0 || selectedNoSo.startsWith("TEMP_SO_"), group: "extra" },
+                { dataTestId: "btn-convert-work", label: "작업지시 전환", icon: <Factory size={15} />, onClick: () => setWorkOrderConversionOpen(true), disabled: isLoading || isSaving || isDirty || !selectedLineData || selectedNoSo.startsWith("TEMP_SO_"), group: "extra" },
+                { dataTestId: "btn-mail-import", label: "메일 수주 불러오기", icon: <MailPlus size={15} />, onClick: () => setMailImportOpen(true), disabled: isLoading || isSaving, group: "extra" }
               ]}
             />
           </header>
@@ -948,17 +985,36 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
             <label>
               수주일자 From
               <input
+                data-testid="filter-date-from"
+                ref={(element) => { if (element && invalidDateInputRef.current === element) invalidDateInputRef.current = element; }}
                 type="date"
                 value={filters.dateFrom}
-                onChange={(event) => setFilters({ ...filters, dateFrom: event.target.value })}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  if (!validateDateRange(nextValue, filters.dateTo).valid) {
+                    invalidDateInputRef.current = event.currentTarget;
+                    setRangeDialogOpen(true);
+                    return;
+                  }
+                  setFilters({ ...filters, dateFrom: nextValue });
+                }}
               />
             </label>
             <label>
               수주일자 To
               <input
+                data-testid="filter-date-to"
                 type="date"
                 value={filters.dateTo}
-                onChange={(event) => setFilters({ ...filters, dateTo: event.target.value })}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  if (!validateDateRange(filters.dateFrom, nextValue).valid) {
+                    invalidDateInputRef.current = event.currentTarget;
+                    setRangeDialogOpen(true);
+                    return;
+                  }
+                  setFilters({ ...filters, dateTo: nextValue });
+                }}
               />
             </label>
             <div className="search-field partner-filter">
@@ -969,6 +1025,8 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
                   className="mono"
                   data-testid="filter-partner-code"
                   placeholder="거래처코드"
+                  onDoubleClick={() => { partnerLookupHeaderKeyRef.current = null; setPartnerLookupOpen(true); }}
+                  onKeyDown={(event) => { if (event.key === "F4") { event.preventDefault(); partnerLookupHeaderKeyRef.current = null; setPartnerLookupOpen(true); } }}
                   value={filters.cdPartner}
                   onChange={(event) => {
                     setFilters({ ...filters, cdPartner: event.target.value, nmPartner: "" });
@@ -980,18 +1038,10 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
                   data-testid="filter-partner-name"
                   placeholder="거래처명"
                   readOnly
+                  onDoubleClick={() => { partnerLookupHeaderKeyRef.current = null; setPartnerLookupOpen(true); }}
+                  onKeyDown={(event) => { if (event.key === "F4") { event.preventDefault(); partnerLookupHeaderKeyRef.current = null; setPartnerLookupOpen(true); } }}
                   value={filters.nmPartner}
                 />
-                <button
-                  aria-label="거래처 도움창 열기"
-                  className="lookup-open-button"
-                  data-testid="btn-partner-lookup"
-                  onClick={() => setPartnerLookupOpen(true)}
-                  title="거래처 도움창"
-                  type="button"
-                >
-                  <Search size={14} />
-                </button>
               </div>
             </div>
           </SearchPanel>
@@ -1016,6 +1066,13 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
               emptyMessage="조회 조건에 맞는 수주정보가 없습니다."
               onCellValueChange={(row, field, value) => {
                 if (isHeaderEditableField(field)) updateHeader(row.NO_SO, field, String(value ?? ""));
+              }}
+              lookupDisabled={isLoading || isSaving || partnerLookupOpen || itemLookupOpen}
+              onLookupCellDoubleClick={(row, column) => {
+                if (column.field !== "CD_PARTNER" && column.field !== "NM_PARTNER") return;
+                partnerLookupHeaderKeyRef.current = createSalesOrderHeaderKey(row.CD_FIRM, row.NO_SO);
+                selectHeader(row);
+                setPartnerLookupOpen(true);
               }}
               onRowClick={selectHeader}
               rowKey={(header) => createSalesOrderHeaderKey(header.CD_FIRM, header.NO_SO)}
@@ -1090,7 +1147,7 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
         dataTestId="partner-lookup"
         emptyMessage="조회된 거래처가 없습니다."
         height={500}
-        onClose={() => setPartnerLookupOpen(false)}
+        onClose={() => { partnerLookupHeaderKeyRef.current = null; setPartnerLookupOpen(false); }}
         onSelect={handleSelectPartner}
         open={partnerLookupOpen}
         rowKey={getPartnerRowKey}
@@ -1127,6 +1184,27 @@ export function SalesOrderRegistration({ onNavigate, onScreenIntent, showDevelop
         title="품목 도움창"
         width={820}
       />
+      <RangeValidationDialog open={rangeDialogOpen} onClose={() => { setRangeDialogOpen(false); requestAnimationFrame(() => invalidDateInputRef.current?.focus()); }} />
+
+      <Suspense fallback={null}>
+        {purchaseConversionOpen && <SalesToPurchaseDialog
+          header={selectedHeader}
+          lines={conversionLines}
+          onClose={() => setPurchaseConversionOpen(false)}
+          onNavigate={() => { setPurchaseConversionOpen(false); handleNavigateToPurchase(); }}
+          open
+          partners={partners}
+          warehouses={warehouses}
+        />}
+
+        {workOrderConversionOpen && <SalesToWorkOrderDialog
+          header={selectedHeader}
+          line={selectedLineData}
+          onClose={() => setWorkOrderConversionOpen(false)}
+          onNavigate={() => { setWorkOrderConversionOpen(false); handleNavigateToWorkOrder(); }}
+          open
+        />}
+      </Suspense>
 
     </>
   );

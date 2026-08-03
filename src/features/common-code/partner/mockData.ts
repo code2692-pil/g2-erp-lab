@@ -3,6 +3,20 @@ import type { Partner } from "./types";
 export const mockPartners: Partner[] = [
   {
     CD_FIRM: "1000",
+    CD_PARTNER: "SUP-001",
+    NM_PARTNER: "세림정밀",
+    NO_COMPANY: "000-00-20801",
+    YN_USE: "Y"
+  },
+  {
+    CD_FIRM: "1000",
+    CD_PARTNER: "SUP-002",
+    NM_PARTNER: "한빛전자",
+    NO_COMPANY: "000-00-20802",
+    YN_USE: "Y"
+  },
+  {
+    CD_FIRM: "1000",
     CD_PARTNER: "P-10021",
     NM_PARTNER: "세명테크",
     NO_COMPANY: "000-10-00001",

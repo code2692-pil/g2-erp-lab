@@ -75,8 +75,8 @@ export function MailOrderImportDialog({
       width={1180}
     >
       <div className="mail-order-import">
-        <aside className="mail-order-import__mail-list" aria-label="샘플 메일 목록">
-          <h3>샘플 메일</h3>
+        <aside className="mail-order-import__mail-list" aria-label="수신 메일 목록">
+          <h3>수신 메일</h3>
           {mockEmails.map((mail) => {
             const applied = appliedMailIds.includes(mail.MAIL_ID);
             return (

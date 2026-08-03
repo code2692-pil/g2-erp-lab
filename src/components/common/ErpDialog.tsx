@@ -11,6 +11,9 @@ export interface ErpDialogProps {
   width?: number | string;
   height?: number | string;
   dataTestId?: string;
+  dismissOnEscape?: boolean;
+  dismissOnBackdrop?: boolean;
+  showCloseButton?: boolean;
 }
 
 export function ErpDialog({
@@ -21,7 +24,10 @@ export function ErpDialog({
   onClose,
   width,
   height,
-  dataTestId
+  dataTestId,
+  dismissOnEscape = true,
+  dismissOnBackdrop = true,
+  showCloseButton = true
 }: ErpDialogProps) {
   const titleId = useId();
   const dialogRef = useRef<HTMLElement>(null);
@@ -38,7 +44,7 @@ export function ErpDialog({
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && dismissOnEscape) {
         event.preventDefault();
         onCloseRef.current();
         return;
@@ -76,7 +82,7 @@ export function ErpDialog({
       document.removeEventListener("keydown", handleKeyDown);
       if (previouslyFocusedElement?.isConnected) previouslyFocusedElement.focus();
     };
-  }, [open]);
+  }, [dismissOnEscape, open]);
 
   if (!open || typeof document === "undefined") return null;
 
@@ -91,7 +97,7 @@ export function ErpDialog({
     <div
       className="erp-dialog-backdrop"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (dismissOnBackdrop && event.target === event.currentTarget) onClose();
       }}
     >
       <section
@@ -108,14 +114,14 @@ export function ErpDialog({
           <h2 className="erp-dialog__title" id={titleId}>
             {title}
           </h2>
-          <button
+          {showCloseButton && <button
             aria-label={`${title} 닫기`}
             className="erp-dialog__close-button"
             onClick={onClose}
             type="button"
           >
             ×
-          </button>
+          </button>}
         </header>
         <div className="erp-dialog__body">{children}</div>
         {footer !== undefined && <footer className="erp-dialog__footer">{footer}</footer>}

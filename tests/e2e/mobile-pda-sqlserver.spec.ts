@@ -40,6 +40,8 @@ async function saveCompactOrder(page: import("@playwright/test").Page, prefix: "
   await page.getByTestId(`${prefix}-save`).click();
   await page.getByTestId("confirm-dialog-confirm").click();
   expect((await response).ok()).toBeTruthy();
+  await expect(page.getByRole("dialog", { name: "저장 완료" })).toBeVisible();
+  await page.getByTestId("confirm-dialog-confirm").click();
   await expect(page.getByTestId(`${prefix}-dirty-indicator`)).toHaveCount(0);
 }
 
@@ -47,6 +49,7 @@ test("Gate 12-9 SQL cross A: PC creates, mobile and PDA update, and PC sees the 
   const testMarker = requireMarker();
   await page.goto("/");
   await page.getByTestId("btn-search").click();
+  await expect(page.locator("main[data-processing-state]")).toHaveAttribute("data-processing-state", "idle");
   await page.getByTestId("btn-new").click();
 
   const tempHeaderKey = "1000::TEMP_SO_001";
@@ -67,9 +70,11 @@ test("Gate 12-9 SQL cross A: PC creates, mobile and PDA update, and PC sees the 
   await page.getByTestId("confirm-dialog-confirm").click();
   expect((await createResponse).status()).toBe(201);
   const selectedDocument = page.getByTestId("sales-order-header-grid-selected-document");
-  await expect(selectedDocument).toHaveText(/SO\d{10}/);
-  const salesOrderNo = (await selectedDocument.textContent())?.match(/SO\d{10}/)?.[0];
+  await expect(selectedDocument).toHaveText(/SOR\d{10}/);
+  const salesOrderNo = (await selectedDocument.textContent())?.match(/SOR\d{10}/)?.[0];
   expect(salesOrderNo).toBeTruthy();
+  await expect(page.getByRole("dialog", { name: "저장 완료" })).toBeVisible();
+  await page.getByTestId("confirm-dialog-confirm").click();
 
   await page.getByTestId("nav-mobile-sales-order").click();
   await page.getByTestId("mobile-sales-filter-order-no").fill(salesOrderNo!);
@@ -102,8 +107,9 @@ test("Gate 12-9 SQL cross A: PC creates, mobile and PDA update, and PC sees the 
   expect(updatedOrder?.Lines[0]?.QT_SO).toBe(9);
 
   await page.getByTestId("pda-sales-nav-pc").click();
+  await page.getByLabel("수주일자 To").fill("2026-12-31");
   await page.getByTestId("btn-search").click();
-  await page.getByTestId(`sales-order-header-grid-row-1000::${salesOrderNo}`).click();
+  await page.getByTestId(`sales-order-header-grid-cell-container-1000::${salesOrderNo}-NO_SO`).click();
   await expect(page.getByTestId(`sales-order-line-grid-cell-1000::${salesOrderNo}::1-QT_SO`)).toHaveValue("9");
   await expect(page.getByTestId("sales-order-total-summary")).toContainText("9,900");
 
@@ -139,6 +145,8 @@ test("Gate 12-9 SQL cross D: PDA deletes the same order and all screens no longe
   await page.getByTestId("pda-sales-delete-order").click();
   await page.getByTestId("confirm-dialog-confirm").click();
   expect((await deleteResponse).status()).toBe(204);
+  await expect(page.getByRole("dialog", { name: "삭제 완료" })).toBeVisible();
+  await page.getByTestId("confirm-dialog-confirm").click();
   await expect(page.getByTestId("pda-sales-order-no")).toHaveCount(0);
 
   await page.getByTestId("pda-sales-nav-pc").click();

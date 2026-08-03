@@ -24,7 +24,7 @@ public sealed class DevelopmentDataService(
     IWorkOrderRepository workOrders) : IDevelopmentDataService
 {
     private const string Firm = "1000";
-    private const string SafetyMessage = "Test data management is available only in the permitted local development environment.";
+    private const string SafetyMessage = "기준 데이터 관리는 허용된 로컬 환경에서만 사용할 수 있습니다.";
     private static readonly string[] AllowedDatabases = ["G2ERP_DEV_LOCAL", "G2ERP_DEV_LOCAL_TEST"];
 
     public async Task<DevelopmentDataEnvironmentDto> GetStatusAsync(CancellationToken cancellationToken)
@@ -113,7 +113,7 @@ public sealed class DevelopmentDataService(
         await EnsureAllowedAsync(cancellationToken);
         var scope = NormalizeScope(requestedScope);
         var inspection = await InspectAsync(scope, cancellationToken);
-        if (inspection.Conflicts.Count > 0) return Operation("seed", scope, "Blocked", 0, 0, inspection.ExistingRows, inspection.Conflicts.Count, "Conflicting Sample keys were found. No data was changed.");
+        if (inspection.Conflicts.Count > 0) return Operation("seed", scope, "Blocked", 0, 0, inspection.ExistingRows, inspection.Conflicts.Count, "식별자 충돌이 발견되어 데이터를 변경하지 않았습니다.");
 
         var created = 0;
         if (scope is "production-masters" or "all") created += await SeedProductionMastersAsync(cancellationToken);
@@ -122,10 +122,10 @@ public sealed class DevelopmentDataService(
         if (scope is "work-orders" or "all")
         {
             if (!await HasWorkOrderPrerequisitesAsync(cancellationToken))
-                return Operation("seed", scope, "Blocked", created, 0, inspection.ExistingRows, 0, "Production Sample masters are required before creating work orders.");
+                return Operation("seed", scope, "Blocked", created, 0, inspection.ExistingRows, 0, "작업지시를 생성하려면 생산 기준정보가 필요합니다.");
             created += await SeedWorkOrdersAsync(cancellationToken);
         }
-        return Operation("seed", scope, "Success", created, 0, inspection.ExistingRows, 0, created == 0 ? "Matching Sample data already exists; no rows were changed." : "Sample data was created safely.");
+        return Operation("seed", scope, "Success", created, 0, inspection.ExistingRows, 0, created == 0 ? "동일한 기준 데이터가 이미 있어 변경하지 않았습니다." : "기준 데이터를 생성했습니다.");
     }
 
     public async Task<DevelopmentDataOperationDto> CleanupAsync(DevelopmentDataRequest request, CancellationToken cancellationToken)
@@ -133,7 +133,7 @@ public sealed class DevelopmentDataService(
         await EnsureAllowedAsync(cancellationToken);
         var scope = NormalizeScope(request.Scope);
         if (!string.Equals(request.ConfirmationText, "SAMPLE DELETE", StringComparison.Ordinal))
-            return Operation("cleanup", scope, "Blocked", 0, 0, 0, 0, "Enter SAMPLE DELETE exactly to run cleanup.");
+            return Operation("cleanup", scope, "Blocked", 0, 0, 0, 0, "확인 문구가 올바르지 않습니다.");
 
         var deleted = 0;
         if (scope is "sales-orders" or "all") deleted += await DeleteSalesSamplesAsync(cancellationToken);
@@ -142,10 +142,10 @@ public sealed class DevelopmentDataService(
         if (scope is "production-masters" or "all")
         {
             if (await HasSampleBusinessRowsAsync(cancellationToken))
-                return Operation("cleanup", scope, "Blocked", 0, deleted, 0, 0, "Clean up Sample sales, purchase, and work orders before removing Sample masters.");
+                return Operation("cleanup", scope, "Blocked", 0, deleted, 0, 0, "생산 기준정보보다 수주·발주·작업지시 기준 데이터를 먼저 초기화하세요.");
             deleted += await DeleteProductionMastersAsync(cancellationToken);
         }
-        return Operation("cleanup", scope, "Success", 0, deleted, 0, 0, deleted == 0 ? "No matching Sample rows were found." : "Only fixed Sample Prefix rows were deleted.");
+        return Operation("cleanup", scope, "Success", 0, deleted, 0, 0, deleted == 0 ? "초기화할 기준 데이터가 없습니다." : "지정된 기준 데이터만 초기화했습니다.");
     }
 
     public async Task<DevelopmentDataE2ERemnantsDto> GetE2ERemnantsAsync(CancellationToken cancellationToken)

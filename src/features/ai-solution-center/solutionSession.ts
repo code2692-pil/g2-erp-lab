@@ -85,7 +85,7 @@ export function clarificationAnswersFor(result: SolutionResult, answerMap: Reado
 }
 
 export function analysisModeLabel(mode: SolutionSource) {
-  return mode === "consultant-file" ? "컨설턴트 파일 분석" : "고객 업무 Q&A";
+  return mode === "consultant-file" ? "문서 검토 및 확인" : "업무 Q&A";
 }
 
 function priorityLabel(key: string) {
@@ -151,7 +151,7 @@ export function consultantHandoverDetails(session: SolutionSession, unresolved: 
     { label: "분석 제외 파일", value: `${excludedCount}건` },
     { label: "민감정보 가림 적용", value: redactionApplied ? "적용 · 공유 전 담당자 확인 필요" : "감지된 패턴 없음" },
     { label: "선택 업무 예시", value: request.selectedScenarioTitle || "선택 안 함" },
-    { label: "파일 처리 한계", value: "OCR·STT·영상 장면 분석·PDF/Office 본문 파싱·압축 해제를 수행하지 않음" },
+    { label: "파일 처리 한계", value: "이미지 PDF OCR·STT·영상 장면 분석·압축 해제를 수행하지 않음" },
     { label: "회사 지식 사용", value: result.companyKnowledgeUsed ? "사용" : "미사용" },
     { label: "현재 신뢰도", value: result.confidence },
     { label: "분석 차수", value: `${revision?.revision ?? 1}차 분석` },
@@ -165,7 +165,7 @@ export function consultantHandoverDetails(session: SolutionSession, unresolved: 
       { label: "보류·반려·업무결정 사유", value: review.decisionReason || "없음" },
       { label: "검토 기록 시각", value: review.updatedAt }
     ] : []),
-    { label: "PoC 범위", value: "로컬 템플릿 기반 검토 요약이며 확정 업무 규칙 또는 실제 운영 판단이 아닙니다." }
+    { label: "분석 범위", value: "지식 템플릿 기반 검토 요약이며 확정 업무 규칙 또는 최종 판단이 아닙니다." }
   ];
 }
 
@@ -264,8 +264,8 @@ export function buildSolutionMarkdown(session: SolutionSession, unresolved: read
     bulletSection("개발 담당자 확인사항", result.developmentQuestions),
     handoverMarkdown(session, unresolved, "## 컨설턴트 인계 요약", review),
     `\n## 신뢰도\n${result.confidence}`,
-    `\n## 외부·사내 검토 필요 여부\n${result.externalReviewRequired ? "필요" : "불필요"}`,
-    "\n## PoC 범위 안내\n현재 분석 세션과 내보내기는 브라우저 메모리에서만 동작합니다. 외부 AI, 서버, DB, 고객 상담 이력과 연결하지 않습니다."
+    `\n## 업무·보안 검토 필요 여부\n${result.externalReviewRequired ? "필요" : "불필요"}`,
+    "\n## 분석 범위 안내\n현재 분석 세션과 내보내기는 브라우저 메모리에서만 동작합니다. 외부 AI, 서버, DB, 고객 상담 이력과 연결하지 않습니다."
   ].join("\n");
 }
 

@@ -1,4 +1,5 @@
 using G2Erp.Api.Contracts;
+using G2Erp.Api.Domain;
 using G2Erp.Api.Domain.WorkOrders;
 using G2Erp.Api.Repositories;
 
@@ -23,7 +24,11 @@ public sealed class WorkOrderService(
     public async Task<WorkOrderDetailDto> CreateAsync(CreateWorkOrderRequest request, CancellationToken ct)
     {
         var workOrder = await BuildAsync(request.Header, request.Processes, null, ct);
-        workOrder = await AssignApiNumberAsync(workOrder, ct);
+        if (DocumentNumberPolicy.IsTemporaryWorkOrder(workOrder.Header.NO_WO))
+        {
+            var saved = await workOrders.AddWithGeneratedNumberAsync(workOrder, DocumentNumberPolicy.BusinessYearMonth(workOrder.Header.DT_WO), ct);
+            return ToDto(saved);
+        }
         if (await workOrders.ExistsAsync(workOrder.Header.CD_FIRM, workOrder.Header.NO_WO, ct))
         {
             throw new DomainConflictException("The header primary key (CD_FIRM, NO_WO) already exists.");
@@ -164,18 +169,6 @@ public sealed class WorkOrderService(
             },
             Processes = builtProcesses.OrderBy(x => x.NO_PROC).ToArray()
         };
-    }
-
-    private async Task<WorkOrder> AssignApiNumberAsync(WorkOrder workOrder, CancellationToken ct)
-    {
-        if (!workOrder.Header.NO_WO.StartsWith("TEMP-WO-", StringComparison.OrdinalIgnoreCase)) return workOrder;
-        var yearMonth = DateTime.UtcNow.ToString("yyyyMM");
-        var prefix = $"WO{yearMonth}";
-        var existingNumbers = (await workOrders.GetAllAsync(new WorkOrderSearch(workOrder.Header.CD_FIRM, null, null, null, null, null, null, null), ct))
-            .Select(x => x.Header.NO_WO)
-            .Select(x => x.StartsWith(prefix, StringComparison.Ordinal) && int.TryParse(x[prefix.Length..], out var sequence) ? sequence : 0);
-        var nextNumber = $"{prefix}{(existingNumbers.DefaultIfEmpty(0).Max() + 1):D4}";
-        return new WorkOrder { Header = workOrder.Header with { NO_WO = nextNumber }, Processes = workOrder.Processes.Select(x => x with { NO_WO = nextNumber }).ToArray() };
     }
 
     private static void Require(string? value, string message, ICollection<string> errors)

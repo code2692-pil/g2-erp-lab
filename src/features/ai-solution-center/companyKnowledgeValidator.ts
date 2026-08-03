@@ -63,8 +63,8 @@ function isStringFailure(value: StringRead): value is { error: string } {
 
 export function validateCompanyKnowledge(value: unknown): CompanyKnowledgeValidation {
   if (!Array.isArray(value)) return { ok: false, error: "최상위 JSON 구조는 지식 항목 배열이어야 합니다." };
-  if (value.length === 0) return { ok: false, error: "회사 지식팩에는 최소 1개의 지식 항목이 필요합니다." };
-  if (value.length > companyKnowledgeItemLimit) return { ok: false, error: `회사 지식팩은 최대 ${companyKnowledgeItemLimit}개 항목까지만 허용됩니다.` };
+  if (value.length === 0) return { ok: false, error: "회사 지식에는 최소 1개의 지식 항목이 필요합니다." };
+  if (value.length > companyKnowledgeItemLimit) return { ok: false, error: `회사 지식은 최대 ${companyKnowledgeItemLimit}개 항목까지만 허용됩니다.` };
 
   const articles: CompanyKnowledgeArticle[] = [];
   const ids = new Set<string>();

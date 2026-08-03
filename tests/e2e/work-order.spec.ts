@@ -128,7 +128,8 @@ test("B: 조회 결과와 Header-공정상세 연결, 결과 없음 안내를 �
 
   await page.getByTestId("wo-filter-no").fill("NO-SUCH-WO");
   await page.getByTestId("wo-btn-search").click();
-  await expect(page.getByTestId("status-message")).toHaveText("조회된 작업지시가 없습니다.");
+  await expect(page.getByTestId("status-message")).toHaveCount(0);
+  await expect(page.getByTestId("work-order-header-grid")).toContainText("조회된 작업지시가 없습니다.");
   await expect(page.getByTestId("work-order-header-grid-footer-total")).toContainText("0");
   await expect(page.getByTestId("work-order-header-grid-total-count")).toHaveText("전체 0건");
 });
@@ -147,6 +148,10 @@ test("C: 신규 작업지시와 품목·라인·공정·설비 Lookup을 저장�
   await page.getByTestId(`work-order-header-grid-cell-container-${tempHeaderKey}-CD_ITEM`).dblclick();
   await page.getByTestId("wo-item-lookup-grid-row-1000::ITM-1001").click();
   await page.getByTestId("wo-item-lookup-confirm").click();
+  await page.getByTestId(`work-order-header-grid-cell-${tempHeaderKey}-CD_ITEM`).press("F4");
+  await expect(page.getByRole("dialog", { name: "생산품목 도움" })).toBeVisible();
+  await page.getByTestId("wo-item-lookup-cancel").click();
+  await expect(page.getByTestId(`work-order-header-grid-cell-${tempHeaderKey}-CD_ITEM`)).toBeFocused();
   await page.getByTestId(`work-order-header-grid-cell-container-${tempHeaderKey}-CD_LINE`).dblclick();
   await page.getByTestId("wo-line-lookup-grid-row-1000::LINE-A").click();
   await page.getByTestId("wo-line-lookup-confirm").click();
@@ -170,8 +175,10 @@ test("C: 신규 작업지시와 품목·라인·공정·설비 Lookup을 저장�
     (buttons) => buttons.map((button) => button.getAttribute("data-testid")).filter(Boolean)
   )).toEqual(["confirm-dialog-confirm", "confirm-dialog-cancel"]);
   await page.getByTestId("confirm-dialog-confirm").click();
-  await expect(page.getByRole("status")).toContainText("저장되었습니다.");
-  await expect(page.getByTestId("work-order-header-grid-row-1000::WO2026070007")).toBeVisible();
+  await expect(page.getByTestId("confirm-dialog")).toContainText("저장되었습니다.");
+  await page.getByTestId("confirm-dialog-confirm").click();
+  await expect(page.locator(".erp-snackbar--success")).toHaveCount(0);
+  await expect(page.getByTestId("work-order-header-grid-selected-document")).toHaveText(/선택 문서 WMO\d{10}/);
 });
 
 test("D: 저장 전 Validation은 ConfirmDialog 없이 요약과 오류 셀을 표시한다", async ({ page }) => {
@@ -253,8 +260,11 @@ test("G: Header 삭제와 저장 처리 중 버튼 비활성화를 확인한다"
   await expect(headerRow(page)).toBeVisible();
   await page.getByTestId("wo-btn-delete").click();
   await page.getByTestId("confirm-dialog-confirm").click();
+  await expect(page.getByTestId("confirm-dialog")).toContainText("삭제되었습니다.");
+  await expect(headerRow(page)).toHaveCount(1);
+  await page.getByTestId("confirm-dialog-confirm").click();
   await expect(headerRow(page)).toHaveCount(0);
-  await expect(page.getByRole("status")).toContainText("삭제되었습니다.");
+  await expect(page.locator(".erp-snackbar--success")).toHaveCount(0);
 
   await page.reload();
   await page.getByTestId("nav-work-order").click();
@@ -266,7 +276,9 @@ test("G: Header 삭제와 저장 처리 중 버튼 비활성화를 확인한다"
   await expect.poll(() => getMockResponseStartedAt(page)).toBeDefined();
   await expect(page.getByTestId("wo-btn-save")).toBeDisabled();
   await releaseMockResponse(page);
-  await expect(page.getByRole("status")).toContainText("저장되었습니다.");
+  await expect(page.getByTestId("confirm-dialog")).toContainText("저장되었습니다.");
+  await page.getByTestId("confirm-dialog-confirm").click();
+  await expect(page.locator(".erp-snackbar--success")).toHaveCount(0);
   await expect(page.getByTestId("wo-btn-save")).toBeEnabled();
 });
 

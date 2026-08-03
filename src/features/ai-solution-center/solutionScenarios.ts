@@ -20,11 +20,11 @@ function priorities(overrides: Partial<SolutionPriorities>): SolutionPriorities 
 export const solutionScenarios: readonly SolutionScenario[] = [
   {
     id: "supplier-internal-lot-link",
-    title: "공급업체 LOT와 사내 LOT 연결",
+    title: "공급업체 LOT와 자사 LOT 연결",
     category: "LOT·추적성",
-    problem: "공급업체 LOT와 내부 관리 LOT가 달라 입고부터 생산·검사까지 추적이 어렵습니다.",
-    currentMethod: "입고 시 공급업체 LOT를 기록하지만 사내 생산 LOT와의 연결은 수기 문서로 확인합니다.",
-    desiredStandard: "입고·생산·검사 이력에서 공급업체 LOT와 사내 LOT 연결을 확인할 수 있어야 합니다.",
+    problem: "공급업체 LOT와 자사 관리 LOT가 달라 입고부터 생산·검사까지 추적이 어렵습니다.",
+    currentMethod: "입고 시 공급업체 LOT를 기록하지만 자사 생산 LOT와의 연결은 수기 문서로 확인합니다.",
+    desiredStandard: "입고·생산·검사 이력에서 공급업체 LOT와 자사 LOT 연결을 확인할 수 있어야 합니다.",
     constraints: "기존 입고와 생산 입력 흐름을 크게 늘리지 않고 시범 품목부터 적용해야 합니다.",
     involvedDepartments: "구매, 자재, 생산, 품질",
     priorityPreset: priorities({ traceability: 5, fieldBurden: 4 }),

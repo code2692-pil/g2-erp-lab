@@ -6,10 +6,7 @@ import type {
   PurchaseOrderDataAdapter,
   PurchaseOrderDocument
 } from "./purchaseOrderDataAdapter";
-
-function today() {
-  return new Date().toISOString().slice(0, 10);
-}
+import { allocateMockDocumentNumber } from "../../utils/documentNumber";
 
 function cloneDocument(document: PurchaseOrderDocument): PurchaseOrderDocument {
   return {
@@ -39,7 +36,12 @@ export const mockPurchaseOrderAdapter: PurchaseOrderDataAdapter = {
 
   async create(document) {
     const savedNo = document.Header.NO_PO.startsWith("TEMP_PO_")
-      ? `PO${today().replaceAll("-", "")}${document.Header.NO_PO.slice(-4)}`
+      ? allocateMockDocumentNumber(
+          "POR",
+          document.Header.CD_FIRM,
+          document.Header.DT_PO,
+          mockPurchaseOrderHeaders.map((header) => header.NO_PO)
+        )
       : document.Header.NO_PO;
     const saved = cloneDocument(document);
 

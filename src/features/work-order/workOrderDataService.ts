@@ -20,6 +20,7 @@ import { mockProductionProcesses } from "../common-code/process/mockData";
 import type { ProductionProcess } from "../common-code/process/types";
 import { mockWorkOrderHeaders, mockWorkOrderProcesses } from "./mockData";
 import type { WorkOrderHeader, WorkOrderProcess } from "./types";
+import { allocateMockDocumentNumber } from "../../utils/documentNumber";
 
 export interface WorkOrderFilters {
   cdFirm: string;
@@ -69,14 +70,12 @@ function waitForMockResponse() {
 
 function createMockNumber(header: WorkOrderHeader, allHeaders: readonly WorkOrderHeader[]) {
   if (!header.NO_WO.startsWith("TEMP-WO-")) return header.NO_WO;
-  const yearMonth = new Date().toISOString().slice(0, 7).replace("-", "");
-  const pattern = new RegExp(`^WO${yearMonth}(\\d{4})$`);
-  const sequence = [...mockWorkOrderHeaders, ...allHeaders]
-    .map((candidate) => candidate.NO_WO.match(pattern)?.[1])
-    .filter((value): value is string => Boolean(value))
-    .map(Number)
-    .reduce((maximum, value) => Math.max(maximum, value), 0) + 1;
-  return `WO${yearMonth}${String(sequence).padStart(4, "0")}`;
+  return allocateMockDocumentNumber(
+    "WMO",
+    header.CD_FIRM,
+    header.DT_WO,
+    [...mockWorkOrderHeaders, ...allHeaders].map((candidate) => candidate.NO_WO)
+  );
 }
 
 const mockService: WorkOrderDataService = {

@@ -21,6 +21,15 @@ public sealed class SalesOrderService(
     public async Task<SalesOrderDto> CreateAsync(UpsertSalesOrderRequest request, CancellationToken cancellationToken)
     {
         var order = await ValidateAndBuildAsync(request, cancellationToken);
+        if (DocumentNumberPolicy.IsTemporarySalesOrder(order.Header.NO_SO))
+        {
+            var saved = await salesOrderRepository.AddWithGeneratedNumberAsync(
+                order,
+                DocumentNumberPolicy.BusinessYearMonth(order.Header.DT_SO),
+                cancellationToken);
+            return ToDto(saved);
+        }
+
         var existing = await salesOrderRepository.GetAsync(order.Header.CD_FIRM, order.Header.NO_SO, cancellationToken);
         if (existing is not null) throw new DomainConflictException("The header primary key (CD_FIRM, NO_SO) already exists.");
 

@@ -17,6 +17,11 @@ public sealed class PurchaseOrderService(IPurchaseOrderRepository purchaseOrders
     public async Task<PurchaseOrderDetailDto> CreateAsync(CreatePurchaseOrderRequest request, CancellationToken ct)
     {
         var order = await BuildAsync(request.Header, request.Lines, ct);
+        if (DocumentNumberPolicy.IsTemporaryPurchaseOrder(order.Header.NO_PO))
+        {
+            var saved = await purchaseOrders.AddWithGeneratedNumberAsync(order, DocumentNumberPolicy.BusinessYearMonth(order.Header.DT_PO), ct);
+            return ToDto(saved);
+        }
         if (await purchaseOrders.GetAsync(order.Header.CD_FIRM, order.Header.NO_PO, ct) is not null) throw new DomainConflictException("The header primary key (CD_FIRM, NO_PO) already exists.");
         await purchaseOrders.AddAsync(order, ct); return ToDto(order);
     }

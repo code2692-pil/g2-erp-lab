@@ -8,6 +8,7 @@ public interface IWorkOrderRepository
     Task<WorkOrder?> GetAsync(string companyCode, string workOrderNo, CancellationToken cancellationToken);
     Task<bool> ExistsAsync(string companyCode, string workOrderNo, CancellationToken cancellationToken);
     Task AddAsync(WorkOrder workOrder, CancellationToken cancellationToken);
+    Task<WorkOrder> AddWithGeneratedNumberAsync(WorkOrder workOrder, string yearMonth, CancellationToken cancellationToken);
     Task UpdateAsync(WorkOrder workOrder, CancellationToken cancellationToken);
     Task<bool> DeleteAsync(string companyCode, string workOrderNo, CancellationToken cancellationToken);
 }

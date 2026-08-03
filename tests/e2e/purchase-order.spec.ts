@@ -64,7 +64,7 @@ test("B: 신규 발주 Validation, Lookup, 금액 계산과 저장", async ({ pa
   await expect(page.getByTestId("purchase-validation-summary")).toBeVisible();
   await expect(page.getByTestId("purchase-validation-summary-count")).toContainText("입력 오류");
 
-  await page.getByTestId("po-btn-partner-lookup").click();
+  await page.getByTestId("purchase-header-grid-cell-container-1000::TEMP_PO_001-CD_PARTNER").dblclick();
   await page.getByTestId("po-partner-lookup-grid-row-1000::P-10021").click();
   await page.getByTestId("po-partner-lookup-confirm").click();
   await page.getByTestId("po-btn-add-line").click();
@@ -88,7 +88,41 @@ test("B: 신규 발주 Validation, Lookup, 금액 계산과 저장", async ({ pa
     (buttons) => buttons.map((button) => button.getAttribute("data-testid")).filter(Boolean)
   )).toEqual(["confirm-dialog-confirm", "confirm-dialog-cancel"]);
   await page.getByTestId("confirm-dialog-confirm").click();
+  await expect(page.getByTestId("confirm-dialog")).toContainText("저장되었습니다.");
+  await page.getByTestId("confirm-dialog-confirm").click();
   await expect(page.getByTestId("status-message")).toHaveText("저장되었습니다.");
+  await expect(page.locator(".erp-snackbar--success")).toHaveCount(0);
+});
+
+test("B-1: 발주 거래처와 거래처명 Grid 더블클릭은 거래처 Lookup을 연다", async ({ page }) => {
+  await openPurchaseOrder(page);
+  await page.getByTestId("po-btn-search").click();
+  const rowKey = "1000::PO2026070001";
+  const otherRowKey = "1000::PO2026070002";
+  const otherPartnerCode = page.getByTestId(`purchase-header-grid-cell-${otherRowKey}-CD_PARTNER`);
+  const otherPartnerName = page.getByTestId(`purchase-header-grid-cell-${otherRowKey}-NM_PARTNER`);
+  const originalOtherPartnerCode = await otherPartnerCode.inputValue();
+  const originalOtherPartnerName = await otherPartnerName.inputValue();
+
+  await page.getByTestId(`purchase-header-grid-cell-container-${rowKey}-CD_PARTNER`).dblclick();
+  await expect(page.getByRole("dialog", { name: "거래처 도움창" })).toBeVisible();
+  await page.getByTestId("po-partner-lookup-grid-row-1000::P-10044").click();
+  await page.getByTestId("po-partner-lookup-confirm").click();
+  await expect(page.getByTestId(`purchase-header-grid-cell-${rowKey}-CD_PARTNER`)).toHaveValue("P-10044");
+  await expect(page.getByTestId(`purchase-header-grid-cell-${rowKey}-NM_PARTNER`)).not.toHaveValue("");
+  await expect(otherPartnerCode).toHaveValue(originalOtherPartnerCode);
+  await expect(otherPartnerName).toHaveValue(originalOtherPartnerName);
+
+  await page.getByTestId(`purchase-header-grid-cell-container-${rowKey}-NM_PARTNER`).dblclick();
+  await expect(page.getByRole("dialog", { name: "거래처 도움창" })).toBeVisible();
+  await page.getByTestId("po-partner-lookup-cancel").click();
+  await expect(page.getByTestId(`purchase-header-grid-cell-${rowKey}-CD_PARTNER`)).toHaveValue("P-10044");
+  await expect(page.getByTestId(`purchase-header-grid-cell-${rowKey}-NM_PARTNER`)).not.toHaveValue("");
+
+  await page.getByTestId(`purchase-header-grid-cell-${rowKey}-CD_PARTNER`).press("F4");
+  await expect(page.getByRole("dialog", { name: "거래처 도움창" })).toBeVisible();
+  await page.getByTestId("po-partner-lookup-cancel").click();
+  await expect(page.getByTestId(`purchase-header-grid-cell-${rowKey}-CD_PARTNER`)).toBeFocused();
 });
 
 test("C: 체크된 발주상세 행을 삭제한다", async ({ page }) => {

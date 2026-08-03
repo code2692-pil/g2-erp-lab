@@ -39,6 +39,8 @@ async function chooseItem(
 async function saveCompactOrder(page: Page, prefix: "mobile-sales" | "pda-sales") {
   await page.getByTestId(`${prefix}-save`).click();
   await page.getByTestId("confirm-dialog-confirm").click();
+  await expect(page.getByTestId("confirm-dialog")).toContainText("저장되었습니다.");
+  await page.getByTestId("confirm-dialog-confirm").click();
   await expect(page.getByTestId(`${prefix}-message`)).toHaveText("저장되었습니다.");
   await expect(page.getByTestId(`${prefix}-dirty-indicator`)).toHaveCount(0);
   return page.getByTestId(`${prefix}-order-no`).inputValue();
@@ -46,7 +48,7 @@ async function saveCompactOrder(page: Page, prefix: "mobile-sales" | "pda-sales"
 
 test("Gate 12-8 mobile A: queries card results and opens the same sales header and lines", async ({ page }) => {
   await page.goto("/mobile/sales-orders");
-  await expect(page.getByTestId("page-title")).toHaveText("모바일 수주등록 PoC");
+  await expect(page.getByTestId("page-title")).toHaveText("모바일 수주등록");
   await page.getByTestId("mobile-sales-search").click();
   await expect(page.getByTestId("mobile-sales-result-SO2026070001")).toBeVisible();
   await page.getByTestId("mobile-sales-result-SO2026070001").click();
@@ -69,7 +71,7 @@ test("Gate 12-8 mobile B: creates, saves, and requeries through partner and item
   await expect(page.getByTestId("mobile-sales-totals")).toContainText("3,300원");
 
   const savedOrderNo = await saveCompactOrder(page, "mobile-sales");
-  expect(savedOrderNo).toMatch(/^SO\d{10}$/);
+  expect(savedOrderNo).toMatch(/^SOR\d{10}$/);
   await page.getByTestId("mobile-sales-back-list").click();
   await page.getByTestId("mobile-sales-filter-order-no").fill(savedOrderNo);
   await page.getByTestId("mobile-sales-search").click();
@@ -142,7 +144,7 @@ test("Gate 12-8 PDA B: rejects an unknown item and recalculates after line edits
   await expect(page.getByTestId("pda-sales-empty-lines")).toBeVisible();
 });
 
-test("Gate 12-8 shared data: PC save, mobile update, PDA update, and PC requery use one source", async ({ page }) => {
+test("Gate 12-8 shared data: PC save, mobile update, PDA update, and PC requery use one source", async ({ page }, testInfo) => {
   const salesApiPaths = new Set<string>();
   page.on("request", (request) => {
     const url = new URL(request.url());
@@ -151,9 +153,13 @@ test("Gate 12-8 shared data: PC save, mobile update, PDA update, and PC requery 
 
   await page.goto("/");
   await page.getByTestId("btn-search").click();
+  await expect(page.getByTestId("sales-order-header-grid-row-1000::SO2026070001")).toBeVisible();
   await page.getByTestId("btn-new").click();
   const tempHeaderKey = "1000::TEMP_SO_001";
   const tempLineKey = `${tempHeaderKey}::1`;
+  const temporaryOrderDate = await page
+    .getByTestId(`sales-order-header-grid-cell-${tempHeaderKey}-DT_SO`)
+    .inputValue();
   await page.getByTestId(`sales-order-header-grid-cell-${tempHeaderKey}-CD_PARTNER`).fill("P-10021");
   await page.getByTestId(`sales-order-header-grid-cell-${tempHeaderKey}-NM_PARTNER`).fill("세명테크");
   await page.getByTestId("btn-add-line").click();
@@ -172,16 +178,79 @@ test("Gate 12-8 shared data: PC save, mobile update, PDA update, and PC requery 
     : null;
   await page.getByTestId("confirm-dialog-confirm").click();
   if (createResponse) expect((await createResponse).ok()).toBeTruthy();
-  const selectedDocumentLabel = page.getByTestId("sales-order-header-grid-selected-document");
-  await expect(selectedDocumentLabel).toHaveText(/선택 문서 SO\d{10}$/);
-  const selectedDocument = await selectedDocumentLabel.textContent();
-  const savedOrderNo = selectedDocument?.match(/SO\d{10}/)?.[0];
+  await expect(page.getByTestId("confirm-dialog")).toContainText("저장되었습니다.");
+  await page.getByTestId("confirm-dialog-confirm").click();
+  const selectedDocumentAfterSave = await page
+    .getByTestId("sales-order-header-grid-selected-document")
+    .textContent();
+  await page.getByLabel("수주일자 To").fill(temporaryOrderDate);
+  await page.getByTestId("btn-search").click();
+  expect(selectedDocumentAfterSave).toMatch(/^선택 문서 SOR\d{10}$/);
+  const savedOrderNo = selectedDocumentAfterSave?.match(/SOR\d{10}/)?.[0];
   expect(savedOrderNo).toBeTruthy();
+  const savedHeaderKey = `1000::${savedOrderNo}`;
+  await expect(page.getByTestId(`sales-order-header-grid-row-${savedHeaderKey}`)).toHaveCount(1);
+  expect(selectedDocumentAfterSave).toBe(`선택 문서 ${savedOrderNo}`);
+  await page.getByTestId(`sales-order-header-grid-cell-container-${savedHeaderKey}-NO_SO`).click();
+  const pcSavedLineQuantity = await page
+    .getByTestId(`sales-order-line-grid-cell-${savedHeaderKey}::1-QT_SO`)
+    .inputValue();
+  await expect(page.getByTestId("sales-order-header-grid-selected-document")).toHaveText(`선택 문서 ${savedOrderNo}`);
+  const selectedDocumentLabel = page.getByTestId("sales-order-header-grid-selected-document");
+  const selectedDocument = await selectedDocumentLabel.textContent();
+
+  await page.getByLabel("수주일자 To").fill("2026-07-31");
+  await page.getByTestId("btn-search").click();
+  await expect(selectedDocumentLabel).toHaveText("선택 문서 SO2026070001");
+  await expect(page.getByTestId("sales-order-line-grid-cell-1000::SO2026070001::1-QT_SO")).toHaveValue("12");
+
+  await page.getByLabel("수주일자 To").fill(temporaryOrderDate);
+  await page.getByTestId("btn-search").click();
+  await page.getByTestId(`sales-order-header-grid-cell-container-${savedHeaderKey}-NO_SO`).click();
+  await expect(selectedDocumentLabel).toHaveText(`선택 문서 ${savedOrderNo}`);
+  await expect(page.getByTestId(`sales-order-line-grid-cell-${savedHeaderKey}::1-QT_SO`)).toHaveValue("3");
+
+  await page.getByLabel("수주일자 To").fill("2026-07-31");
+  await page.getByTestId("btn-search").click();
+  await expect(selectedDocumentLabel).toHaveText("선택 문서 SO2026070001");
+  await expect(page.getByTestId("sales-order-line-grid-cell-1000::SO2026070001::1-QT_SO")).toHaveValue("12");
 
   await page.getByTestId("nav-mobile-sales-order").click();
   await page.getByTestId("mobile-sales-filter-order-no").fill(savedOrderNo!);
   await page.getByTestId("mobile-sales-search").click();
-  await page.getByTestId(`mobile-sales-result-${savedOrderNo}`).click();
+  const selectedResult = page.getByTestId(`mobile-sales-result-${savedOrderNo}`);
+  const mobileResultCards = await page.locator('[data-testid^="mobile-sales-result-"]').evaluateAll(
+    (cards) => cards.map((card) => ({
+      testId: card.getAttribute("data-testid"),
+      text: card.textContent
+    }))
+  );
+  await selectedResult.click();
+  const openedMobileOrderNo = await page.getByTestId("mobile-sales-order-no").inputValue();
+  const openedMobileItemCode = await page.getByTestId("mobile-sales-line-item-1").inputValue();
+  const openedMobileLineQuantity = await page.getByTestId("mobile-sales-line-quantity-1").inputValue();
+  const documentIdentity = {
+    pc: {
+      selectedDocument,
+      selectedDocumentAfterSave,
+      savedOrderNo,
+      savedHeaderKey,
+      line1Quantity: pcSavedLineQuantity,
+      temporaryOrderDate
+    },
+    mobile: {
+      filterOrderNo: await page.getByTestId("mobile-sales-filter-order-no").inputValue(),
+      resultCards: mobileResultCards,
+      openedOrderNo: openedMobileOrderNo,
+      openedLine1ItemCode: openedMobileItemCode,
+      openedLine1Quantity: openedMobileLineQuantity
+    },
+    salesApiPaths: [...salesApiPaths]
+  };
+  await testInfo.attach("gate-12-8-document-identity.json", {
+    body: Buffer.from(JSON.stringify(documentIdentity, null, 2)),
+    contentType: "application/json"
+  });
   await expect(page.getByTestId("mobile-sales-line-quantity-1")).toHaveValue("3");
   await page.getByTestId("mobile-sales-line-quantity-1").fill("7");
   await saveCompactOrder(page, "mobile-sales");
@@ -194,8 +263,9 @@ test("Gate 12-8 shared data: PC save, mobile update, PDA update, and PC requery 
   await saveCompactOrder(page, "pda-sales");
 
   await page.getByTestId("pda-sales-nav-pc").click();
+  await page.getByLabel("수주일자 To").fill(temporaryOrderDate);
   await page.getByTestId("btn-search").click();
-  await page.getByTestId(`sales-order-header-grid-row-1000::${savedOrderNo}`).click();
+  await page.getByTestId(`sales-order-header-grid-cell-container-1000::${savedOrderNo}-NO_SO`).click();
   await expect(page.getByTestId(`sales-order-line-grid-cell-1000::${savedOrderNo}::1-QT_SO`)).toHaveValue("9");
   await expect(page.getByTestId("sales-order-total-summary")).toContainText("9,900");
 
@@ -207,6 +277,8 @@ test("Gate 12-8 shared data: PC save, mobile update, PDA update, and PC requery 
   }
 
   await page.getByTestId("btn-delete-order").click();
+  await page.getByTestId("confirm-dialog-confirm").click();
+  await expect(page.getByTestId("confirm-dialog")).toContainText("삭제되었습니다.");
   await page.getByTestId("confirm-dialog-confirm").click();
   await page.getByTestId("nav-mobile-sales-order").click();
   await page.getByTestId("mobile-sales-filter-order-no").fill(savedOrderNo!);

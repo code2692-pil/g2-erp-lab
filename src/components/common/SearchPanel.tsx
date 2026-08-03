@@ -10,7 +10,7 @@ export function SearchPanel({ children, message, statusAddon }: SearchPanelProps
   return (
     <section className="search-panel">
       {children}
-      <div className="status-message"><span data-testid="status-message">{message}</span>{statusAddon}</div>
+      {(message || statusAddon) && <div className="status-message"><span data-testid="status-message">{message}</span>{statusAddon}</div>}
     </section>
   );
 }

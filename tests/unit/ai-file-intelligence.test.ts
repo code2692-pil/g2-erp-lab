@@ -11,6 +11,24 @@ function localFile(name: string, content: string, type = "text/plain") {
   return new File([content], name, { type, lastModified: 1_725_000_000_000 });
 }
 
+function textPdfFile(text: string) {
+  const escaped = text.replace(/([\\()])/g, "\\$1");
+  const stream = `BT /F1 12 Tf 72 720 Td (${escaped}) Tj ET`;
+  const objects = [
+    "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n",
+    "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n",
+    "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj\n",
+    "4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n",
+    `5 0 obj << /Length ${stream.length} >> stream\n${stream}\nendstream endobj\n`
+  ];
+  let body = "%PDF-1.4\n";
+  const offsets = objects.map((object) => { const offset = body.length; body += object; return offset; });
+  const xrefOffset = body.length;
+  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map((offset) => `${String(offset).padStart(10, "0")} 00000 n `).join("\n")}\n`;
+  body += `trailer << /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  return new File([body], "meeting.pdf", { type: "application/pdf", lastModified: 1_725_000_000_000 });
+}
+
 test("MIME과 확장자를 함께 사용해 파일 유형을 분류한다", () => {
   assert.equal(classifyFile("lot.csv", ""), "CSV");
   assert.equal(classifyFile("payload.bin", "application/json"), "JSON");
@@ -26,6 +44,15 @@ test("실행파일은 내용을 읽지 않고 BLOCKED 처리한다", async () =>
   assert.equal(result.supportLevel, "BLOCKED");
   assert.equal(result.includeInAnalysis, false);
   assert.equal(result.processingStatus, "EXCLUDED");
+});
+
+test("텍스트 PDF는 실제 본문을 추출하고 분석 근거로 포함한다", async () => {
+  const result = await analyzeFile({ file: textPdfFile("Production meeting decision LOT A-100"), fileId: "pdf-1", userNote: "", includeInAnalysis: true });
+  assert.equal(result.category, "PDF");
+  assert.equal(result.analysisSucceeded, true);
+  assert.equal(result.requiresUserDescription, false);
+  assert.equal(result.includeInAnalysis, true);
+  assert.match(result.redactedText, /Production meeting decision LOT A-100/);
 });
 
 test("TXT와 Markdown을 결정적으로 요약하고 코드 블록을 실행하지 않는다", () => {

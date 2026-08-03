@@ -75,11 +75,13 @@ async function createWorkOrderDraftFromLookups(page: Page) {
 test("API UI: work order item and production line lookup", async ({ page }) => {
   await test.step("Header Lookup", async () => {
     await openNewWorkOrder(page);
-    await page.getByTestId("wo-btn-item-lookup").click();
+    await expect(page.getByTestId("wo-btn-item-lookup")).toHaveCount(0);
+    await temporaryHeaderCellContainer(page, "CD_ITEM").dblclick();
     await page.getByTestId("wo-item-lookup-grid-row-1000::ITM-1001").click();
     await page.getByTestId("wo-item-lookup-confirm").click();
     await expect(temporaryHeaderCell(page, "CD_ITEM")).toHaveValue("ITM-1001");
-    await page.getByTestId("wo-btn-line-lookup").click();
+    await expect(page.getByTestId("wo-btn-line-lookup")).toHaveCount(0);
+    await temporaryHeaderCellContainer(page, "CD_LINE").dblclick();
     await page.getByTestId("wo-line-lookup-grid-row-1000::LINE-A").click();
     await page.getByTestId("wo-line-lookup-confirm").click();
     await expect(temporaryHeaderCell(page, "CD_LINE")).toHaveValue("LINE-A");
@@ -115,14 +117,16 @@ test("API UI: work order lookup, warning, and create", async ({ page }) => {
     const createResponse = page.waitForResponse((response) => response.url().endsWith("/api/work-orders") && response.request().method() === "POST");
     await page.getByTestId("confirm-dialog-confirm").click();
     await expect((await createResponse).status()).toBe(201);
-    await expect(page.getByRole("status")).toContainText("저장되었습니다.");
+    await expect(page.getByRole("dialog", { name: "저장 완료" })).toBeVisible();
+    await page.getByTestId("confirm-dialog-confirm").click();
+    await expect(page.getByTestId("status-message")).toContainText("저장되었습니다.");
     await expect(page.getByRole("status")).toContainText("실적수량");
     await expect(page.getByTestId("work-order-warning")).toContainText("실적수량");
   });
   await expect(workOrderRequests).toEqual(["POST"]);
 });
 
-test("API UI: work order save failure recovery and retry", async ({ page }) => {
+test("API UI: work order save and delete failure recovery", async ({ page }) => {
   const workOrderRequests: string[] = [];
   page.on("request", (request) => {
     if (request.url().includes("/api/work-orders") && ["POST", "PUT", "DELETE"].includes(request.method())) workOrderRequests.push(request.method());
@@ -157,15 +161,18 @@ test("API UI: work order save failure recovery and retry", async ({ page }) => {
     await page.route(endpoint, updateFailure);
     await page.getByTestId("wo-btn-save").click();
     await page.getByTestId("confirm-dialog-confirm").click();
-    await expect(page.getByTestId("confirm-dialog")).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: "저장 실패" })).toBeVisible();
     await expect(page.getByTestId("status-message")).toContainText("temporary update failure");
-    await expect(page.getByTestId("wo-btn-save")).toBeEnabled();
+    await expect(page.getByTestId("wo-btn-save")).toBeDisabled();
+    await expect(page.getByTestId("work-order-dirty-indicator")).toBeVisible();
     await expect(savedHeader).toHaveValue("55");
     await expect(savedProcess).toHaveValue("55");
     await expect(itemName).toHaveValue(/\S/);
     await expect(lineName).toHaveValue(/\S/);
     await expect(processName).toHaveValue(/\S/);
     expect(failedPutCount).toBe(1);
+    await page.getByTestId("confirm-dialog-confirm").click();
+    await expect(page.getByTestId("wo-btn-save")).toBeEnabled();
     await page.unrouteAll();
   });
   await test.step("정상 재저장과 재조회", async () => {
@@ -173,13 +180,37 @@ test("API UI: work order save failure recovery and retry", async ({ page }) => {
     await page.getByTestId("wo-btn-save").click();
     await page.getByTestId("confirm-dialog-confirm").click();
     await expect((await updateResponse).status()).toBe(200);
+    await expect(page.getByRole("dialog", { name: "저장 완료" })).toBeVisible();
+    await page.getByTestId("confirm-dialog-confirm").click();
     await page.getByTestId("wo-btn-search").click();
     await expect(existingHeader).toBeVisible();
     await existingHeader.click();
     await expect(savedHeader).toHaveValue("55");
     await expect(savedProcess).toHaveValue("55");
   });
-  await expect(workOrderRequests).toEqual(["PUT", "PUT"]);
+  await test.step("DELETE 500 오류에서 선택 상태 유지", async () => {
+    let failedDeleteCount = 0;
+    const deleteFailure = async (route: import("@playwright/test").Route) => {
+      if (route.request().method() !== "DELETE") return route.continue();
+      failedDeleteCount += 1;
+      await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "temporary delete failure" }) });
+    };
+    await page.route(endpoint, deleteFailure);
+    await page.getByTestId("wo-btn-delete").click();
+    await page.getByTestId("confirm-dialog-confirm").click();
+    await expect(page.getByRole("dialog", { name: "삭제 실패" })).toBeVisible();
+    await expect(page.getByTestId("status-message")).toContainText("삭제 중 오류가 발생했습니다.");
+    await expect(page.locator(".erp-snackbar--success")).toHaveCount(0);
+    await expect(page.getByTestId("wo-btn-delete")).toBeDisabled();
+    await expect(existingHeader).toBeVisible();
+    await expect(savedHeader).toHaveValue("55");
+    await expect(savedProcess).toHaveValue("55");
+    expect(failedDeleteCount).toBe(1);
+    await page.getByTestId("confirm-dialog-confirm").click();
+    await expect(page.getByTestId("wo-btn-delete")).toBeEnabled();
+    await page.unroute(endpoint, deleteFailure);
+  });
+  await expect(workOrderRequests).toEqual(["PUT", "PUT", "DELETE"]);
 });
 
 test("API UI: work order delete cancel and confirm", async ({ page }) => {
@@ -207,7 +238,10 @@ test("API UI: work order delete cancel and confirm", async ({ page }) => {
     const deleteResponse = page.waitForResponse((response) => response.url().includes("/api/work-orders/") && response.request().method() === "DELETE");
     await page.getByTestId("confirm-dialog-confirm").click();
     await expect((await deleteResponse).status()).toBe(204);
-    await expect(page.getByRole("status")).toContainText("삭제되었습니다.");
+    await expect(page.getByRole("dialog", { name: "삭제 완료" })).toBeVisible();
+    await expect(existingHeader).toBeVisible();
+    await page.getByTestId("confirm-dialog-confirm").click();
+    await expect(page.getByTestId("status-message")).toContainText("삭제되었습니다.");
     await expect(existingHeader).toHaveCount(0);
     await expect(workOrderRequests).toEqual(["DELETE"]);
   });

@@ -1,3 +1,4 @@
+using G2Erp.Api.Domain;
 using G2Erp.Api.Domain.WorkOrders;
 using Microsoft.Data.SqlClient;
 
@@ -50,6 +51,25 @@ public sealed class SqlServerWorkOrderRepository(SqlServerConnectionFactory conn
     }
 
     public Task AddAsync(WorkOrder workOrder, CancellationToken cancellationToken) => InsertAsync(workOrder, cancellationToken);
+    public async Task<WorkOrder> AddWithGeneratedNumberAsync(WorkOrder workOrder, string yearMonth, CancellationToken cancellationToken)
+    {
+        await using var connection = connections.Create();
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+        try
+        {
+            var serial = await DocumentNumberSqlAllocator.ReserveAsync(connection, (SqlTransaction)transaction, workOrder.Header.CD_FIRM, "WMO", yearMonth, cancellationToken);
+            var saved = DocumentNumberPolicy.Assign(workOrder, DocumentNumberPolicy.Format("WMO", yearMonth, serial));
+            await InsertWithinTransactionAsync(saved, connection, (SqlTransaction)transaction, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return saved;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
     public Task UpdateAsync(WorkOrder workOrder, CancellationToken cancellationToken) => UpdateAsyncCore(workOrder, cancellationToken);
 
     public async Task<bool> DeleteAsync(string companyCode, string workOrderNo, CancellationToken cancellationToken)
@@ -60,6 +80,7 @@ public sealed class SqlServerWorkOrderRepository(SqlServerConnectionFactory conn
         var sqlTransaction = (SqlTransaction)transaction;
         try
         {
+            await ExecuteAsync("DELETE FROM POC.PRT_WOBILL WHERE CD_FIRM=@firm AND NO_WO=@number", connection, sqlTransaction, companyCode, workOrderNo, cancellationToken);
             await ExecuteAsync("DELETE FROM POC.PRT_WOPROC WHERE CD_FIRM=@firm AND NO_WO=@number", connection, sqlTransaction, companyCode, workOrderNo, cancellationToken);
             var deleted = await ExecuteAsync("DELETE FROM POC.PRT_WO WHERE CD_FIRM=@firm AND NO_WO=@number", connection, sqlTransaction, companyCode, workOrderNo, cancellationToken) > 0;
             await transaction.CommitAsync(cancellationToken);
@@ -80,13 +101,7 @@ public sealed class SqlServerWorkOrderRepository(SqlServerConnectionFactory conn
         var sqlTransaction = (SqlTransaction)transaction;
         try
         {
-            await using (var command = new SqlCommand("INSERT INTO POC.PRT_WO(CD_FIRM,NO_WO,DT_WO,CD_ITEM,NM_ITEM,STND_ITEM,UNIT_ITEM,QT_WO,QT_RESULT,DT_PLAN_START,DT_PLAN_END,CD_LINE,NM_LINE,ST_WO,YN_URGENT,DC_RMK,CD_USER_REG,TM_REG,CD_USER_AMD,TM_AMD) VALUES(@firm,@number,@date,@item,@itemName,@standard,@unit,@quantity,@result,@planStart,@planEnd,@line,@lineName,@status,@urgent,@remark,@user,SYSUTCDATETIME(),@user,SYSUTCDATETIME())", connection, sqlTransaction))
-            {
-                AddHeader(command, workOrder.Header, workOrder.Header.CD_USER_REG ?? "SYSTEM");
-                await command.ExecuteNonQueryAsync(cancellationToken);
-            }
-            foreach (var process in workOrder.Processes)
-                await InsertProcessAsync(connection, sqlTransaction, process, process.CD_USER_REG ?? workOrder.Header.CD_USER_REG ?? "SYSTEM", cancellationToken);
+            await InsertWithinTransactionAsync(workOrder, connection, sqlTransaction, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
         catch
@@ -94,6 +109,18 @@ public sealed class SqlServerWorkOrderRepository(SqlServerConnectionFactory conn
             await transaction.RollbackAsync(cancellationToken);
             throw;
         }
+    }
+
+    private static async Task InsertWithinTransactionAsync(WorkOrder workOrder, SqlConnection connection, SqlTransaction transaction, CancellationToken cancellationToken)
+    {
+        await using (var command = new SqlCommand("INSERT INTO POC.PRT_WO(CD_FIRM,NO_WO,DT_WO,CD_ITEM,NM_ITEM,STND_ITEM,UNIT_ITEM,QT_WO,QT_RESULT,DT_PLAN_START,DT_PLAN_END,CD_LINE,NM_LINE,ST_WO,YN_URGENT,DC_RMK,CD_USER_REG,TM_REG,CD_USER_AMD,TM_AMD) VALUES(@firm,@number,@date,@item,@itemName,@standard,@unit,@quantity,@result,@planStart,@planEnd,@line,@lineName,@status,@urgent,@remark,@user,SYSUTCDATETIME(),@user,SYSUTCDATETIME())", connection, transaction))
+        {
+            AddHeader(command, workOrder.Header, workOrder.Header.CD_USER_REG ?? "SYSTEM");
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        var workOrderId = await GetWorkOrderIdAsync(connection, transaction, workOrder.Header.CD_FIRM, workOrder.Header.NO_WO, cancellationToken);
+        foreach (var process in workOrder.Processes)
+            await InsertProcessAsync(connection, transaction, process, process.CD_USER_REG ?? workOrder.Header.CD_USER_REG ?? "SYSTEM", workOrderId, cancellationToken);
     }
 
     private async Task UpdateAsyncCore(WorkOrder workOrder, CancellationToken cancellationToken)
@@ -111,6 +138,7 @@ public sealed class SqlServerWorkOrderRepository(SqlServerConnectionFactory conn
             }
 
             var existingNumbers = await GetExistingProcessNumbersAsync(connection, sqlTransaction, workOrder.Header.CD_FIRM, workOrder.Header.NO_WO, cancellationToken);
+            var workOrderId = await GetWorkOrderIdAsync(connection, sqlTransaction, workOrder.Header.CD_FIRM, workOrder.Header.NO_WO, cancellationToken);
             var requestedNumbers = workOrder.Processes.Select(process => process.NO_PROC).ToHashSet();
             foreach (var processNumber in existingNumbers.Where(number => !requestedNumbers.Contains(number)))
             {
@@ -126,7 +154,7 @@ public sealed class SqlServerWorkOrderRepository(SqlServerConnectionFactory conn
                 if (existingNumbers.Contains(process.NO_PROC))
                     await UpdateProcessAsync(connection, sqlTransaction, process, process.CD_USER_AMD ?? workOrder.Header.CD_USER_AMD ?? "SYSTEM", cancellationToken);
                 else
-                    await InsertProcessAsync(connection, sqlTransaction, process, process.CD_USER_REG ?? workOrder.Header.CD_USER_REG ?? "SYSTEM", cancellationToken);
+                    await InsertProcessAsync(connection, sqlTransaction, process, process.CD_USER_REG ?? workOrder.Header.CD_USER_REG ?? "SYSTEM", workOrderId, cancellationToken);
             }
             await transaction.CommitAsync(cancellationToken);
         }
@@ -172,12 +200,20 @@ public sealed class SqlServerWorkOrderRepository(SqlServerConnectionFactory conn
         if (await command.ExecuteNonQueryAsync(cancellationToken) == 0) throw new InvalidOperationException("A work order process disappeared during update.");
     }
 
-    private static async Task InsertProcessAsync(SqlConnection connection, SqlTransaction transaction, WorkOrderProcess process, string auditUser, CancellationToken cancellationToken)
+    private static async Task InsertProcessAsync(SqlConnection connection, SqlTransaction transaction, WorkOrderProcess process, string auditUser, Guid workOrderId, CancellationToken cancellationToken)
     {
-        const string sql = "INSERT INTO POC.PRT_WOPROC(CD_FIRM,NO_WO,NO_PROC,CD_PROC,NM_PROC,CD_EQUIP,NM_EQUIP,QT_PLAN,QT_RESULT,TM_PLAN_START,TM_PLAN_END,ST_PROC,DC_RMK,CD_USER_REG,TM_REG,CD_USER_AMD,TM_AMD) VALUES(@firm,@number,@processNumber,@processCode,@processName,@equipmentCode,@equipmentName,@planQuantity,@resultQuantity,@planStart,@planEnd,@status,@remark,@user,SYSUTCDATETIME(),@user,SYSUTCDATETIME())";
+        const string sql = "INSERT INTO POC.PRT_WOPROC(ID_WO,CD_FIRM,NO_WO,NO_PROC,CD_PROC,NM_PROC,CD_EQUIP,NM_EQUIP,QT_PLAN,QT_RESULT,TM_PLAN_START,TM_PLAN_END,ST_PROC,DC_RMK,CD_USER_REG,TM_REG,CD_USER_AMD,TM_AMD) VALUES(@workOrderId,@firm,@number,@processNumber,@processCode,@processName,@equipmentCode,@equipmentName,@planQuantity,@resultQuantity,@planStart,@planEnd,@status,@remark,@user,SYSUTCDATETIME(),@user,SYSUTCDATETIME())";
         await using var command = new SqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@workOrderId", workOrderId);
         AddProcess(command, process, auditUser);
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<Guid> GetWorkOrderIdAsync(SqlConnection connection, SqlTransaction transaction, string companyCode, string workOrderNo, CancellationToken cancellationToken)
+    {
+        await using var command = new SqlCommand("SELECT ID_WO FROM POC.PRT_WO WHERE CD_FIRM=@firm AND NO_WO=@number", connection, transaction);
+        AddText(command, "@firm", companyCode, 10); AddText(command, "@number", workOrderNo, 30);
+        return (Guid)(await command.ExecuteScalarAsync(cancellationToken) ?? throw new InvalidOperationException("Work order internal ID was not created."));
     }
 
     private static async Task<int> ExecuteAsync(string sql, SqlConnection connection, SqlTransaction transaction, string companyCode, string workOrderNo, CancellationToken cancellationToken)

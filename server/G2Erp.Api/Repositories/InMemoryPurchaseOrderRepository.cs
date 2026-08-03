@@ -5,10 +5,11 @@ namespace G2Erp.Api.Repositories;
 public sealed class InMemoryPurchaseOrderRepository : IPurchaseOrderRepository
 {
     private readonly object _gate = new();
+    private readonly Dictionary<string, int> _generatedSerials = [];
     private readonly List<PurchaseOrder> _orders =
     [
-        Create("1000", "PO2026070001", "2026-07-01", "P-10021", "G2 Trading", "ITM-1001", "Controller A", "CTRL-A / 24V", "EA", 10, 280000, "WH-100", "Central Warehouse"),
-        Create("1000", "PO2026070002", "2026-07-02", "P-10044", "Hanul Industry", "ITM-1204", "Sensor Module B", "SENSOR-B / IP67", "EA", 20, 45000, "WH-110", "Parts Warehouse")
+        Create("1000", "PO2026070001", "2026-07-01", "P-10021", "가온모션", "ITM-1001", "제어기 A", "CTRL-A / 24V", "EA", 10, 280000, "WH-100", "중앙창고"),
+        Create("1000", "PO2026070002", "2026-07-02", "P-10044", "미래산업", "ITM-1204", "센서 모듈 B", "SENSOR-B / IP67", "EA", 20, 45000, "WH-110", "부품창고")
     ];
 
     public Task<IReadOnlyList<PurchaseOrder>> GetAllAsync(PurchaseOrderSearch search, CancellationToken cancellationToken)
@@ -32,13 +33,26 @@ public sealed class InMemoryPurchaseOrderRepository : IPurchaseOrderRepository
     }
 
     public Task AddAsync(PurchaseOrder purchaseOrder, CancellationToken cancellationToken) { lock (_gate) _orders.Add(Clone(purchaseOrder)); return Task.CompletedTask; }
+    public Task<PurchaseOrder> AddWithGeneratedNumberAsync(PurchaseOrder purchaseOrder, string yearMonth, CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            var key = $"{purchaseOrder.Header.CD_FIRM}:POR:{yearMonth}";
+            var observed = DocumentNumberPolicy.FindMaximum("POR", yearMonth, _orders.Where(x => x.Header.CD_FIRM == purchaseOrder.Header.CD_FIRM).Select(x => x.Header.NO_PO));
+            var current = Math.Max(_generatedSerials.GetValueOrDefault(key), observed);
+            var saved = DocumentNumberPolicy.Assign(purchaseOrder, DocumentNumberPolicy.Format("POR", yearMonth, current + 1));
+            _orders.Add(Clone(saved));
+            _generatedSerials[key] = current + 1;
+            return Task.FromResult(Clone(saved));
+        }
+    }
     public Task UpdateAsync(PurchaseOrder purchaseOrder, CancellationToken cancellationToken) { lock (_gate) { var index = _orders.FindIndex(x => x.Header.CD_FIRM == purchaseOrder.Header.CD_FIRM && x.Header.NO_PO == purchaseOrder.Header.NO_PO); if (index >= 0) _orders[index] = Clone(purchaseOrder); } return Task.CompletedTask; }
     public Task<bool> DeleteAsync(string companyCode, string purchaseOrderNo, CancellationToken cancellationToken) { lock (_gate) return Task.FromResult(_orders.RemoveAll(x => x.Header.CD_FIRM == companyCode && x.Header.NO_PO == purchaseOrderNo) > 0); }
 
     private static PurchaseOrder Create(string firm, string no, string date, string partnerCode, string partnerName, string itemCode, string itemName, string standard, string unit, decimal quantity, decimal price, string warehouseCode, string warehouseName)
     {
         var supply = decimal.Round(quantity * price, 0, MidpointRounding.AwayFromZero); var vat = decimal.Round(supply * 0.1m, 0, MidpointRounding.AwayFromZero);
-        return new PurchaseOrder { Header = new PurchaseOrderHeader { CD_FIRM = firm, NO_PO = no, DT_PO = date, CD_PARTNER = partnerCode, NM_PARTNER = partnerName, CD_EMP = "E-001", NM_EMP = "Buyer", CD_CURRENCY = "KRW", RT_EXCHANGE = 1, ST_PO = "New", DC_RMK = "In-memory sample" }, Lines = [new PurchaseOrderLine { CD_FIRM = firm, NO_PO = no, NO_LINE = 1, CD_ITEM = itemCode, NM_ITEM = itemName, STND_ITEM = standard, UNIT_ITEM = unit, QT_PO = quantity, UM_PO = price, AM_SUPPLY = supply, AM_VAT = vat, AM_TOTAL = supply + vat, DT_DLV = "2026-07-20", CD_WH = warehouseCode, NM_WH = warehouseName, DC_RMK = "" }] };
+        return new PurchaseOrder { Header = new PurchaseOrderHeader { CD_FIRM = firm, NO_PO = no, DT_PO = date, CD_PARTNER = partnerCode, NM_PARTNER = partnerName, CD_EMP = "E-001", NM_EMP = "구매담당", CD_CURRENCY = "KRW", RT_EXCHANGE = 1, ST_PO = "신규", DC_RMK = "정기 구매" }, Lines = [new PurchaseOrderLine { CD_FIRM = firm, NO_PO = no, NO_LINE = 1, CD_ITEM = itemCode, NM_ITEM = itemName, STND_ITEM = standard, UNIT_ITEM = unit, QT_PO = quantity, UM_PO = price, AM_SUPPLY = supply, AM_VAT = vat, AM_TOTAL = supply + vat, DT_DLV = "2026-07-20", CD_WH = warehouseCode, NM_WH = warehouseName, DC_RMK = "" }] };
     }
     private static PurchaseOrder Clone(PurchaseOrder order) => new() { Header = order.Header with { }, Lines = order.Lines.Select(x => x with { }).ToArray() };
 }

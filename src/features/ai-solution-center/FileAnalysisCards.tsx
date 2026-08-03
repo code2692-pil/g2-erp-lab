@@ -12,7 +12,7 @@ export const fileSupportLevelLabels: Readonly<Record<FileSupportLevel, string>> 
 
 const processingStatusLabels: Readonly<Record<FileProcessingStatus, string>> = {
   ATTACHED: "첨부됨",
-  PROCESSING: "로컬 처리 중",
+  PROCESSING: "파일 처리 중",
   READY: "분석 준비 완료",
   READY_WITH_WARNING: "경고와 함께 준비 완료",
   REQUIRES_DESCRIPTION: "설명 필요",
@@ -50,9 +50,9 @@ export interface FileAnalysisCardsProps {
 }
 
 export function FileAnalysisCards({ attachments, error, processing, onNoteChange, onIncludeChange, onRemove }: FileAnalysisCardsProps) {
-  if (attachments.length === 0) return <p className="ai-solution-center__file-status" data-testid="ai-file-status" aria-live="polite">파일을 선택하면 로컬 지원 범위와 분석 상태를 안내합니다.</p>;
+  if (attachments.length === 0) return <p className="ai-solution-center__file-status" data-testid="ai-file-status" aria-live="polite">파일을 선택하면 지원 형식과 분석 상태를 안내합니다.</p>;
   return <>
-    <p className="ai-solution-center__file-status" data-testid="ai-file-status" aria-live="polite">첨부 파일 {attachments.length}건 · 외부 전송 0건 · {processing ? "로컬 처리 중" : "로컬 처리 완료"}</p>
+    <p className="ai-solution-center__file-status" data-testid="ai-file-status" aria-live="polite">첨부 파일 {attachments.length}건 · 외부 전송 0건 · {processing ? "파일 처리 중" : "파일 처리 완료"}</p>
     {error && <p className="ai-solution-center__error" data-testid="ai-file-error" role="alert">{error}</p>}
     <ul className="ai-solution-center__file-list ai-solution-center__analysis-files" data-testid="ai-file-list">{attachments.map((attachment) => {
       const blocked = attachment.supportLevel === "BLOCKED";
@@ -63,8 +63,8 @@ export function FileAnalysisCards({ attachments, error, processing, onNoteChange
           <div className="ai-solution-center__file-analysis-heading"><div><strong>{attachment.fileName}</strong><span>{attachment.category} · {formatBytes(attachment.fileSize)} · {fileSupportLevelLabels[attachment.supportLevel]} · {processingStatusLabels[attachment.processingStatus]}</span></div><FileCheck2 size={18} /></div>
           <p data-testid={`file-summary-${attachment.fileId}`}>{attachment.summary}</p>
           <p className="ai-solution-center__file-structure" data-testid={`file-structure-${attachment.fileId}`}>{attachment.structureSummary}</p>
-          {attachment.category === "IMAGE" && <p>이미지 메타정보만 확인했습니다. 현재 PoC에서는 OCR이나 장면 분석을 지원하지 않습니다.</p>}
-          {(attachment.category === "AUDIO" || attachment.category === "VIDEO") && <p>재생 시간과 파일 정보만 확인합니다. 현재 PoC에서는 내용을 자동 추출하지 않습니다. 음성 전사나 영상 장면 분석은 지원하지 않습니다.</p>}
+          {attachment.category === "IMAGE" && <p>이미지 메타정보만 확인했습니다. OCR이나 장면 분석은 지원하지 않습니다.</p>}
+          {(attachment.category === "AUDIO" || attachment.category === "VIDEO") && <p>재생 시간과 파일 정보만 확인합니다. 내용 자동 추출, 음성 전사, 영상 장면 분석은 지원하지 않습니다.</p>}
           {blocked ? <p className="ai-solution-center__blocked-file" data-testid={`file-blocked-${attachment.fileId}`}>보안상 실행 가능한 파일은 분석에 사용할 수 없습니다.</p> : <>
             <label className="ai-solution-center__file-include"><input type="checkbox" data-testid={`file-include-${attachment.fileId}`} checked={attachment.includeInAnalysis} disabled={!canInclude} onChange={(event) => onIncludeChange(attachment.fileId, event.target.checked)} />분석에 포함</label>
             <label className="ai-solution-center__file-note-label" htmlFor={`file-note-${attachment.fileId}`}>파일별 주요 내용·의사결정<textarea id={`file-note-${attachment.fileId}`} data-testid={`file-note-${attachment.fileId}`} value={attachment.note} maxLength={2_000} onChange={(event) => onNoteChange(attachment.fileId, event.target.value)} rows={3} /></label>

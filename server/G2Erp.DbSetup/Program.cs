@@ -40,7 +40,10 @@ static async Task<int> RunAsync(string[] args)
             "008_seed_work_order_test_data.sql",
             "010_seed_production_master_sample_data.sql",
             "011_seed_work_order_sample_data.sql",
-            "012_verify_production_sample_relationships.sql"
+            "012_verify_production_sample_relationships.sql",
+            "013_create_document_number_counters.sql",
+            "014_create_sales_conversion_schema.sql",
+            "015_seed_final_uat_conversion_masters.sql"
         };
         scripts = (createTestDatabase ? new[] { "006_create_test_database.sql" } : requiredScriptNames)
             .Select(name => Path.Combine(scriptsDirectory, name)).ToArray();

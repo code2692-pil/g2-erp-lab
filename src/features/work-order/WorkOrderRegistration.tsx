@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Building2, ChevronRight, Plus, Rows3, Save, Search, Trash2 } from "lucide-react";
+import { Plus, Rows3, Save, Search, Trash2 } from "lucide-react";
+import { AppNavigation, type AppNavigationPage } from "../../components/AppNavigation";
 import { ErpDataGrid, registerErpDataGridPasteHandler } from "../../components/common/ErpDataGrid";
 import { DirtyIndicator } from "../../components/common/DirtyIndicator";
 import type { ErpDataGridCellValue, ErpDataGridColumn, ErpDataGridFocusRequest, ErpDataGridPasteRequest } from "../../components/common/ErpDataGrid";
@@ -8,6 +9,9 @@ import { ErpLookupDialog } from "../../components/common/ErpLookupDialog";
 import { ErpValidationSummary } from "../../components/common/ErpValidationSummary";
 import { PageToolbar } from "../../components/common/PageToolbar";
 import { SearchPanel } from "../../components/common/SearchPanel";
+import { RangeValidationDialog } from "../../components/common/validation/RangeValidationDialog";
+import { validateDateRange } from "../../components/common/validation/rangeValidation";
+import { initialCompanyCode } from "../../utils/companyContext";
 import { sortValidationIssues, toValidationCellErrors, type ValidationIssue } from "../../components/common/validation/validation";
 import { useConfirm } from "../../hooks/useConfirm";
 import { useCrudPage } from "../../hooks/useCrudPage";
@@ -29,14 +33,14 @@ import {
 } from "./utils";
 import { getWorkOrderWarnings, validateWorkOrders } from "./validation";
 
-type NavigationPage = "sales" | "purchase" | "work" | "development" | "ai";
 type HeaderEditableField = Exclude<keyof WorkOrderHeader, "NO_WO">;
 type ProcessEditableField = Exclude<keyof WorkOrderProcess, "CD_FIRM" | "NO_WO" | "NO_PROC">;
 
 interface WorkOrderRegistrationProps {
-  onNavigate: (page: NavigationPage) => void;
+  onNavigate: (page: AppNavigationPage) => void;
   onScreenIntent?: (screen: ScreenModuleId) => void;
   showDevelopmentDataManager?: boolean;
+  navigationPage?: "work" | "mobileWork" | "pdaWork";
 }
 
 const workOrderStatuses: readonly WorkOrderStatus[] = ["미확정", "확정", "진행", "완료", "마감", "취소"];
@@ -92,7 +96,7 @@ function createTempWorkOrderNo(sequence: number) {
 function createEmptyHeader(noWo: string): WorkOrderHeader {
   const issueDate = today();
   return {
-    CD_FIRM: "1000",
+    CD_FIRM: initialCompanyCode(),
     NO_WO: noWo,
     DT_WO: issueDate,
     CD_ITEM: "",
@@ -149,7 +153,7 @@ function isProcessEditableField(field: keyof WorkOrderProcess): field is Process
   return field !== "CD_FIRM" && field !== "NO_WO" && field !== "NO_PROC";
 }
 
-export function WorkOrderRegistration({ onNavigate, onScreenIntent, showDevelopmentDataManager = false }: WorkOrderRegistrationProps) {
+export function WorkOrderRegistration({ onNavigate, onScreenIntent, showDevelopmentDataManager = false, navigationPage = "work" }: WorkOrderRegistrationProps) {
   const screenIntentProps = (screen: ScreenModuleId) => ({
     onMouseEnter: () => onScreenIntent?.(screen),
     onFocus: () => onScreenIntent?.(screen),
@@ -158,7 +162,7 @@ export function WorkOrderRegistration({ onNavigate, onScreenIntent, showDevelopm
   const [headers, setHeaders] = useState<WorkOrderHeader[]>([]);
   const [processes, setProcesses] = useState<WorkOrderProcess[]>([]);
   const [filters, setFilters] = useState({
-    cdFirm: "",
+    cdFirm: initialCompanyCode(),
     dateFrom: "2026-07-01",
     dateTo: "2026-07-31",
     noWo: "",
@@ -167,6 +171,8 @@ export function WorkOrderRegistration({ onNavigate, onScreenIntent, showDevelopm
     status: "",
     urgent: ""
   });
+  const [rangeDialogOpen, setRangeDialogOpen] = useState(false);
+  const invalidDateInputRef = useRef<HTMLInputElement | null>(null);
   const [checkedProcessKeys, setCheckedProcessKeys] = useState<string[]>([]);
   const [tempSequence, setTempSequence] = useState(1);
   const [validationAttempted, setValidationAttempted] = useState(false);
@@ -270,6 +276,10 @@ export function WorkOrderRegistration({ onNavigate, onScreenIntent, showDevelopm
   };
 
   const handleSearch = async () => {
+    if (!validateDateRange(filters.dateFrom, filters.dateTo).valid) {
+      setRangeDialogOpen(true);
+      return;
+    }
     if (!(await confirmDiscardChanges())) return;
     setFeatureMessage("");
     await executeSearch({
@@ -285,9 +295,8 @@ export function WorkOrderRegistration({ onNavigate, onScreenIntent, showDevelopm
         setServerWarnings([]);
         setValidationAttempted(false);
         clearDirty();
-        notify(result.headers.length > 0 ? "success" : "info", result.headers.length > 0 ? "조회되었습니다." : "조회된 작업지시가 없습니다.");
       },
-      successMessage: (result) => result.headers.length > 0 ? "조회되었습니다." : "조회된 작업지시가 없습니다.",
+      successMessage: "",
       errorMessage: "작업지시 조회 중 오류가 발생했습니다."
     });
   };
@@ -473,11 +482,7 @@ export function WorkOrderRegistration({ onNavigate, onScreenIntent, showDevelopm
         setValidationAttempted(false);
         clearDirty();
         const warnings = [...new Set(saved.Warnings)];
-        notify(
-          warnings.length > 0 ? "warning" : "success",
-          "저장되었습니다.",
-          warnings.length > 0 ? warnings.join(" ") : undefined
-        );
+        if (warnings.length > 0) notify("warning", warnings.join(" "));
       },
       successMessage: "저장되었습니다.",
       errorMessage: (caughtError) => caughtError instanceof Error ? caughtError.message : "저장 중 오류가 발생했습니다. 입력값을 확인하고 다시 시도하세요."
@@ -511,7 +516,6 @@ export function WorkOrderRegistration({ onNavigate, onScreenIntent, showDevelopm
         setServerWarnings([]);
         setValidationAttempted(false);
         clearDirty();
-        notify("success", "삭제되었습니다.");
       },
       successMessage: "삭제되었습니다.",
       errorMessage: "삭제 중 오류가 발생했습니다. 다시 시도하세요."
@@ -620,7 +624,7 @@ export function WorkOrderRegistration({ onNavigate, onScreenIntent, showDevelopm
     notify("success", "설비 선택이 반영되었습니다.");
   };
 
-  const handleNavigate = (page: NavigationPage) => onNavigate(page);
+  const handleNavigate = (page: AppNavigationPage) => onNavigate(page);
 
   const headerColumns: readonly ErpDataGridColumn<WorkOrderHeader>[] = [
     { field: "CD_FIRM", headerName: "회사", width: 78, dataType: "code", editable: true, required: true },
@@ -657,39 +661,23 @@ export function WorkOrderRegistration({ onNavigate, onScreenIntent, showDevelopm
 
   return <>
     <div className="erp-shell">
-      <aside className="side-nav">
-        <div className="brand"><Building2 size={20} /><strong>SMART ERP</strong></div>
-        <nav>
-          <div className="menu-title">영업관리</div>
-          <div className="menu-group"><ChevronRight size={14} /><span>수주관리</span></div>
-          <button className="menu-item" data-testid="nav-sales-order" onClick={() => void handleNavigate("sales")} type="button">수주등록</button>
-          <div className="menu-title">구매관리</div>
-          <div className="menu-group"><ChevronRight size={14} /><span>발주관리</span></div>
-          <button {...screenIntentProps("purchase")} className="menu-item" data-testid="nav-purchase-order" onClick={() => void handleNavigate("purchase")} type="button">발주등록</button>
-          <div className="menu-title">생산관리</div>
-          <div className="menu-group"><ChevronRight size={14} /><span>작업지시관리</span></div>
-          <button className="menu-item active" data-testid="nav-work-order" type="button">작업지시등록</button>
-          <div className="menu-title">AI 솔루션</div>
-          <button {...screenIntentProps("ai")} className="menu-item" data-testid="nav-ai-solution-center" onClick={() => void handleNavigate("ai")} type="button">AI 솔루션 센터</button>
-          {showDevelopmentDataManager && <><div className="menu-title">개발 도구</div><button {...screenIntentProps("development")} className="menu-item" data-testid="nav-development-data" onClick={() => void handleNavigate("development")} type="button">테스트 데이터 관리</button></>}
-        </nav>
-      </aside>
+      <AppNavigation currentPage={navigationPage} onNavigate={onNavigate} onScreenIntent={onScreenIntent} />
       <main aria-busy={processing} className="workbench" data-processing-state={operation}>
         <header className="page-header">
           <div><h1 data-testid="work-order-page-title">작업지시등록</h1><p>작업지시 정보를 조회하고 등록합니다.</p><DirtyIndicator dataTestId="work-order-dirty-indicator" dirty={isDirty} /></div>
           <PageToolbar processing={processing} actions={[
-            { dataTestId: "wo-btn-search", label: isLoading ? "조회 중..." : "조회", icon: <Search size={15} />, onClick: () => void handleSearch(), disabled: isSaving },
-            { dataTestId: "wo-btn-new", label: "신규", icon: <Plus size={15} />, onClick: () => void handleNew(), disabled: processing },
-            { dataTestId: "wo-btn-add-process", label: "행추가", icon: <Rows3 size={15} />, onClick: handleAddProcess, disabled: processing },
-            { dataTestId: "wo-btn-delete-process", label: "행삭제", icon: <Trash2 size={15} />, onClick: () => void handleDeleteProcess(), disabled: processing },
-            { dataTestId: "wo-btn-save", label: operation === "saving" ? "저장 중..." : "저장", icon: <Save size={15} />, onClick: () => void handleSave(), disabled: processing, variant: "primary" },
-            { dataTestId: "wo-btn-delete", label: operation === "deleting" ? "삭제 중..." : "삭제", icon: <Trash2 size={15} />, onClick: () => void handleDeleteWorkOrder(), disabled: processing, variant: "danger" }
+            { dataTestId: "wo-btn-search", label: isLoading ? "조회 중..." : "조회", icon: <Search size={15} />, onClick: () => void handleSearch(), disabled: isSaving, group: "document" },
+            { dataTestId: "wo-btn-new", label: "신규", icon: <Plus size={15} />, onClick: () => void handleNew(), disabled: processing, group: "document" },
+            { dataTestId: "wo-btn-save", label: operation === "saving" ? "저장 중..." : "저장", icon: <Save size={15} />, onClick: () => void handleSave(), disabled: processing, variant: "primary", group: "document" },
+            { dataTestId: "wo-btn-delete", label: operation === "deleting" ? "삭제 중..." : "삭제", icon: <Trash2 size={15} />, onClick: () => void handleDeleteWorkOrder(), disabled: processing, variant: "danger", group: "document" },
+            { dataTestId: "wo-btn-add-process", label: "행추가", icon: <Rows3 size={15} />, onClick: handleAddProcess, disabled: processing, group: "rows" },
+            { dataTestId: "wo-btn-delete-process", label: "행삭제", icon: <Trash2 size={15} />, onClick: () => void handleDeleteProcess(), disabled: processing, group: "rows" }
           ]} />
         </header>
         <SearchPanel message={message}>
           <label>회사코드<input data-testid="wo-filter-firm" value={filters.cdFirm} onChange={(event) => setFilters({ ...filters, cdFirm: event.target.value })} /></label>
-          <label>지시일자 From<input data-testid="wo-filter-date-from" type="date" value={filters.dateFrom} onChange={(event) => setFilters({ ...filters, dateFrom: event.target.value })} /></label>
-          <label>지시일자 To<input data-testid="wo-filter-date-to" type="date" value={filters.dateTo} onChange={(event) => setFilters({ ...filters, dateTo: event.target.value })} /></label>
+          <label>지시일자 From<input data-testid="wo-filter-date-from" type="date" value={filters.dateFrom} onChange={(event) => { const nextValue = event.target.value; if (!validateDateRange(nextValue, filters.dateTo).valid) { invalidDateInputRef.current = event.currentTarget; setRangeDialogOpen(true); return; } setFilters({ ...filters, dateFrom: nextValue }); }} /></label>
+          <label>지시일자 To<input data-testid="wo-filter-date-to" type="date" value={filters.dateTo} onChange={(event) => { const nextValue = event.target.value; if (!validateDateRange(filters.dateFrom, nextValue).valid) { invalidDateInputRef.current = event.currentTarget; setRangeDialogOpen(true); return; } setFilters({ ...filters, dateTo: nextValue }); }} /></label>
           <label>작업지시번호<input data-testid="wo-filter-no" value={filters.noWo} onChange={(event) => setFilters({ ...filters, noWo: event.target.value })} /></label>
           <label>생산품목<input data-testid="wo-filter-item" value={filters.item} onChange={(event) => setFilters({ ...filters, item: event.target.value })} /></label>
           <label>생산라인<input data-testid="wo-filter-line" value={filters.line} onChange={(event) => setFilters({ ...filters, line: event.target.value })} /></label>
@@ -700,7 +688,7 @@ export function WorkOrderRegistration({ onNavigate, onScreenIntent, showDevelopm
         </SearchPanel>
         <ErpValidationSummary dataTestId="work-order-validation-summary" issues={displayedValidationIssues} onFocusFirst={() => focusValidationIssue(displayedValidationIssues[0])} />
         <section className="grid-section top-grid">
-          <div className="section-title"><h2>작업지시</h2><div className="section-title-actions"><button className="section-lookup-button" data-testid="wo-btn-item-lookup" disabled={processing} onClick={handleOpenItemLookup} type="button"><Search size={14} />품목 도움</button><button className="section-lookup-button" data-testid="wo-btn-line-lookup" disabled={processing} onClick={handleOpenProductionLineLookup} type="button"><Search size={14} />라인 도움</button></div></div>
+          <div className="section-title"><h2>작업지시</h2></div>
           <ErpDataGrid<WorkOrderHeader> ariaLabel="작업지시 Header" cellErrors={validationCellErrors} className="work-order-header-grid" columns={headerColumns} dataTestId="work-order-header-grid" emptyMessage="조회된 작업지시가 없습니다." focusRequest={headerFocusRequest} lookupDisabled={processing || itemLookupOpen || productionLineLookupOpen || processLookupOpen || equipmentLookupOpen} onCellValueChange={(row, field, value) => { if (isHeaderEditableField(field)) updateHeader(row, field, value); }} onLookupCellDoubleClick={(row, column) => handleLookupCellDoubleClick(row, column.field)} onRowClick={(header) => void selectHeader(header)} rowKey={(header) => createWorkOrderHeaderKey(header.CD_FIRM, header.NO_WO)} rows={headers} selectedRowKey={selectedHeader ? createWorkOrderHeaderKey(selectedHeader.CD_FIRM, selectedHeader.NO_WO) : undefined} selectionMode="single" showFooter showRowNumbers />
         </section>
         <section className="grid-section bottom-grid">
@@ -715,5 +703,6 @@ export function WorkOrderRegistration({ onNavigate, onScreenIntent, showDevelopm
     <ErpLookupDialog<ProductionLine> columns={productionLineColumns} dataTestId="wo-line-lookup" emptyMessage="조회된 생산라인이 없습니다." onClose={() => setProductionLineLookupOpen(false)} onSelect={handleSelectProductionLine} open={productionLineLookupOpen} rowKey={(line) => `${line.CD_FIRM}::${line.CD_LINE}`} rows={productionLineLookupRows} searchFields={["CD_LINE", "NM_LINE"]} title="생산라인 도움" />
     <ErpLookupDialog<ProductionProcess> columns={processLookupColumns} dataTestId="wo-process-lookup" emptyMessage="조회된 공정이 없습니다." onClose={() => setProcessLookupOpen(false)} onSelect={handleSelectProcess} open={processLookupOpen} rowKey={(process) => `${process.CD_FIRM}::${process.CD_PROC}`} rows={processLookupRows} searchFields={["CD_PROC", "NM_PROC"]} title="공정 도움" />
     <ErpLookupDialog<Equipment> columns={equipmentColumns} dataTestId="wo-equipment-lookup" emptyMessage="조회된 설비가 없습니다." onClose={() => setEquipmentLookupOpen(false)} onSelect={handleSelectEquipment} open={equipmentLookupOpen} rowKey={(equipment) => `${equipment.CD_FIRM}::${equipment.CD_EQUIP}`} rows={equipmentLookupRows} searchFields={["CD_EQUIP", "NM_EQUIP", "CD_LINE"]} title="설비 도움" />
+    <RangeValidationDialog open={rangeDialogOpen} onClose={() => { setRangeDialogOpen(false); requestAnimationFrame(() => invalidDateInputRef.current?.focus()); }} />
   </>;
 }

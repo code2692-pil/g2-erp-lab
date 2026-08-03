@@ -18,6 +18,60 @@ function deferred() {
   return { promise, resolve };
 }
 
+test("늦게 완료된 발주 상세 조회가 Lookup 선택값을 덮어쓰지 않는다", async ({ page, request }, testInfo) => {
+  test.slow();
+  const number = `E2E-PO-RACE-${testInfo.workerIndex}-${Date.now()}`;
+  const otherNumber = `${number}-OTHER`;
+  const document = purchaseRequest(number);
+  const otherDocument = purchaseRequest(otherNumber);
+  const detailUrl = `${apiBaseUrl}/api/purchase-orders/1000/${number}`;
+  const delayedResponse = deferred();
+  let detailRequestSeen = false;
+  const pageErrors: Error[] = [];
+
+  await request.post(`${apiBaseUrl}/api/purchase-orders`, { data: document });
+  await request.post(`${apiBaseUrl}/api/purchase-orders`, { data: otherDocument });
+  page.on("pageerror", (error) => pageErrors.push(error));
+  await page.route(detailUrl, async (route) => {
+    detailRequestSeen = true;
+    await delayedResponse.promise;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(document) });
+  });
+
+  try {
+    await page.goto("/");
+    await page.getByTestId("nav-purchase-order").click();
+    await page.getByTestId("po-btn-search").click();
+    const rowKey = `1000::${number}`;
+    const otherRowKey = `1000::${otherNumber}`;
+    const otherPartnerCode = page.getByTestId(`purchase-header-grid-cell-${otherRowKey}-CD_PARTNER`);
+    const otherPartnerName = page.getByTestId(`purchase-header-grid-cell-${otherRowKey}-NM_PARTNER`);
+    const originalOtherPartnerCode = await otherPartnerCode.inputValue();
+    const originalOtherPartnerName = await otherPartnerName.inputValue();
+
+    await page.getByTestId(`purchase-header-grid-cell-container-${rowKey}-NO_PO`).click();
+    await expect.poll(() => detailRequestSeen).toBe(true);
+    await page.getByTestId(`purchase-header-grid-cell-container-${rowKey}-CD_PARTNER`).dblclick();
+    await expect(page.getByRole("dialog", { name: "거래처 도움창" })).toBeVisible();
+    await page.getByTestId("po-partner-lookup-grid-row-1000::P-10044").click();
+    await page.getByTestId("po-partner-lookup-confirm").click();
+    await expect(page.getByTestId(`purchase-header-grid-cell-${rowKey}-CD_PARTNER`)).toHaveValue("P-10044");
+    await expect(page.getByTestId(`purchase-header-grid-cell-${rowKey}-NM_PARTNER`)).not.toHaveValue("");
+    await expect(otherPartnerCode).toHaveValue(originalOtherPartnerCode);
+    await expect(otherPartnerName).toHaveValue(originalOtherPartnerName);
+
+    delayedResponse.resolve();
+    await expect(page.getByTestId(`purchase-header-grid-cell-${rowKey}-CD_PARTNER`)).toHaveValue("P-10044");
+    await expect(page.getByTestId(`purchase-header-grid-cell-${rowKey}-NM_PARTNER`)).not.toHaveValue("");
+    expect(pageErrors).toEqual([]);
+  } finally {
+    delayedResponse.resolve();
+    await page.unroute(detailUrl);
+    await request.delete(`${apiBaseUrl}/api/purchase-orders/1000/${number}`);
+    await request.delete(`${apiBaseUrl}/api/purchase-orders/1000/${otherNumber}`);
+  }
+});
+
 test("API mode: sales order CRUD, lookup, validation, and server amounts", async ({ page, request }, testInfo) => {
   test.slow();
   const number = `E2E-SO-${testInfo.workerIndex}-${Date.now()}`;
@@ -61,7 +115,7 @@ test("API mode: purchase order CRUD, lookup, validation, and server amounts", as
   expect((await request.get(`${apiBaseUrl}/api/purchase-orders/1000/${number}`)).status()).toBe(404);
 });
 
-test("API UI: sales order save, delete, dirty header navigation, and notifications", async ({ page, request }, testInfo) => {
+test("API UI: sales order save, dirty header navigation, and notifications", async ({ page, request }, testInfo) => {
   const first = `E2E-SO-UX-${testInfo.workerIndex}-${Date.now()}-A`;
   const second = `E2E-SO-UX-${testInfo.workerIndex}-${Date.now()}-B`;
   await request.post(`${apiBaseUrl}/api/sales-orders`, { data: salesRequest(first, 3, 101) });
@@ -69,39 +123,57 @@ test("API UI: sales order save, delete, dirty header navigation, and notificatio
   try {
     await page.goto("/");
     await page.getByTestId("btn-search").click();
-    await page.getByTestId(`sales-order-header-grid-row-1000::${first}`).click();
+    await page.getByTestId(`sales-order-header-grid-cell-container-1000::${first}-NO_SO`).click();
     await page.getByTestId(`sales-order-line-grid-cell-1000::${first}::1-QT_SO`).fill("4");
     await page.getByTestId("btn-save").click();
     await page.getByTestId("confirm-dialog-cancel").click();
     expect((await request.get(`${apiBaseUrl}/api/sales-orders/1000/${first}`)).ok()).toBeTruthy();
     await page.getByTestId("btn-save").click();
     await page.getByTestId("confirm-dialog-confirm").click();
-    await expect(page.getByRole("status")).toContainText("저장되었습니다.");
+    await expect(page.getByRole("dialog", { name: "저장 완료" })).toBeVisible();
+    await expect(page.getByTestId("sales-order-dirty-indicator")).toBeVisible();
+    await page.getByTestId("confirm-dialog-confirm").click();
+    await expect(page.getByTestId("status-message")).toContainText("저장되었습니다.");
+    await expect(page.locator(".erp-snackbar--success")).toHaveCount(0);
 
     await page.getByTestId(`sales-order-line-grid-cell-1000::${first}::1-QT_SO`).fill("5");
-    await page.getByTestId(`sales-order-header-grid-row-1000::${second}`).click();
+    await page.getByTestId(`sales-order-header-grid-cell-container-1000::${second}-NO_SO`).click();
     await expect(page.getByTestId("confirm-dialog")).toContainText("저장하지 않은 변경사항");
     await page.getByTestId("confirm-dialog-cancel").click();
     await expect(page.getByTestId("confirm-dialog")).toHaveCount(0);
-    await page.getByTestId(`sales-order-header-grid-row-1000::${second}`).click();
+    await page.getByTestId(`sales-order-header-grid-cell-container-1000::${second}-NO_SO`).click();
     await page.getByTestId("confirm-dialog-confirm").click();
 
-    await page.getByTestId(`sales-order-header-grid-row-1000::${first}`).click();
-    await page.getByTestId("btn-delete-order").click();
-    await page.getByTestId("confirm-dialog-cancel").click();
-    await expect(page.getByTestId(`sales-order-header-grid-row-1000::${first}`)).toBeVisible();
-    await page.getByTestId("btn-delete-order").click();
-    await page.getByTestId("confirm-dialog-confirm").click();
-    await expect(page.getByRole("status")).toContainText("삭제되었습니다.");
   } finally {
     await request.delete(`${apiBaseUrl}/api/sales-orders/1000/${first}`);
     await request.delete(`${apiBaseUrl}/api/sales-orders/1000/${second}`);
   }
 });
 
+test("API UI: sales order delete confirmation and notification", async ({ page, request }, testInfo) => {
+  const number = `E2E-SO-DELETE-${testInfo.workerIndex}-${Date.now()}`;
+  await request.post(`${apiBaseUrl}/api/sales-orders`, { data: salesRequest(number, 3, 101) });
+  try {
+    await page.goto("/");
+    await page.getByTestId("btn-search").click();
+    await page.getByTestId(`sales-order-header-grid-cell-container-1000::${number}-NO_SO`).click();
+    await page.getByTestId("btn-delete-order").click();
+    await page.getByTestId("confirm-dialog-cancel").click();
+    await expect(page.getByTestId(`sales-order-header-grid-row-1000::${number}`)).toBeVisible();
+    await page.getByTestId("btn-delete-order").click();
+    await page.getByTestId("confirm-dialog-confirm").click();
+    await expect(page.getByRole("dialog", { name: "삭제 완료" })).toBeVisible();
+    await expect(page.getByTestId(`sales-order-header-grid-row-1000::${number}`)).toBeVisible();
+    await page.getByTestId("confirm-dialog-confirm").click();
+    await expect(page.getByTestId("status-message")).toContainText("삭제되었습니다.");
+  } finally {
+    await request.delete(`${apiBaseUrl}/api/sales-orders/1000/${number}`);
+  }
+});
+
 test("API UI: purchase order lookup, save/delete dialogs, dirty navigation, and pending state", async ({ page, request }, testInfo) => {
   test.slow();
-  const number = "TEMP_PO_001";
+  let number = "TEMP_PO_001";
   try {
     await page.goto("/");
     await page.getByTestId("nav-purchase-order").click();
@@ -115,7 +187,8 @@ test("API UI: purchase order lookup, save/delete dialogs, dirty navigation, and 
     await expect(page.getByTestId("confirm-dialog")).toHaveCount(0);
     await expect(page.getByTestId(`purchase-header-grid-cell-1000::${number}-CD_PARTNER`)).toHaveAttribute("aria-invalid", "true");
 
-    await page.getByTestId("po-btn-partner-lookup").click();
+    await expect(page.getByTestId("po-btn-partner-lookup")).toHaveCount(0);
+    await page.getByTestId(`purchase-header-grid-cell-container-1000::${number}-CD_PARTNER`).dblclick();
     await page.getByTestId("po-partner-lookup-grid-row-1000::P-10021").click();
     await page.getByTestId("po-partner-lookup-confirm").click();
     await page.getByTestId(`purchase-line-grid-row-1000::${number}::1`).click();
@@ -132,7 +205,13 @@ test("API UI: purchase order lookup, save/delete dialogs, dirty navigation, and 
     await page.getByTestId("po-btn-save").click();
     await expect(page.getByTestId("confirm-dialog")).toContainText("저장하시겠습니까?");
     await page.getByTestId("confirm-dialog-confirm").click();
-    await expect(page.getByRole("status")).toContainText("저장되었습니다.");
+    await expect(page.getByRole("dialog", { name: "저장 완료" })).toBeVisible();
+    await page.getByTestId("confirm-dialog-confirm").click();
+    await expect(page.getByTestId("status-message")).toContainText("저장되었습니다.");
+
+    const selectedPurchaseOrder = page.getByTestId("purchase-header-grid-selected-document");
+    await expect(selectedPurchaseOrder).toHaveText(/POR\d{10}/);
+    number = (await selectedPurchaseOrder.textContent())?.match(/POR\d{10}/)?.[0] ?? number;
 
     const purchaseRemark = page.getByTestId(`purchase-header-grid-cell-1000::${number}-DC_RMK`);
     await purchaseRemark.fill("saved purchase order update");
@@ -148,7 +227,9 @@ test("API UI: purchase order lookup, save/delete dialogs, dirty navigation, and 
     await page.getByTestId("confirm-dialog-confirm").click();
     expect((await updateResponse).status()).toBe(200);
     expect(updateRequestBody?.Header.DC_RMK).toBe("saved purchase order update");
-    await expect(page.getByRole("status")).toContainText("저장되었습니다.");
+    await expect(page.getByRole("dialog", { name: "저장 완료" })).toBeVisible();
+    await page.getByTestId("confirm-dialog-confirm").click();
+    await expect(page.getByTestId("status-message")).toContainText("저장되었습니다.");
     const updatedPurchaseOrder = await request.get(`${apiBaseUrl}/api/purchase-orders/1000/${number}`);
     expect(updatedPurchaseOrder.status()).toBe(200);
     expect((await updatedPurchaseOrder.json()).Header.DC_RMK).toBe("saved purchase order update");
@@ -167,6 +248,8 @@ test("API UI: purchase order lookup, save/delete dialogs, dirty navigation, and 
     await page.getByTestId("confirm-dialog-confirm").click();
     expect((await lineUpdateResponse).status()).toBe(200);
     expect(lineUpdateRequestBody?.Lines[0]?.QT_PO).toBe(4);
+    await expect(page.getByRole("dialog", { name: "저장 완료" })).toBeVisible();
+    await page.getByTestId("confirm-dialog-confirm").click();
     const lineUpdatedPurchaseOrder = await request.get(`${apiBaseUrl}/api/purchase-orders/1000/${number}`);
     expect(lineUpdatedPurchaseOrder.status()).toBe(200);
     expect((await lineUpdatedPurchaseOrder.json()).Lines[0]).toMatchObject({ QT_PO: 4, AM_TOTAL: 0 });
@@ -187,32 +270,37 @@ test("API UI: purchase order lookup, save/delete dialogs, dirty navigation, and 
     await page.getByTestId("confirm-dialog-confirm").click();
     await expect(page.getByTestId("page-title")).toBeVisible();
     await page.getByTestId("nav-purchase-order").click();
+    await page.getByLabel("발주일 To").fill("2026-12-31");
     await page.getByTestId("po-btn-search").click();
-    await page.getByTestId(`purchase-header-grid-row-1000::${number}`).click();
+    await page.getByTestId(`purchase-header-grid-cell-container-1000::${number}-NO_PO`).click();
     await expect(page.getByTestId(`purchase-line-grid-row-1000::${number}::1`)).toBeVisible();
     await page.getByTestId("po-btn-delete").click();
     await expect(page.getByTestId("confirm-dialog")).toContainText("발주번호");
     await page.getByTestId("confirm-dialog-cancel").click();
     await page.getByTestId("po-btn-delete").click();
     await page.getByTestId("confirm-dialog-confirm").click();
-    await expect(page.getByRole("status")).toContainText("삭제되었습니다.");
+    await expect(page.getByRole("dialog", { name: "삭제 완료" })).toBeVisible();
+    await expect(page.getByTestId(`purchase-header-grid-row-1000::${number}`)).toBeVisible();
+    await page.getByTestId("confirm-dialog-confirm").click();
+    await expect(page.getByTestId("status-message")).toContainText("삭제되었습니다.");
   } finally {
     await request.delete(`${apiBaseUrl}/api/purchase-orders/1000/${number}`);
   }
 });
 
-test("API UI: sales order shows 400 and network save errors, then recovers", async ({ page, request }, testInfo) => {
+test("API UI: sales order shows save and delete errors, then recovers", async ({ page, request }, testInfo) => {
   test.slow();
   const number = `E2E-SO-ERROR-${testInfo.workerIndex}-${Date.now()}`;
   const endpoint = `${apiBaseUrl}/api/sales-orders/1000/${number}`;
   let badRequestCount = 0;
   let networkFailureCount = 0;
+  let deleteFailureCount = 0;
 
   try {
     expect((await request.post(`${apiBaseUrl}/api/sales-orders`, { data: salesRequest(number) })).status()).toBe(201);
     await page.goto("/");
     await page.getByTestId("btn-search").click();
-    await page.getByTestId(`sales-order-header-grid-row-1000::${number}`).click();
+    await page.getByTestId(`sales-order-header-grid-cell-container-1000::${number}-NO_SO`).click();
     const quantity = page.getByTestId(`sales-order-line-grid-cell-1000::${number}::1-QT_SO`);
     await quantity.fill("4");
 
@@ -224,17 +312,23 @@ test("API UI: sales order shows 400 and network save errors, then recovers", asy
     await page.route(endpoint, badRequest);
     await page.getByTestId("btn-save").click();
     await page.getByTestId("confirm-dialog-confirm").click();
-    await expect(page.getByTestId("confirm-dialog")).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: "저장 실패" })).toBeVisible();
+    await expect(page.getByTestId("confirm-dialog-cancel")).toHaveCount(0);
+    await expect(page.locator(".erp-snackbar--success")).toHaveCount(0);
     await expect(page.getByTestId("status-message")).toContainText("저장 중 오류가 발생했습니다.");
-    await expect(page.getByTestId("btn-save")).toBeEnabled();
+    await expect(page.getByTestId("btn-save")).toBeDisabled();
     await expect(page.getByTestId("sales-order-dirty-indicator")).toBeVisible();
     expect(badRequestCount).toBe(1);
+    await page.getByTestId("confirm-dialog-confirm").click();
+    await expect(page.getByTestId("btn-save")).toBeEnabled();
     await page.unroute(endpoint, badRequest);
 
     const recoveredFrom400 = page.waitForResponse((response) => response.url() === endpoint && response.request().method() === "PUT");
     await page.getByTestId("btn-save").click();
     await page.getByTestId("confirm-dialog-confirm").click();
     expect((await recoveredFrom400).status()).toBe(200);
+    await expect(page.getByRole("dialog", { name: "저장 완료" })).toBeVisible();
+    await page.getByTestId("confirm-dialog-confirm").click();
     await expect(page.getByTestId("sales-order-dirty-indicator")).toHaveCount(0);
 
     await quantity.fill("5");
@@ -246,28 +340,52 @@ test("API UI: sales order shows 400 and network save errors, then recovers", asy
     await page.route(endpoint, networkFailure);
     await page.getByTestId("btn-save").click();
     await page.getByTestId("confirm-dialog-confirm").click();
-    await expect(page.getByTestId("confirm-dialog")).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: "저장 실패" })).toBeVisible();
     await expect(page.getByTestId("status-message")).toContainText("저장 중 오류가 발생했습니다.");
-    await expect(page.getByTestId("btn-save")).toBeEnabled();
+    await expect(page.getByTestId("btn-save")).toBeDisabled();
     await expect(page.getByTestId("sales-order-dirty-indicator")).toBeVisible();
     expect(networkFailureCount).toBe(1);
+    await page.getByTestId("confirm-dialog-confirm").click();
+    await expect(page.getByTestId("btn-save")).toBeEnabled();
     await page.unroute(endpoint, networkFailure);
 
     const recoveredFromNetworkFailure = page.waitForResponse((response) => response.url() === endpoint && response.request().method() === "PUT");
     await page.getByTestId("btn-save").click();
     await page.getByTestId("confirm-dialog-confirm").click();
     expect((await recoveredFromNetworkFailure).status()).toBe(200);
+    await expect(page.getByRole("dialog", { name: "저장 완료" })).toBeVisible();
+    await page.getByTestId("confirm-dialog-confirm").click();
     await expect(page.getByTestId("sales-order-dirty-indicator")).toHaveCount(0);
+
+    const deleteFailure = async (route: import("@playwright/test").Route) => {
+      if (route.request().method() !== "DELETE") return route.continue();
+      deleteFailureCount += 1;
+      await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "temporary delete failure" }) });
+    };
+    await page.route(endpoint, deleteFailure);
+    await page.getByTestId("btn-delete-order").click();
+    await page.getByTestId("confirm-dialog-confirm").click();
+    await expect(page.getByRole("dialog", { name: "삭제 실패" })).toBeVisible();
+    await expect(page.getByTestId("status-message")).toContainText("삭제 중 오류가 발생했습니다.");
+    await expect(page.locator(".erp-snackbar--success")).toHaveCount(0);
+    await expect(page.getByTestId("btn-delete-order")).toBeDisabled();
+    await expect(page.getByTestId(`sales-order-header-grid-row-1000::${number}`)).toBeVisible();
+    await expect(quantity).toHaveValue("5");
+    expect(deleteFailureCount).toBe(1);
+    await page.getByTestId("confirm-dialog-confirm").click();
+    await expect(page.getByTestId("btn-delete-order")).toBeEnabled();
+    await page.unroute(endpoint, deleteFailure);
   } finally {
     await request.delete(endpoint);
   }
 });
 
-test("API UI: purchase order shows 409 save error, then recovers", async ({ page, request }, testInfo) => {
+test("API UI: purchase order shows save and delete errors, then recovers", async ({ page, request }, testInfo) => {
   test.slow();
   const number = `E2E-PO-ERROR-${testInfo.workerIndex}-${Date.now()}`;
   const endpoint = `${apiBaseUrl}/api/purchase-orders/1000/${number}`;
   let conflictCount = 0;
+  let deleteFailureCount = 0;
 
   try {
     expect((await request.post(`${apiBaseUrl}/api/purchase-orders`, { data: purchaseRequest(number) })).status()).toBe(201);
@@ -285,16 +403,40 @@ test("API UI: purchase order shows 409 save error, then recovers", async ({ page
     await page.route(endpoint, conflict);
     await page.getByTestId("po-btn-save").click();
     await page.getByTestId("confirm-dialog-confirm").click();
-    await expect(page.getByTestId("confirm-dialog")).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: "저장 실패" })).toBeVisible();
     await expect(page.getByTestId("status-message")).toContainText("저장 중 오류가 발생했습니다.");
-    await expect(page.getByTestId("po-btn-save")).toBeEnabled();
+    await expect(page.getByTestId("po-btn-save")).toBeDisabled();
+    await expect(page.getByTestId("purchase-order-dirty-indicator")).toBeVisible();
     expect(conflictCount).toBe(1);
+    await page.getByTestId("confirm-dialog-confirm").click();
+    await expect(page.getByTestId("po-btn-save")).toBeEnabled();
     await page.unroute(endpoint, conflict);
 
     const recovered = page.waitForResponse((response) => response.url() === endpoint && response.request().method() === "PUT");
     await page.getByTestId("po-btn-save").click();
     await page.getByTestId("confirm-dialog-confirm").click();
     expect((await recovered).status()).toBe(200);
+    await expect(page.getByRole("dialog", { name: "저장 완료" })).toBeVisible();
+    await page.getByTestId("confirm-dialog-confirm").click();
+
+    const deleteFailure = async (route: import("@playwright/test").Route) => {
+      if (route.request().method() !== "DELETE") return route.continue();
+      deleteFailureCount += 1;
+      await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "temporary delete failure" }) });
+    };
+    await page.route(endpoint, deleteFailure);
+    await page.getByTestId("po-btn-delete").click();
+    await page.getByTestId("confirm-dialog-confirm").click();
+    await expect(page.getByRole("dialog", { name: "삭제 실패" })).toBeVisible();
+    await expect(page.getByTestId("status-message")).toContainText("삭제 중 오류가 발생했습니다.");
+    await expect(page.locator(".erp-snackbar--success")).toHaveCount(0);
+    await expect(page.getByTestId("po-btn-delete")).toBeDisabled();
+    await expect(page.getByTestId(`purchase-header-grid-row-1000::${number}`)).toBeVisible();
+    await expect(page.getByTestId(`purchase-line-grid-cell-1000::${number}::1-QT_PO`)).toHaveValue("4");
+    expect(deleteFailureCount).toBe(1);
+    await page.getByTestId("confirm-dialog-confirm").click();
+    await expect(page.getByTestId("po-btn-delete")).toBeEnabled();
+    await page.unroute(endpoint, deleteFailure);
   } finally {
     await request.delete(endpoint);
   }
@@ -313,7 +455,7 @@ test("API UI: sales order disables duplicate save and delete requests while pend
     expect((await request.post(`${apiBaseUrl}/api/sales-orders`, { data: salesRequest(number) })).status()).toBe(201);
     await page.goto("/");
     await page.getByTestId("btn-search").click();
-    await page.getByTestId(`sales-order-header-grid-row-1000::${number}`).click();
+    await page.getByTestId(`sales-order-header-grid-cell-container-1000::${number}-NO_SO`).click();
     await page.getByTestId(`sales-order-line-grid-cell-1000::${number}::1-QT_SO`).fill("4");
 
     const saveStarted = deferred();
@@ -331,7 +473,10 @@ test("API UI: sales order disables duplicate save and delete requests while pend
     const confirmButtonBox = await page.getByTestId("confirm-dialog-confirm").boundingBox();
     expect(confirmButtonBox).not.toBeNull();
     if (!confirmButtonBox) throw new Error("confirmation button is not visible");
-    await page.getByTestId("confirm-dialog-confirm").dblclick();
+    await page.getByTestId("confirm-dialog-confirm").evaluate((button) => {
+      button.click();
+      button.click();
+    });
     await saveStarted.promise;
     await expect(page.getByTestId("btn-save")).toHaveText("저장 중...");
     await expect(page.getByTestId("btn-delete-order")).toBeDisabled();
@@ -340,9 +485,15 @@ test("API UI: sales order disables duplicate save and delete requests while pend
     expect(saveButtonBox).not.toBeNull();
     if (!saveButtonBox) throw new Error("save button is not visible");
     await page.mouse.click(saveButtonBox.x + saveButtonBox.width / 2, saveButtonBox.y + saveButtonBox.height / 2);
-    await page.mouse.click(confirmButtonBox.x + confirmButtonBox.width / 2, confirmButtonBox.y + confirmButtonBox.height / 2);
     saveGate.resolve();
-    await expect(page.getByRole("status")).toContainText("저장되었습니다.");
+    await expect(page.getByRole("dialog", { name: "저장 완료" })).toBeVisible();
+    await expect(page.getByTestId("btn-save")).toBeDisabled();
+    expect(saveRequestCount).toBe(1);
+    await page.getByRole("dialog", { name: "저장 완료" }).getByTestId("confirm-dialog-confirm").evaluate((button) => {
+      button.click();
+      button.click();
+    });
+    await expect(page.getByTestId("status-message")).toContainText("저장되었습니다.");
     await expect(page.getByTestId("btn-save")).toBeEnabled();
     expect(saveRequestCount).toBe(1);
     await page.unroute(endpoint, holdSave);
@@ -359,13 +510,22 @@ test("API UI: sales order disables duplicate save and delete requests while pend
     };
     await page.route(endpoint, holdDelete);
     await page.getByTestId("btn-delete-order").click();
-    await page.getByTestId("confirm-dialog-confirm").dblclick();
+    await page.getByTestId("confirm-dialog-confirm").evaluate((button) => {
+      button.click();
+      button.click();
+    });
     await deleteStarted.promise;
     await expect(page.getByTestId("btn-delete-order")).toBeDisabled();
     await expect(page.getByTestId("btn-save")).toBeDisabled();
     expect(deleteRequestCount).toBe(1);
     deleteGate.resolve();
-    await expect(page.getByRole("status")).toContainText("삭제되었습니다.");
+    await expect(page.getByRole("dialog", { name: "삭제 완료" })).toBeVisible();
+    await expect(page.getByTestId(`sales-order-header-grid-row-1000::${number}`)).toBeVisible();
+    await page.getByRole("dialog", { name: "삭제 완료" }).getByTestId("confirm-dialog-confirm").evaluate((button) => {
+      button.click();
+      button.click();
+    });
+    await expect(page.getByTestId("status-message")).toContainText("삭제되었습니다.");
     await expect(page.getByTestId(`sales-order-header-grid-row-1000::${number}`)).toHaveCount(0);
   } finally {
     saveGate.resolve();
@@ -388,10 +548,7 @@ test("API UI: purchase order disables duplicate save and delete requests while p
     await page.goto("/");
     await page.getByTestId("nav-purchase-order").click();
     await page.getByTestId("po-btn-search").click();
-    await Promise.all([
-      page.waitForResponse(`${apiBaseUrl}/api/purchase-orders/1000/${number}`),
-      page.getByTestId(`purchase-header-grid-row-1000::${number}`).click()
-    ]);
+    await page.getByTestId(`purchase-header-grid-cell-container-1000::${number}-NO_PO`).click();
     await expect(page.getByTestId(`purchase-line-grid-row-1000::${number}::1`)).toBeVisible();
     await page.getByTestId(`purchase-line-grid-cell-1000::${number}::1-QT_PO`).fill("4");
 
@@ -407,13 +564,23 @@ test("API UI: purchase order disables duplicate save and delete requests while p
     };
     await page.route(endpoint, holdSave);
     await page.getByTestId("po-btn-save").click();
-    await page.getByTestId("confirm-dialog-confirm").dblclick();
+    await page.getByTestId("confirm-dialog-confirm").evaluate((button) => {
+      button.click();
+      button.click();
+    });
     await saveStarted.promise;
     await expect(page.getByTestId("po-btn-save")).toBeDisabled();
     await expect(page.getByTestId("po-btn-delete")).toBeDisabled();
     expect(saveRequestCount).toBe(1);
     saveGate.resolve();
-    await expect(page.getByRole("status")).toContainText("저장되었습니다.");
+    await expect(page.getByRole("dialog", { name: "저장 완료" })).toBeVisible();
+    await expect(page.getByTestId("po-btn-save")).toBeDisabled();
+    expect(saveRequestCount).toBe(1);
+    await page.getByRole("dialog", { name: "저장 완료" }).getByTestId("confirm-dialog-confirm").evaluate((button) => {
+      button.click();
+      button.click();
+    });
+    await expect(page.getByTestId("status-message")).toContainText("저장되었습니다.");
     await expect(page.getByTestId("po-btn-save")).toBeEnabled();
     await page.unroute(endpoint, holdSave);
 
@@ -429,13 +596,22 @@ test("API UI: purchase order disables duplicate save and delete requests while p
     };
     await page.route(endpoint, holdDelete);
     await page.getByTestId("po-btn-delete").click();
-    await page.getByTestId("confirm-dialog-confirm").dblclick();
+    await page.getByTestId("confirm-dialog-confirm").evaluate((button) => {
+      button.click();
+      button.click();
+    });
     await deleteStarted.promise;
     await expect(page.getByTestId("po-btn-delete")).toBeDisabled();
     await expect(page.getByTestId("po-btn-save")).toBeDisabled();
     expect(deleteRequestCount).toBe(1);
     deleteGate.resolve();
-    await expect(page.getByRole("status")).toContainText("삭제되었습니다.");
+    await expect(page.getByRole("dialog", { name: "삭제 완료" })).toBeVisible();
+    await expect(page.getByTestId(`purchase-header-grid-row-1000::${number}`)).toBeVisible();
+    await page.getByRole("dialog", { name: "삭제 완료" }).getByTestId("confirm-dialog-confirm").evaluate((button) => {
+      button.click();
+      button.click();
+    });
+    await expect(page.getByTestId("status-message")).toContainText("삭제되었습니다.");
     await expect(page.getByTestId(`purchase-header-grid-row-1000::${number}`)).toHaveCount(0);
   } finally {
     saveGate.resolve();
@@ -589,7 +765,7 @@ test("Gate 9: an unmounted sales query does not update the next screen", async (
     responseGate.resolve();
     await responseReleased.promise;
     await expect(page.getByTestId("purchase-page-title")).toBeVisible();
-    await expect(page.getByTestId("status-message")).toBeEmpty();
+    await expect(page.getByTestId("status-message")).toHaveCount(0);
     expect(requestCount).toBe(1);
     expect(consoleErrors).toEqual([]);
     expect(pageErrors).toEqual([]);

@@ -15,6 +15,8 @@ async function saveCompactOrder(page: Page, prefix: "mobile-sales" | "pda-sales"
   await page.getByTestId(`${prefix}-save`).click();
   await page.getByTestId("confirm-dialog-confirm").click();
   expect((await response).ok()).toBeTruthy();
+  await expect(page.getByRole("dialog", { name: "저장 완료" })).toBeVisible();
+  await page.getByTestId("confirm-dialog-confirm").click();
   await expect(page.getByTestId(`${prefix}-dirty-indicator`)).toHaveCount(0);
 }
 
@@ -38,9 +40,11 @@ test("Gate 12-9 InMemory cross: PC, mobile, and PDA create, update, delete, and 
   await page.getByTestId("confirm-dialog-confirm").click();
   expect((await createResponse).status()).toBe(201);
   const selectedDocument = page.getByTestId("sales-order-header-grid-selected-document");
-  await expect(selectedDocument).toHaveText(/SO\d{10}/);
-  const salesOrderNo = (await selectedDocument.textContent())?.match(/SO\d{10}/)?.[0];
+  await expect(selectedDocument).toHaveText(/SOR\d{10}/);
+  const salesOrderNo = (await selectedDocument.textContent())?.match(/SOR\d{10}/)?.[0];
   expect(salesOrderNo).toBeTruthy();
+  await expect(page.getByRole("dialog", { name: "저장 완료" })).toBeVisible();
+  await page.getByTestId("confirm-dialog-confirm").click();
 
   await page.getByTestId("nav-mobile-sales-order").click();
   await page.getByTestId("mobile-sales-filter-order-no").fill(salesOrderNo!);
@@ -59,8 +63,9 @@ test("Gate 12-9 InMemory cross: PC, mobile, and PDA create, update, delete, and 
   await saveCompactOrder(page, "pda-sales", "PUT");
 
   await page.getByTestId("pda-sales-nav-pc").click();
+  await page.getByLabel("수주일자 To").fill("2026-12-31");
   await page.getByTestId("btn-search").click();
-  await page.getByTestId(`sales-order-header-grid-row-1000::${salesOrderNo}`).click();
+  await page.getByTestId(`sales-order-header-grid-cell-container-1000::${salesOrderNo}-NO_SO`).click();
   await expect(page.getByTestId(`sales-order-line-grid-cell-1000::${salesOrderNo}::1-QT_SO`)).toHaveValue("9");
 
   await page.getByTestId("nav-pda-sales-order").click();
@@ -73,6 +78,8 @@ test("Gate 12-9 InMemory cross: PC, mobile, and PDA create, update, delete, and 
   await page.getByTestId("pda-sales-delete-order").click();
   await page.getByTestId("confirm-dialog-confirm").click();
   expect((await deleteResponse).status()).toBe(204);
+  await expect(page.getByRole("dialog", { name: "삭제 완료" })).toBeVisible();
+  await page.getByTestId("confirm-dialog-confirm").click();
   await expect(page.getByTestId("pda-sales-order-no")).toHaveCount(0);
 
   await page.getByTestId("pda-sales-nav-pc").click();

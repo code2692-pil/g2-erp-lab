@@ -1,7 +1,7 @@
 [
   {
     "id": "poc-material-lot-001",
-    "title": "PoC 예시: 자재 LOT 연결 관리",
+    "title": "자재 LOT 연결 관리",
     "category": "자재",
     "keywords": ["자재", "입고", "LOT", "공급업체"],
     "symptoms": ["공급업체 LOT와 내부 LOT 기준이 서로 다릅니다."],
@@ -14,7 +14,7 @@
   },
   {
     "id": "poc-critical-process-002",
-    "title": "PoC 예시: 중요 공정 처리 점검",
+    "title": "중요 공정 처리 점검",
     "category": "공정",
     "keywords": ["중요 공정", "작업실적", "검사", "이상"],
     "symptoms": ["중요 공정의 실적과 검사 결과를 한 번에 확인하기 어렵습니다."],
@@ -27,7 +27,7 @@
   },
   {
     "id": "poc-quality-corrective-003",
-    "title": "PoC 예시: 검사 부적합 시정조치 확인",
+    "title": "검사 부적합 시정조치 확인",
     "category": "검사",
     "keywords": ["검사", "부적합", "시정조치", "재검"],
     "symptoms": ["부적합 이후 조치와 재검 결과가 흩어져 있습니다."],

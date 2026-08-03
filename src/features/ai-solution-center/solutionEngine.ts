@@ -1,5 +1,5 @@
-import { solutionKnowledge } from "./solutionKnowledge";
-import type { BusinessDomain, ClarifyingQuestion, CompanyKnowledgeArticle, InputEvidence, InputEvidenceSourceType, KnowledgeArticle, KnowledgeSourceType, RecommendationEvidence, SolutionConfidence, SolutionRequest, SolutionResult } from "./solutionTypes";
+import { solutionKnowledge } from "./solutionKnowledge.ts";
+import type { BusinessDomain, ClarifyingQuestion, CompanyKnowledgeArticle, InputEvidence, InputEvidenceSourceType, KnowledgeArticle, KnowledgeSourceType, RecommendationEvidence, SolutionConfidence, SolutionRequest, SolutionResult } from "./solutionTypes.ts";
 
 interface KnowledgeCandidate {
   id: string;
@@ -84,7 +84,7 @@ function inputEvidenceFor(request: SolutionRequest, candidate: KnowledgeCandidat
 
   const files = [...(request.fileInputs ?? [])].sort((left, right) => left.attachmentOrder - right.attachmentOrder || left.id.localeCompare(right.id));
   files.forEach((file) => {
-    const analyzerLabel = file.analyzerType && ["CSV", "JSON", "XML", "LOG"].includes(file.analyzerType) ? `${file.analyzerType} 로컬 분석 요약` : "자동 추출 텍스트";
+    const analyzerLabel = file.analyzerType && ["CSV", "JSON", "XML", "LOG"].includes(file.analyzerType) ? `${file.analyzerType} 분석 요약` : "자동 추출 텍스트";
     append(`${file.id}-extracted`, "EXTRACTED_FILE_TEXT", analyzerLabel, file.extractedText, file);
     append(`${file.id}-note`, "FILE_NOTE", "파일별 주요 내용·의사결정", file.note, file);
   });
@@ -169,7 +169,7 @@ function companyCandidate(article: CompanyKnowledgeArticle): KnowledgeCandidate 
     requiredInformation: article.requiredInformation,
     risks: article.risks,
     applicableProcesses: article.applicableProcesses,
-    summary: article.symptoms[0] ?? "회사 지식팩에서 불러온 검토 항목입니다.",
+    summary: article.symptoms[0] ?? "회사 지식에서 불러온 검토 항목입니다.",
     phasedPlan: article.recommendations,
     priorities: article.requiredInformation,
     additionalInfo: article.requiredInformation,
@@ -190,13 +190,17 @@ function symptomMatchCount(symptoms: readonly string[], input: string) {
 }
 
 function rankedCandidates(request: SolutionRequest, input: string, companyKnowledge: readonly CompanyKnowledgeArticle[]) {
-  const normalized = input.toLocaleLowerCase("ko-KR");
   const candidates = [...solutionKnowledge.map(generalCandidate), ...companyKnowledge.map(companyCandidate)];
   return candidates.map((candidate) => {
+    const candidateInput = candidate.id.startsWith("product-") ? request.situation : input;
+    const normalized = candidateInput.toLocaleLowerCase("ko-KR");
     const matchedKeywords = candidate.keywords.filter((keyword) => normalized.includes(keyword.toLocaleLowerCase("ko-KR")));
     const domainMatch = request.domain !== "" && (candidate.domains.includes(request.domain) || candidate.category === request.domain);
     const symptoms = symptomMatchCount(candidate.symptoms, input);
-    return { candidate, matchedKeywords, score: matchedKeywords.length * 3 + Number(domainMatch) * 2 + symptoms * 2 };
+    const productHelpBoost = candidate.id === "product-unsupported-feature" && matchedKeywords.length > 0
+      ? 10
+      : candidate.id.startsWith("product-") && matchedKeywords.length > 0 ? 5 : 0;
+    return { candidate, matchedKeywords, score: matchedKeywords.length * 3 + Number(domainMatch) * 2 + symptoms * 2 + productHelpBoost };
   }).sort((left, right) => {
     if (right.score !== left.score) return right.score - left.score;
     if (left.score > 0 && left.candidate.sourceType !== right.candidate.sourceType) return left.candidate.sourceType === "COMPANY" ? -1 : 1;
@@ -245,7 +249,8 @@ export function buildSolutionResult(request: SolutionRequest, companyKnowledge: 
   const ranked = rankedCandidates(request, input, companyKnowledge);
   const primary = ranked[0];
   const inputEvidence = inputEvidenceFor(request, primary.candidate);
-  const confidence = confidenceFor(input, primary.matchedKeywords.length, request.domain !== "");
+  const informativeKeywordCount = primary.matchedKeywords.filter((keyword) => !["업무", "시스템", "화면", "방법"].includes(keyword.toLocaleLowerCase("ko-KR"))).length;
+  const confidence = confidenceFor(input, informativeKeywordCount, request.domain !== "");
   const evidence = ranked.filter((entry, index) => index === 0 || entry.score > 0).slice(0, 3).map(evidenceFor);
   const companyKnowledgeUsed = evidence.some((item) => item.sourceType === "COMPANY");
   const questions = questionSets(primary.candidate, confidence, companyKnowledgeUsed);
@@ -276,6 +281,6 @@ export function buildSolutionResult(request: SolutionRequest, companyKnowledge: 
     companyKnowledgeUsed,
     confidence,
     externalReviewRequired: true,
-    guideNotice: "이 결과는 로컬 지식 템플릿과 현재 브라우저 세션의 회사 지식팩을 바탕으로 한 기본 검토 가이드이며, 회사의 확정 정책이나 실제 운영 기준을 뜻하지 않습니다."
+    guideNotice: "이 결과는 프로그램의 기본 지식과 현재 등록된 회사 지식을 바탕으로 한 검토 가이드이며, 회사의 확정 정책이나 실제 운영 기준을 뜻하지 않습니다."
   };
 }

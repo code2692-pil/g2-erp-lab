@@ -36,9 +36,7 @@ import {
 import {
   createEmptySalesOrderHeader,
   createEmptySalesOrderLine,
-  createSavedSalesOrderNo,
   createTempSalesOrderNo,
-  getNextSavedSalesOrderIndex,
   salesOrderToday
 } from "./salesOrderDraft";
 import type { SalesOrderHeader, SalesOrderLine, SalesOrderStatus } from "./types";
@@ -550,23 +548,15 @@ export function CompactSalesOrderPage({ mode, onNavigate }: Props) {
     setMessage("");
     try {
       const isNew = originalOrderNo === null || header.NO_SO.startsWith("TEMP_SO_");
-      const currentRecords = records.length > 0 ? records : await loadSalesOrderRecords();
-      const yearMonth = header.DT_SO.slice(0, 7).replace("-", "");
-      const savedOrderNo = isNew
-        ? createSavedSalesOrderNo(
-            yearMonth,
-            getNextSavedSalesOrderIndex(currentRecords.map((record) => record.Header), yearMonth)
-          )
-        : header.NO_SO;
       const headerToSave: SalesOrderHeader = {
         ...header,
-        NO_SO: savedOrderNo,
+        NO_SO: header.NO_SO,
         ST_SO: isNew && header.ST_SO === "신규" ? "진행" : header.ST_SO
       };
       const linesToSave = lines.map((line, index) => ({
         ...line,
         CD_FIRM: headerToSave.CD_FIRM,
-        NO_SO: savedOrderNo,
+        NO_SO: headerToSave.NO_SO,
         NO_LINE: index + 1
       }));
       const saved = await saveSalesOrderRecord(
@@ -579,14 +569,17 @@ export function CompactSalesOrderPage({ mode, onNavigate }: Props) {
           record.Header.CD_FIRM === saved.Header.CD_FIRM &&
           record.Header.NO_SO === saved.Header.NO_SO
       ) ?? saved;
+      setMessage("저장되었습니다.");
+      await confirm({ title: "저장 완료", message: "저장되었습니다.", confirmLabel: "확인", showCancel: false });
       setHeader({ ...refreshed.Header });
       setLines(refreshed.Lines.map((line) => ({ ...line })));
       setOriginalOrderNo(refreshed.Header.NO_SO);
       setValidationAttempted(false);
       clearDirty();
-      setMessage("저장되었습니다.");
     } catch {
-      setMessage("저장 중 오류가 발생했습니다. 현재 입력을 유지했으니 다시 시도하세요.");
+      const errorMessage = "저장하지 못했습니다. 현재 입력을 유지했으니 다시 시도하세요.";
+      setMessage(errorMessage);
+      await confirm({ title: "저장 실패", message: errorMessage, confirmLabel: "확인", showCancel: false });
     } finally {
       setOperation("idle");
       operationLock.current = false;
@@ -622,14 +615,17 @@ export function CompactSalesOrderPage({ mode, onNavigate }: Props) {
     try {
       await deleteSalesOrderRecord(header.CD_FIRM, originalOrderNo);
       await refreshRecords();
+      setMessage("삭제되었습니다.");
+      await confirm({ title: "삭제 완료", message: "삭제되었습니다.", confirmLabel: "확인", showCancel: false });
       setHeader(null);
       setLines([]);
       setOriginalOrderNo(null);
       setValidationAttempted(false);
       clearDirty();
-      setMessage("삭제되었습니다.");
     } catch {
-      setMessage("삭제 중 오류가 발생했습니다. 현재 화면을 유지했으니 다시 시도하세요.");
+      const errorMessage = "삭제하지 못했습니다. 현재 화면을 유지했으니 다시 시도하세요.";
+      setMessage(errorMessage);
+      await confirm({ title: "삭제 실패", message: errorMessage, confirmLabel: "확인", showCancel: false });
     } finally {
       setOperation("idle");
       operationLock.current = false;
@@ -820,10 +816,10 @@ export function CompactSalesOrderPage({ mode, onNavigate }: Props) {
       <div className={`compact-sales compact-sales--${mode}`} data-processing-state={operation} data-testid={`${prefix}-page`}>
         <header className="compact-sales__topbar">
           <div>
-            <span className="compact-sales__eyebrow">SMART ERP · 영업관리</span>
-            <h1 data-testid="page-title">{isMobile ? "모바일 수주등록 PoC" : "PDA 수주등록 PoC"}</h1>
+            <span className="compact-sales__eyebrow">SMART SNOTES DEMO · 영업관리</span>
+            <h1 data-testid="page-title">{isMobile ? "모바일 수주등록" : "PDA 수주등록"}</h1>
             <p>{isMobile
-              ? "PC 수주등록과 동일한 수주 데이터를 스마트폰 화면에 맞게 재구성한 브라우저 기반 PoC입니다."
+              ? "PC 수주등록과 동일한 수주 데이터를 스마트폰 화면에 맞게 제공합니다."
               : "산업용 소형 단말의 키보드 입력 흐름을 가정한 브라우저 기반 간편 수주등록 화면입니다."}</p>
           </div>
           <nav aria-label="수주등록 화면 이동" className="compact-sales__nav">

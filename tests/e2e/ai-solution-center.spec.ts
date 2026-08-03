@@ -16,8 +16,9 @@ function collectBrowserProblems(page: Page) {
 
 async function openCenter(page: Page) {
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByTestId("nav-ai-solution-center").click();
-  await expect(page.getByTestId("ai-solution-center-title")).toHaveText("AI 솔루션 센터");
+  await page.getByTestId("nav-ai-system-management").click();
+  await expect(page.getByTestId("ai-solution-center-title")).toHaveText("AI 시스템 관리");
+  await page.getByTestId("ai-system-advanced").locator(":scope > summary").click();
 }
 
 function expectNoBrowserProblems(problems: ReturnType<typeof collectBrowserProblems>) {
@@ -26,21 +27,31 @@ function expectNoBrowserProblems(problems: ReturnType<typeof collectBrowserProbl
   expect(problems.externalRequests).toEqual([]);
 }
 
+async function navigateToSolution(page: Page) {
+  await page.getByTestId("nav-ai-solution-center").click();
+  if (await page.getByTestId("confirm-dialog").isVisible().catch(() => false)) await page.getByTestId("confirm-dialog-confirm").click();
+  await expect(page.getByTestId("ai-solution-center-title")).toHaveText("AI 솔루션 센터");
+}
+
 async function applyCompanyKnowledgeSample(page: Page) {
   await page.getByTestId("company-knowledge-input").setInputFiles(resolve("docs/ai-solution-center/company-knowledge-sample.json"));
-  await expect(page.getByTestId("company-knowledge-count")).toHaveText("현재 적용된 회사 지식 3개");
-  await expect(page.getByTestId("company-knowledge-list")).toContainText("PoC 예시: 자재 LOT 연결 관리");
+  await page.getByTestId("company-knowledge-analyze").click();
+  await page.getByTestId("company-knowledge-save").click();
+  await expect(page.getByTestId("company-knowledge-count")).toContainText("3개");
+  await expect(page.getByTestId("company-knowledge-list")).toContainText("자재 LOT 연결 관리");
 }
 
 async function openCompanyLotQuestion(page: Page) {
-  await page.getByRole("tab", { name: "고객 업무 Q&A" }).click();
+  await navigateToSolution(page);
+  await page.locator("details", { hasText: "보완 설명" }).locator(":scope > summary").click();
   await page.getByTestId("ai-customer-inquiry").fill("공급업체 LOT와 내부 LOT 연결 기준이 달라 입고 이후 추적이 어렵습니다. 현장에 부담이 적은 관리 방식을 검토하고 싶습니다.");
   await page.getByTestId("ai-customer-current-management").fill("입고 때 공급업체 LOT를 확인하지만 내부 관리 기준은 분리되어 있습니다.");
   await page.getByTestId("ai-customer-guide").click();
 }
 
 async function openCustomerAnalysis(page: Page) {
-  await page.getByRole("tab").nth(1).click();
+  await navigateToSolution(page);
+  await page.locator("details", { hasText: "보완 설명" }).locator(":scope > summary").click();
   await page.getByTestId("ai-customer-inquiry").fill("Supplier LOT traceability must continue from receiving through production and packaging. The field team needs a practical ERP guide.");
   await page.getByTestId("ai-customer-current-management").fill("Receiving checks supplier LOT, but production and packaging records are separated.");
   await page.getByTestId("ai-customer-desired-standard").fill("One trace record must connect receiving, production, inspection, and packaging.");
@@ -60,7 +71,7 @@ async function fillTwoFollowupAnswers(page: Page) {
 test("회사 지식 A: 정상 JSON을 적용하면 두 탭의 추천 근거에 회사 지식이 표시된다", async ({ page }) => {
   const problems = collectBrowserProblems(page);
   await openCenter(page);
-  await expect(page.getByTestId("company-knowledge-input")).toHaveAttribute("accept", ".json,application/json");
+  await expect(page.getByTestId("company-knowledge-input")).toHaveAttribute("accept", /\.json/);
   await applyCompanyKnowledgeSample(page);
   await page.getByTestId("ai-situation-input").fill("공급업체 LOT와 내부 LOT 연결 기준을 입고 단계에서 정리하고 싶습니다.");
   await page.getByTestId("ai-consultant-analyze").click();
@@ -78,8 +89,9 @@ test("회사 지식 B: JSON parse 오류는 기존 적용 지식을 보존하고
   await openCenter(page);
   await applyCompanyKnowledgeSample(page);
   await page.getByTestId("company-knowledge-input").setInputFiles({ name: "broken.json", mimeType: "application/json", buffer: Buffer.from("{") });
+  await page.getByTestId("company-knowledge-analyze").click();
   await expect(page.getByTestId("company-knowledge-error")).toContainText("JSON 형식을 읽지 못했습니다.");
-  await expect(page.getByTestId("company-knowledge-count")).toHaveText("현재 적용된 회사 지식 3개");
+  await expect(page.getByTestId("company-knowledge-count")).toContainText("3개");
   await openCompanyLotQuestion(page);
   await expect(page.getByTestId("ai-evidence-poc-material-lot-001")).toBeVisible();
   expectNoBrowserProblems(problems);
@@ -89,8 +101,9 @@ test("회사 지식 C: schema 오류는 문제 field를 안내하고 부분 적�
   const problems = collectBrowserProblems(page);
   await openCenter(page);
   await page.getByTestId("company-knowledge-input").setInputFiles({ name: "missing-field.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify([{ id: "missing-title" }])) });
+  await page.getByTestId("company-knowledge-analyze").click();
   await expect(page.getByTestId("company-knowledge-error")).toContainText("필수 field 'title'");
-  await expect(page.getByTestId("company-knowledge-count")).toHaveText("현재 적용된 회사 지식 0개");
+  await expect(page.getByTestId("company-knowledge-count")).toContainText("0개");
   await expect(page.getByTestId("company-knowledge-input")).toHaveAttribute("aria-invalid", "true");
   expectNoBrowserProblems(problems);
 });
@@ -102,7 +115,7 @@ test("회사 지식 D: 초기화하면 기본 지식만 남고 회사 지식 근
   await page.getByTestId("company-knowledge-reset").focus();
   await expect(page.getByTestId("company-knowledge-reset")).toBeFocused();
   await page.getByTestId("company-knowledge-reset").click();
-  await expect(page.getByTestId("company-knowledge-count")).toHaveText("현재 적용된 회사 지식 0개");
+  await expect(page.getByTestId("company-knowledge-count")).toContainText("0개");
   await openCompanyLotQuestion(page);
   await expect(page.getByTestId("company-knowledge-reference")).toHaveCount(0);
   await expect(page.getByTestId("ai-result-evidence")).toContainText("일반 지식");
@@ -139,7 +152,7 @@ test("AI 센터 B: 지원하지 않는 MP4도 첨부를 유지하고 상황 설�
   await openCenter(page);
   await page.getByTestId("ai-file-input").setInputFiles({ name: "process-video.mp4", mimeType: "video/mp4", buffer: Buffer.from("not-a-real-video") });
   await expect(page.getByTestId("ai-file-list")).toContainText("process-video.mp4");
-  await expect(page.getByTestId("ai-file-list")).toContainText("현재 PoC에서는 내용을 자동 추출하지 않습니다.");
+  await expect(page.getByTestId("ai-file-list")).toContainText("내용 자동 추출, 음성 전사, 영상 장면 분석은 지원하지 않습니다.");
   await page.getByTestId("ai-consultant-analyze").click();
   await expect(page.getByRole("alert")).toHaveText("분석할 수 있는 텍스트 내용이나 상황 설명을 입력해 주세요.");
   await page.getByTestId("ai-situation-input").fill("현장 작업 영상에는 핵심 공정의 검사 누락과 입력 부담이 나타납니다. 우선 적용 기준을 검토해 주세요.");
@@ -152,11 +165,11 @@ test("AI 센터 B: 지원하지 않는 MP4도 첨부를 유지하고 상황 설�
 test("AI 센터 C: 고객 추적성 질문에 LOT 중심 단계 적용과 확인 질문을 제시한다", async ({ page }) => {
   const problems = collectBrowserProblems(page);
   await openCenter(page);
-  await page.getByRole("tab", { name: "고객 업무 Q&A" }).click();
+  await navigateToSolution(page);
   await page.getByTestId("ai-customer-guide").click();
   await expect(page.getByRole("alert")).toHaveText("현재 상황, 원하는 기준, 현장 제약을 조금 더 설명해 주세요.");
   await expect(page.getByTestId("ai-customer-inquiry")).toHaveAttribute("aria-invalid", "true");
-  await page.getByRole("button", { name: "예시 질문 넣기" }).click();
+  await page.getByTestId("ai-customer-inquiry").fill("공급업체 LOT와 내부 LOT 연결 기준을 입고부터 생산까지 일관되게 관리하고 싶습니다.");
   await page.getByTestId("ai-customer-guide").click();
   await expect(page.getByTestId("ai-result-recommendation")).toHaveText("통합형 LOT·추적성 관리");
   await expect(page.getByTestId("ai-result-phased-plan")).toBeVisible();
@@ -176,7 +189,7 @@ test("AI 센터 D: 기존 업무 화면과 AI 메뉴 전환 뒤 기본 도구모
   await page.getByTestId("nav-work-order").click();
   await expect(page.getByTestId("work-order-page-title")).toHaveText("작업지시등록");
   await expect(page.getByTestId("wo-btn-search")).toBeVisible();
-  await page.getByTestId("nav-ai-solution-center").click();
+  await navigateToSolution(page);
   await expect(page.getByTestId("ai-solution-center-title")).toBeVisible();
   expectNoBrowserProblems(problems);
 });
@@ -239,7 +252,7 @@ test("Gate 12-3 D: session reset clears analysis state but preserves the company
   await page.getByTestId("analysis-session-reset").click();
   await expect(page.getByTestId("ai-result")).toHaveCount(0);
   await expect(page.getByTestId("company-knowledge-count")).toContainText("3");
-  await page.getByRole("tab").nth(1).click();
+  await navigateToSolution(page);
   await expect(page.getByTestId("ai-customer-inquiry")).toHaveValue("");
   expectNoBrowserProblems(problems);
 });
@@ -427,7 +440,7 @@ test("Gate 12-5 E: handover and Markdown include priorities, comparison, and roa
   const markdown = await page.evaluate(() => navigator.clipboard.readText());
   expect(markdown).toContain("## 솔루션 대안 비교");
   expect(markdown).toContain("## 적용 로드맵");
-  expect(markdown).toContain("비교 점수는 PoC의 상대 우선순위");
+  expect(markdown).toContain("비교 점수는 상대 우선순위");
   expect(markdown).not.toMatch(/\b\d+\s*(원|일|개월|주)\b/);
   expectNoBrowserProblems(problems);
 });
@@ -538,7 +551,7 @@ test("Gate 12-7 A: CSV 구조 분석은 열·행·ERP Header를 표시하고 요
   await expect(page.getByTestId("ai-file-list")).not.toContainText(csv);
   await page.getByTestId("ai-consultant-analyze").click();
   await expect(page.getByTestId("file-processing-result")).toContainText("CSV");
-  await expect(page.getByTestId("input-evidence-file-1-extracted")).toContainText("CSV 로컬 분석 요약");
+  await expect(page.getByTestId("input-evidence-file-1-extracted")).toContainText("CSV 분석 요약");
   await expect(page.getByTestId("ai-result")).not.toContainText("LOT-A,10,P-100");
   expectNoBrowserProblems(problems);
 });
@@ -597,7 +610,7 @@ test("Gate 12-7 E: 이미지는 크기 메타정보와 OCR 미지원 안내 후 
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZP1sAAAAASUVORK5CYII=", "base64");
   await page.getByTestId("ai-file-input").setInputFiles({ name: "inspection.png", mimeType: "image/png", buffer: png });
   await expect(page.getByTestId("ai-file-list")).toContainText("1×1");
-  await expect(page.getByTestId("ai-file-list")).toContainText("OCR이나 장면 분석을 지원하지 않습니다");
+  await expect(page.getByTestId("ai-file-list")).toContainText("OCR이나 장면 분석은 지원하지 않습니다");
   await page.locator("[data-testid^='file-note-']").fill("검사 화면에서 LOT와 부적합 결과를 함께 확인하는 예시입니다.");
   await page.getByTestId("ai-consultant-analyze").click();
   await expect(page.getByTestId("input-evidence-file-1-note")).toBeVisible();
@@ -708,7 +721,7 @@ test("Gate 12-7 J: ERP·MES 검사 재작업 예시는 입력만 채우고 사�
   await openCenter(page);
   await page.getByTestId("scenario-library").locator("summary").click();
   await page.getByTestId("scenario-apply-inspection-rework-history").click();
-  await expect(page.getByRole("tab", { name: "고객 업무 Q&A" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("ai-customer-inquiry")).toBeVisible();
   await expect(page.getByTestId("ai-customer-inquiry")).toHaveValue(/검사 부적합/);
   await expect(page.getByTestId("ai-customer-current-management")).toHaveValue(/엑셀/);
   await expect(page.getByTestId("ai-customer-field-constraints")).toHaveValue(/업무 규칙/);
@@ -725,7 +738,7 @@ test("Gate 12-7 J: ERP·MES 검사 재작업 예시는 입력만 채우고 사�
 test("Gate 12-7 K: 작성 중 예시 교체를 취소하면 현재 입력을 유지한다", async ({ page }) => {
   const problems = collectBrowserProblems(page);
   await openCenter(page);
-  await page.getByRole("tab", { name: "고객 업무 Q&A" }).click();
+  await navigateToSolution(page);
   const original = "작성 중인 고객 문의를 유지해야 합니다.";
   await page.getByTestId("ai-customer-inquiry").fill(original);
   await page.getByTestId("scenario-library").locator("summary").click();
@@ -765,7 +778,8 @@ test("Gate 12-4 E: full Markdown includes evidence and handover without copying 
   await openCenter(page);
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://127.0.0.1:5173" });
   await applyCompanyKnowledgeSample(page);
-  await page.getByRole("tab").nth(1).click();
+  await navigateToSolution(page);
+  await page.locator("details", { hasText: "보완 설명" }).locator(":scope > summary").click();
   const fullInquiry = `LOT traceability needs inspection and packaging evidence. ${"비공개전체본문".repeat(90)}`;
   await page.getByTestId("ai-customer-inquiry").fill(fullInquiry);
   await page.getByTestId("ai-customer-current-management").fill("Receiving and packaging records are separated.");

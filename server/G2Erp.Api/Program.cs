@@ -4,12 +4,17 @@ using G2Erp.Api.Repositories;
 using G2Erp.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+var demoModeEnabled = builder.Configuration.GetValue<bool>("DemoMode");
+if (demoModeEnabled && !builder.Environment.IsDevelopment())
+    throw new InvalidOperationException("DemoMode can only run in the Development environment.");
 
 builder.Services.AddControllers().AddJsonOptions(options => options.JsonSerializerOptions.PropertyNamingPolicy = null);
-builder.Services.AddCors(options => options.AddPolicy("FrontendOnly", policy => policy
-    .WithOrigins("http://localhost:5173", "http://127.0.0.1:5173")
-    .AllowAnyHeader()
-    .AllowAnyMethod()));
+builder.Services.AddCors(options => options.AddPolicy("FrontendOnly", policy =>
+{
+    if (demoModeEnabled) policy.SetIsOriginAllowed(DemoOriginPolicy.IsAllowed);
+    else policy.WithOrigins("http://localhost:5173", "http://127.0.0.1:5173");
+    policy.AllowAnyHeader().AllowAnyMethod();
+}));
 
 var repositoryMode = builder.Configuration["RepositoryMode"] ?? "InMemory";
 if (string.Equals(repositoryMode, "SqlServer", StringComparison.OrdinalIgnoreCase))
@@ -28,6 +33,7 @@ if (string.Equals(repositoryMode, "SqlServer", StringComparison.OrdinalIgnoreCas
     builder.Services.AddScoped<IProductionLineRepository, SqlServerProductionLineRepository>();
     builder.Services.AddScoped<IProcessRepository, SqlServerProcessRepository>();
     builder.Services.AddScoped<IEquipmentRepository, SqlServerEquipmentRepository>();
+    builder.Services.AddScoped<ISalesConversionRepository, SqlServerSalesConversionRepository>();
     builder.Services.AddScoped<IWorkOrderService, WorkOrderService>();
 }
 else if (string.Equals(repositoryMode, "InMemory", StringComparison.OrdinalIgnoreCase))
@@ -41,6 +47,7 @@ else if (string.Equals(repositoryMode, "InMemory", StringComparison.OrdinalIgnor
     builder.Services.AddSingleton<IProductionLineRepository, InMemoryProductionLineRepository>();
     builder.Services.AddSingleton<IProcessRepository, InMemoryProcessRepository>();
     builder.Services.AddSingleton<IEquipmentRepository, InMemoryEquipmentRepository>();
+    builder.Services.AddSingleton<ISalesConversionRepository, InMemorySalesConversionRepository>();
     builder.Services.AddScoped<IWorkOrderService, WorkOrderService>();
 }
 else
@@ -52,13 +59,23 @@ builder.Services.AddScoped<IPurchaseOrderService, PurchaseOrderService>();
 builder.Services.AddScoped<IPartnerService, PartnerService>();
 builder.Services.AddScoped<IItemService, ItemService>();
 builder.Services.AddScoped<IWarehouseService, WarehouseService>();
+builder.Services.AddScoped<ISalesConversionService, SalesConversionService>();
 builder.Services.AddScoped<IMailOrderParserService, MailOrderParserService>();
 builder.Services.AddScoped<IDevelopmentDataService, DevelopmentDataService>();
+builder.Services.AddSingleton<IDemoAccessService, DemoAccessService>();
+if (demoModeEnabled)
+{
+    builder.Services.AddSingleton<IDemoQaService, DemoQaService>();
+    builder.Services.AddSingleton<DemoMeetingService>();
+    builder.Services.AddSingleton<IDemoMeetingService>(services => services.GetRequiredService<DemoMeetingService>());
+    builder.Services.AddHostedService(services => services.GetRequiredService<DemoMeetingService>());
+}
 
 var app = builder.Build();
 
 app.UseMiddleware<ApiExceptionMiddleware>();
 app.UseCors("FrontendOnly");
+app.UseMiddleware<DemoAccessMiddleware>();
 app.MapControllers();
 
 app.Run();

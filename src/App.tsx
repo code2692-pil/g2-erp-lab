@@ -7,6 +7,10 @@ import { canShowDevelopmentDataManagerClient, developmentDataApi } from "./api/d
 import { preloadScreenModule, screenModules, type ScreenModuleId } from "./screenModules";
 import { DirtyNavigationProvider, useDirtyNavigation } from "./navigation/DirtyNavigationProvider";
 import { navigationDelta, readAppHistoryEntry, type AppHistoryEntry, withAppHistoryEntry } from "./navigation/appHistory";
+import { DemoEnvironmentGate } from "./components/DemoEnvironmentGate";
+import { clearDemoSession, demoEnvironment } from "./api/demoApi";
+import { createClientId } from "./utils/clientId";
+import type { AppNavigationPage } from "./components/AppNavigation";
 
 const PurchaseOrderRegistration = screenModules.purchase.component;
 const WorkOrderRegistration = screenModules.work.component;
@@ -14,30 +18,42 @@ const DevelopmentDataManager = screenModules.development.component;
 const AiSolutionCenterPage = screenModules.ai.component;
 const CompactSalesOrderPage = screenModules.mobileSales.component;
 
-type AppPage = "sales" | "mobileSales" | "pdaSales" | "purchase" | "work" | "development" | "ai";
+type AppPage = AppNavigationPage;
 
 function pageFromPath(pathname: string): AppPage {
   if (pathname === "/mobile/sales-orders") return "mobileSales";
+  if (pathname === "/mobile/purchase-orders") return "mobilePurchase";
+  if (pathname === "/mobile/work-orders") return "mobileWork";
   if (pathname === "/pda/sales-orders") return "pdaSales";
+  if (pathname === "/pda/purchase-orders") return "pdaPurchase";
+  if (pathname === "/pda/work-orders") return "pdaWork";
   if (pathname === "/purchase-orders") return "purchase";
   if (pathname === "/work-orders") return "work";
   if (pathname === "/development-data") return "development";
+  if (pathname === "/ai-system-management") return "aiSystem";
+  if (pathname === "/ai-qa") return "aiQa";
   if (pathname === "/ai-solution-center") return "ai";
   return "sales";
 }
 
 function pathForPage(page: AppPage) {
   if (page === "mobileSales") return "/mobile/sales-orders";
+  if (page === "mobilePurchase") return "/mobile/purchase-orders";
+  if (page === "mobileWork") return "/mobile/work-orders";
   if (page === "pdaSales") return "/pda/sales-orders";
+  if (page === "pdaPurchase") return "/pda/purchase-orders";
+  if (page === "pdaWork") return "/pda/work-orders";
   if (page === "purchase") return "/purchase-orders";
   if (page === "work") return "/work-orders";
   if (page === "development") return "/development-data";
+  if (page === "aiSystem") return "/ai-system-management";
+  if (page === "aiQa") return "/ai-qa";
   if (page === "ai") return "/ai-solution-center";
   return "/";
 }
 
 function historyEntry(page: AppPage, index: number): AppHistoryEntry<AppPage> {
-  return { version: 1, id: `g2erp-${crypto.randomUUID()}`, index, page };
+  return { version: 1, id: createClientId("g2erp-history"), index, page };
 }
 
 function PageLoadingFallback() {
@@ -73,6 +89,59 @@ class PageLoadErrorBoundary extends Component<{ children: ReactNode }, { hasErro
   }
 }
 
+interface ApplicationErrorState {
+  hasError: boolean;
+  traceId: string;
+}
+
+class ApplicationErrorBoundary extends Component<{ children: ReactNode }, ApplicationErrorState> {
+  state: ApplicationErrorState = { hasError: false, traceId: "" };
+
+  static getDerivedStateFromError(): ApplicationErrorState {
+    return { hasError: true, traceId: createClientId("screen") };
+  }
+
+  componentDidCatch(reason: Error, info: React.ErrorInfo) {
+    console.error("Application screen error", { reason, componentStack: info.componentStack, traceId: this.state.traceId });
+  }
+
+  private retry = () => window.location.reload();
+
+  private goHome = () => {
+    window.history.replaceState(null, "", "/");
+    window.location.reload();
+  };
+
+  private changeUser = () => {
+    clearDemoSession();
+    window.history.replaceState(null, "", "/");
+    window.location.reload();
+  };
+
+  render() {
+    if (!this.state.hasError) return this.props.children;
+    return (
+      <main className="app-page-loading" data-testid="application-error-boundary">
+        <h1>화면을 표시하지 못했습니다</h1>
+        <p role="alert">일시적인 문제가 발생했습니다. 다시 시도하거나 처음 화면으로 이동해 주세요.</p>
+        <p>추적 ID: <code>{this.state.traceId}</code></p>
+        <div className="error-recovery-actions">
+          <button type="button" onClick={this.retry}>다시 시도</button>
+          <button type="button" onClick={this.goHome}>처음 화면</button>
+          {demoEnvironment === "shared" && <button type="button" onClick={this.changeUser}>사용자 전환</button>}
+        </div>
+      </main>
+    );
+  }
+}
+
+function E2eApplicationErrorProbe() {
+  if (import.meta.env.VITE_E2E_TEST_MODE && new URLSearchParams(window.location.search).has("__e2e_application_error")) {
+    throw new Error("E2E application error boundary probe");
+  }
+  return null;
+}
+
 function AppRouter() {
   const [page, setPage] = useState<AppPage>(() => pageFromPath(window.location.pathname));
   const [showDevelopmentDataManager, setShowDevelopmentDataManager] = useState(false);
@@ -81,7 +150,8 @@ function AppRouter() {
   const replayTargetRef = useRef<AppHistoryEntry<AppPage> | null>(null);
   const { requestNavigation } = useDirtyNavigation();
   const purchaseOrderAdapter = isApiMode() ? apiPurchaseOrderAdapter : mockPurchaseOrderAdapter;
-  const developmentDataRouteBlocked = page === "development" && !canShowDevelopmentDataManagerClient();
+  const sharedDevelopmentDataBlocked = demoEnvironment === "shared";
+  const developmentDataRouteBlocked = page === "development" && (!canShowDevelopmentDataManagerClient() || sharedDevelopmentDataBlocked);
   const activePage = developmentDataRouteBlocked ? "sales" : page;
 
   useLayoutEffect(() => {
@@ -95,11 +165,11 @@ function AppRouter() {
 
   useEffect(() => {
     let cancelled = false;
-    if (!canShowDevelopmentDataManagerClient()) return () => { cancelled = true; };
+    if (!canShowDevelopmentDataManagerClient() || sharedDevelopmentDataBlocked) { setShowDevelopmentDataManager(false); return () => { cancelled = true; }; }
     if (!isApiMode()) { setShowDevelopmentDataManager(true); return () => { cancelled = true; }; }
     void developmentDataApi.status().then((status) => { if (!cancelled) setShowDevelopmentDataManager(status.IsAllowed); }).catch(() => { if (!cancelled) setShowDevelopmentDataManager(false); });
     return () => { cancelled = true; };
-  }, []);
+  }, [sharedDevelopmentDataBlocked]);
 
   useEffect(() => {
     const existing = readAppHistoryEntry<AppPage>(window.history.state);
@@ -154,6 +224,7 @@ function AppRouter() {
       currentEntryRef.current = nextEntry;
     }
     setPage(nextPage);
+    requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: "auto" }));
   }, [page]);
 
   const navigate = useCallback((nextPage: AppPage) => {
@@ -174,20 +245,25 @@ function AppRouter() {
       <Suspense fallback={<PageLoadingFallback />}>
         {activePage === "development" && showDevelopmentDataManager
           ? <DevelopmentDataManager onNavigate={navigate} />
-          : activePage === "ai"
-            ? <AiSolutionCenterPage onNavigate={navigate} onScreenIntent={handleScreenIntent} />
+          : activePage === "ai" || activePage === "aiSystem" || activePage === "aiQa"
+            ? <AiSolutionCenterPage entryMode={activePage === "aiSystem" ? "system" : activePage === "aiQa" ? "qa" : "solution"} onNavigate={navigate} onScreenIntent={handleScreenIntent} />
             : activePage === "mobileSales"
               ? <CompactSalesOrderPage mode="mobile" onNavigate={navigate} />
               : activePage === "pdaSales"
                 ? <CompactSalesOrderPage mode="pda" onNavigate={navigate} />
-                : activePage === "purchase"
-                  ? <PurchaseOrderRegistration adapter={purchaseOrderAdapter} onNavigate={navigate} onScreenIntent={handleScreenIntent} showDevelopmentDataManager={showDevelopmentDataManager} />
-                  : <WorkOrderRegistration onNavigate={navigate} onScreenIntent={handleScreenIntent} showDevelopmentDataManager={showDevelopmentDataManager} />}
+                : activePage === "purchase" || activePage === "mobilePurchase" || activePage === "pdaPurchase"
+                  ? <PurchaseOrderRegistration adapter={purchaseOrderAdapter} navigationPage={activePage} onNavigate={navigate} onScreenIntent={handleScreenIntent} showDevelopmentDataManager={showDevelopmentDataManager} />
+                  : <WorkOrderRegistration navigationPage={activePage === "mobileWork" || activePage === "pdaWork" ? activePage : "work"} onNavigate={navigate} onScreenIntent={handleScreenIntent} showDevelopmentDataManager={showDevelopmentDataManager} />}
       </Suspense>
     </PageLoadErrorBoundary>
   );
 }
 
 export default function App() {
-  return <DirtyNavigationProvider><AppRouter /></DirtyNavigationProvider>;
+  return (
+    <ApplicationErrorBoundary>
+      <E2eApplicationErrorProbe />
+      <DemoEnvironmentGate><DirtyNavigationProvider><AppRouter /></DirtyNavigationProvider></DemoEnvironmentGate>
+    </ApplicationErrorBoundary>
+  );
 }

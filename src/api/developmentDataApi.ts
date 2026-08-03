@@ -61,13 +61,13 @@ export interface DevelopmentE2ERemnants {
 const now = () => new Date().toISOString();
 const localEnvironment = (): DevelopmentEnvironment => ({
   Environment: "Development",
-  RepositoryMode: "Mock",
-  Server: "Browser mock",
+  RepositoryMode: "Browser",
+  Server: "Browser",
   Database: "Not connected",
   IsLocal: true,
   IsAllowed: true,
   SafetyStatus: "Allowed",
-  Message: "Mock mode uses browser-only data and does not access a database.",
+  Message: "브라우저에 분리된 데이터 저장소를 사용합니다.",
   GeneratedAt: now()
 });
 
@@ -111,20 +111,20 @@ export const developmentDataApi = {
     const keys = scopes(scope);
     const existing = keys.reduce((total, key) => total + mockCounts[key], 0);
     const next = keys.reduce((total, key) => total + (plannedCounts[key] - mockCounts[key]), 0);
-    return { Scope: scope, Environment: localEnvironment(), ExistingRows: existing, NewRows: next, ConflictRows: 0, Conflicts: [], AffectedTables: ["Browser mock data"], DeletesData: false };
+    return { Scope: scope, Environment: localEnvironment(), ExistingRows: existing, NewRows: next, ConflictRows: 0, Conflicts: [], AffectedTables: ["브라우저 기준 데이터"], DeletesData: false };
   },
   async seed(scope: DevelopmentScope): Promise<DevelopmentOperation> {
     if (isApiMode()) return post<DevelopmentOperation>(`/api/development-data/seed/${scope}`);
     const keys = scopes(scope); const created = keys.reduce((total, key) => total + (plannedCounts[key] - mockCounts[key]), 0);
     keys.forEach((key) => { mockCounts[key] = plannedCounts[key]; });
-    return { Operation: "seed", Scope: scope, Status: "Success", CreatedRows: created, DeletedRows: 0, SkippedRows: 0, ConflictRows: 0, Message: created ? "Mock Sample data created." : "Matching Mock Sample data already exists.", ExecutedAt: now() };
+    return { Operation: "seed", Scope: scope, Status: "Success", CreatedRows: created, DeletedRows: 0, SkippedRows: 0, ConflictRows: 0, Message: created ? "기준 데이터를 생성했습니다." : "동일한 기준 데이터가 이미 있어 변경하지 않았습니다.", ExecutedAt: now() };
   },
   async cleanup(scope: DevelopmentScope, confirmationText: string): Promise<DevelopmentOperation> {
     if (isApiMode()) return post<DevelopmentOperation>("/api/development-data/cleanup/samples", { Scope: scope, ConfirmationText: confirmationText });
-    if (confirmationText !== "SAMPLE DELETE") return { Operation: "cleanup", Scope: scope, Status: "Blocked", CreatedRows: 0, DeletedRows: 0, SkippedRows: 0, ConflictRows: 0, Message: "Enter SAMPLE DELETE exactly to run cleanup.", ExecutedAt: now() };
+    if (confirmationText !== "SAMPLE DELETE") return { Operation: "cleanup", Scope: scope, Status: "Blocked", CreatedRows: 0, DeletedRows: 0, SkippedRows: 0, ConflictRows: 0, Message: "확인 문구가 올바르지 않습니다.", ExecutedAt: now() };
     const keys = scopes(scope); const deleted = keys.reduce((total, key) => total + mockCounts[key], 0);
     keys.forEach((key) => { mockCounts[key] = 0; });
-    return { Operation: "cleanup", Scope: scope, Status: "Success", CreatedRows: 0, DeletedRows: deleted, SkippedRows: 0, ConflictRows: 0, Message: "Mock Sample data was cleared.", ExecutedAt: now() };
+    return { Operation: "cleanup", Scope: scope, Status: "Success", CreatedRows: 0, DeletedRows: deleted, SkippedRows: 0, ConflictRows: 0, Message: "기준 데이터를 초기화했습니다.", ExecutedAt: now() };
   },
   async e2eRemnants(): Promise<DevelopmentE2ERemnants> {
     return isApiMode() ? apiClient<DevelopmentE2ERemnants>("/api/development-data/e2e-remnants") : { TotalRows: 0, Rows: [] };
